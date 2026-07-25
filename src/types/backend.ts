@@ -205,3 +205,10 @@ export interface VaultDirectory {
   readonly breadcrumbs: VaultBreadcrumb[]
   readonly entries: VaultEntry[]
 }
+
+export interface VideoStreamInfo {
+  sessionId: string
+  fileSize: number
+  contentType: string
+  mediaType: 'video' | 'audio'
+}

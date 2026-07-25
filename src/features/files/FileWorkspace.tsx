@@ -9,6 +9,7 @@ import {
   LayoutList,
   Palette,
   Pencil,
+  Play,
   RefreshCw,
   Search,
   Share2,
@@ -42,6 +43,7 @@ interface FileWorkspaceProps {
   onThemeOpen: () => void
   onUpload: (mode: UploadMode) => void
   onDownload: (file: RemoteFile) => void
+  onPlay: (file: RemoteFile) => void
   onShare: (file: RemoteFile) => void
   onRename: (file: RemoteFile) => void
   onDelete: (files: RemoteFile[]) => void
@@ -75,6 +77,7 @@ export function FileWorkspace({
   onThemeOpen,
   onUpload,
   onDownload,
+  onPlay,
   onShare,
   onRename,
   onDelete,
@@ -273,6 +276,7 @@ export function FileWorkspace({
           const kind = fileKind(file)
           const selected = selectedIds.has(file.path)
           const directory = isDirectory(file)
+          const playable = kind === 'video' || kind === 'audio'
           return (
             <div className={`file-row${selected ? ' file-row--selected' : ''}`} role="row" key={file.path}>
               <button
@@ -286,7 +290,7 @@ export function FileWorkspace({
               <button
                 className="file-name file-name--button"
                 type="button"
-                onDoubleClick={() => directory ? onNavigate(file.path) : onDownload(file)}
+                onDoubleClick={() => directory ? onNavigate(file.path) : playable ? onPlay(file) : onDownload(file)}
                 onClick={() => directory ? onNavigate(file.path) : toggleSelection(file.path)}
               >
                 <FileTypeIcon kind={kind} />
@@ -294,15 +298,26 @@ export function FileWorkspace({
               </button>
               <span>我</span>
               <span>{formatModified(file.modified)}</span>
-              <span>{directory ? '—' : formatBytes(file.size)}</span>
-              <button
-                className="row-action"
-                type="button"
-                aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`}
-                onClick={() => directory ? onNavigate(file.path) : onDownload(file)}
-              >
-                {directory ? <ChevronRight size={19} /> : <ArrowDownToLine size={18} />}
-              </button>
+              <span>{directory ? '-' : formatBytes(file.size)}</span>
+              {playable ? (
+                <div className="row-actions">
+                  <button className="row-action" type="button" aria-label={`播放 ${file.name}`} onClick={() => onPlay(file)}>
+                    <Play size={17} />
+                  </button>
+                  <button className="row-action" type="button" aria-label={`下载 ${file.name}`} onClick={() => onDownload(file)}>
+                    <ArrowDownToLine size={17} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="row-action"
+                  type="button"
+                  aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`}
+                  onClick={() => directory ? onNavigate(file.path) : onDownload(file)}
+                >
+                  {directory ? <ChevronRight size={19} /> : <ArrowDownToLine size={18} />}
+                </button>
+              )}
             </div>
           )
         })}

@@ -12,6 +12,7 @@ const defaultCallbacks = {
   onThemeOpen: vi.fn(),
   onUpload: vi.fn(),
   onDownload: vi.fn(),
+  onPlay: vi.fn(),
   onShare: vi.fn(),
   onRename: vi.fn(),
   onDelete: vi.fn(),

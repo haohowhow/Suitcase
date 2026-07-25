@@ -155,14 +155,18 @@ All spacing derives from a 4px base.
 
 | Type | Duration | Easing | Usage |
 | --- | --- | --- | --- |
-| Micro | `120–160ms` | ease-out | Hover, press, switch thumb |
-| Standard | `200–260ms` | ease-in-out | Modal and panel open/close |
+| Micro | `120ms` | ease-out | Hover, press, switch feedback |
+| Standard | `240ms` | `cubic-bezier(0.16, 1, 0.3, 1)` | Modal, menu and panel open/close |
 | Emphasis | `400ms` | cubic-bezier(0.16, 1, 0.3, 1) | Rare onboarding emphasis |
 
 - Animate only transform and opacity for new motion.
+- Pointer-down immediately compresses ordinary controls to `0.97–0.985`; window controls use a color response so their hit geometry stays fixed.
+- Menus materialize from the invoking corner, while modal dialogs scale from their own center and pair with a dimmed, gently blurred backdrop.
+- Motion remains interruptible: opening panels never block close or navigation input while transitioning.
 - Every clickable control has hover, active, focus-visible, and disabled treatment.
 - All transient overlays close on outside click and Escape unless an operation is in an unsafe commit phase.
-- `prefers-reduced-motion` collapses non-essential durations.
+- `prefers-reduced-motion` removes spatial transforms and collapses non-essential durations while keeping state changes visible.
+- `prefers-reduced-transparency` replaces structural material layers with solid design-system surfaces; `prefers-contrast: more` strengthens borders, text, and focus rings.
 
 ## 7. Depth & Surface
 
@@ -176,5 +180,7 @@ Strategy: mixed, restrained to native desktop hierarchy.
 | Side rail | `-12px 0 34px rgba(28, 32, 38, 0.14)` | Transfer panel overlay |
 
 - Shadows indicate overlays or floating controls, never ordinary content cards.
+- The title bar, sidebar, sticky workspace toolbar, menus, modal, and narrow-window transfer rail may use restrained translucency because they are structural or floating chrome. Operational rows and settings cards remain solid.
+- Do not stack multiple light translucent surfaces; a modal sits over a dimming backdrop and menus sit directly over solid workspace content.
 - Nested controls use tighter radii than the containing modal or section.
 - Avoid decorative glass, gradients, or texture in operational file-management surfaces.
