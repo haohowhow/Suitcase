@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-25
+
 ### Added
 - 视频和音频文件的流式预览（边下边播）：点击播放按钮或双击媒体文件即可在应用内即时播放，无需等待完整下载
 - 注册 `koofr-stream` 自定义 URI scheme 协议，Rust 侧代理 Koofr HTTP Range 请求，令牌不暴露给 WebView
