@@ -45,7 +45,7 @@ Built with Tauri v2 + React + TypeScript + Rust. Aims to feel like a native file
 
 [Koofr](https://koofr.eu) is a European cloud storage provider that aggregates Google Drive, OneDrive, Dropbox and other third-party accounts under one login. Its web UI is not always smooth from mainland China, and there is no official Windows desktop client.
 
-Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with resumable large-file transfers that does not stuff tokens into a WebView. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
+Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with resumable large-file transfers that does not stuff tokens into a WebView. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, in-app streaming preview for video and audio, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
 
 ## Screenshots
 
@@ -70,6 +70,10 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
   - **Single-file download**: HTTP Range + on-disk checkpoint for true byte-level resume.
   - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header — reassemble with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.
+
+- **In-app streaming preview**
+  - Click the play button or double-click a video / audio file to stream it inside the app without waiting for a full download.
+  - A custom `koofr-stream` URI scheme handled in Rust proxies HTTP Range requests, so Koofr tokens never reach the WebView. Stream sessions expire after 30 minutes and are torn down as soon as the player closes.
 
 - **Koofr Vault (end-to-end encryption)**
   - Create, import, export, unlock, lock, and unregister Vaults; browse decrypted metadata and create, rename, move, copy, or delete encrypted entries.
