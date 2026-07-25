@@ -179,6 +179,9 @@ pub async fn disconnect_koofr(state: State<'_, AppState>) -> CommandResult<()> {
     state.vault.reset().await;
     state.api.disconnect().await;
     state.local_access.clear();
+    if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
+        sessions.close_all();
+    }
     Ok(())
 }
 

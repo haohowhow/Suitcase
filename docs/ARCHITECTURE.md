@@ -128,6 +128,8 @@ src-tauri/src/
 ├── split_commands.rs           分卷上传命令
 ├── transfer_commands.rs        传输列表/恢复/丢弃命令
 ├── vault_commands.rs           Vault 注册、原生 Safe Key 与文件命令
+├── stream_commands.rs          媒体流式预览命令
+├── stream_session.rs           流会话管理 + URI scheme handler 工具
 ├── credential_manager.rs       Windows 凭据封装
 ├── settings.rs                 settings.json 读写
 ├── work_directory.rs           工作目录定位与启动期迁移
@@ -376,6 +378,12 @@ pub enum AppError {
 分享链接：`list_public_links`, `create_public_link`, `delete_public_link`
 
 Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create_vault_folder`, `rename_vault_entry`, `relocate_vault_entry`, `delete_vault_entries`, `upload_vault_file`, `download_vault_file`, `create_vault`, `remove_vault`, `export_vault_rclone_config`, `import_vault_rclone_config`
+
+流式预览：`prepare_video_stream`, `close_video_stream`
+
+**自定义 URI scheme**（Rust → WebView）：
+
+- `koofr-stream://`（Windows: `http://koofr-stream.localhost/{sessionId}`）：媒体流式代理。Rust handler 查 `StreamSessionManager` 获取 mount/path/size/content-type，向 Koofr 发 HTTP Range 请求（附加认证头），读取 ≤2 MB 分块后以 206 + `Content-Range` 响应 WebView 的 `<video>`/`<audio>` 请求。令牌不暴露给 WebView。
 
 **Tauri 事件**（Rust → 前端）：
 

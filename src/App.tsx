@@ -8,6 +8,7 @@ import { LoginPage } from './features/auth/LoginPage'
 import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
+import { MediaPreviewModal } from './features/files/MediaPreviewModal'
 import { isDirectory } from './features/files/filePresentation'
 import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
 import { useKoofrWorkspace } from './features/files/useKoofrWorkspace'
@@ -35,6 +36,7 @@ import type {
   TransferProgress,
   TransferResult,
   TrashItem,
+  VideoStreamInfo,
 } from './types/backend'
 import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
 import type { VaultTransferSpec } from './types/vault'
@@ -76,6 +78,7 @@ function App() {
   const [downloadDirectory, setDownloadDirectory] = useState('')
   const [downloadBusy, setDownloadBusy] = useState(false)
   const [downloadError, setDownloadError] = useState('')
+  const [mediaPreview, setMediaPreview] = useState<{ file: RemoteFile; streamInfo: VideoStreamInfo } | null>(null)
   const workspace = useKoofrWorkspace(authState === 'signedIn')
   const collections = useKoofrCollections(authState === 'signedIn', activeItem)
   const workspaceLocation = useRef({ activeMountId: '', path: '/' })
@@ -610,6 +613,24 @@ function App() {
     setModalKind('download')
   }
 
+  const handlePlay = async (file: RemoteFile) => {
+    const mountId = workspace.activeMountId
+    if (!mountId) return
+    try {
+      const streamInfo = await koofr.prepareVideoStream(mountId, file.path)
+      setMediaPreview({ file, streamInfo })
+    } catch (error) {
+      setNotice(commandErrorMessage(error, '无法播放此文件，请检查网络后重试。'))
+    }
+  }
+
+  const closeMediaPreview = () => {
+    if (mediaPreview) {
+      koofr.closeVideoStream(mediaPreview.streamInfo.sessionId).catch(() => {})
+    }
+    setMediaPreview(null)
+  }
+
   const handleDownload = async (file: RemoteFile, mountId = workspace.activeMountId) => {
     if (!mountId) return
     let downloadSettings = settings
@@ -966,6 +987,7 @@ function App() {
               onThemeOpen={() => setModalKind('theme')}
               onUpload={(mode) => void handleUpload(mode)}
               onDownload={(file) => void handleDownload(file)}
+              onPlay={(file) => void handlePlay(file)}
               onShare={openShare}
               onRename={openRename}
               onDelete={openDelete}
@@ -1163,6 +1185,14 @@ function App() {
         <Modal title="外观主题" actionLabel="完成" onClose={() => setModalKind(null)}>
           <ThemePicker value={themeId} onChange={selectTheme} />
         </Modal>
+      ) : null}
+
+      {mediaPreview ? (
+        <MediaPreviewModal
+          streamInfo={mediaPreview.streamInfo}
+          fileName={mediaPreview.file.name}
+          onClose={closeMediaPreview}
+        />
       ) : null}
     </div>
   )

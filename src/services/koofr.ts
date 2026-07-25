@@ -19,6 +19,7 @@ import type {
   DownloadHistoryItem,
   VaultDirectory,
   VaultSummary,
+  VideoStreamInfo,
 } from '../types/backend'
 import type { SplitUploadSettings } from '../types/files'
 
@@ -423,6 +424,18 @@ export const koofr = {
 
   openDownloadedFolder(transferId: string) {
     return invoke<void>('open_downloaded_folder', { transferId })
+  },
+
+  prepareVideoStream(mountId: string, remotePath: string) {
+    return invoke<VideoStreamInfo>('prepare_video_stream', { mountId, remotePath })
+  },
+
+  closeVideoStream(sessionId: string) {
+    return invoke<void>('close_video_stream', { sessionId })
+  },
+
+  videoStreamUrl(sessionId: string) {
+    return `http://koofr-stream.localhost/${sessionId}`
   },
 
   onTransferProgress(listener: (progress: TransferProgress) => void): Promise<UnlistenFn> {

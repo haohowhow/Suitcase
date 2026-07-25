@@ -14,6 +14,8 @@ mod logging;
 mod metadata_cache;
 mod settings;
 mod split_commands;
+mod stream_commands;
+mod stream_session;
 mod transfer;
 mod transfer_commands;
 mod vault_commands;
@@ -27,6 +29,7 @@ use local_access::LocalAccessManager;
 use logging::{AppLogger, LogConfig};
 use metadata_cache::MetadataCache;
 use settings::{SettingsDefaults, SettingsStore};
+use stream_session::{cap_range, parse_range_header, parse_session_id_from_path};
 use tauri::Manager;
 use transfer::{TransferCheckpointStore, TransferManager};
 use vault_core::VaultManager;
@@ -50,6 +53,16 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .register_asynchronous_uri_scheme_protocol(
+            "koofr-stream",
+            move |ctx, request, responder| {
+                let app_handle = ctx.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let response = handle_stream_request(&app_handle, &request).await;
+                    responder.respond(response);
+                });
+            },
+        )
         .setup(|app| {
             let default_data_dir = app.path().app_local_data_dir()?;
             let work_directory = WorkDirectoryStore::initialize(default_data_dir)?;
@@ -103,6 +116,8 @@ pub fn run() {
                 vault,
                 work_directory,
             });
+            let _ = stream_session::STREAM_SESSIONS
+                .set(stream_session::StreamSessionManager::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -168,7 +183,139 @@ pub fn run() {
             vault_commands::remove_vault,
             vault_commands::export_vault_rclone_config,
             vault_commands::import_vault_rclone_config,
+            stream_commands::prepare_video_stream,
+            stream_commands::close_video_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Koofr GUI");
+}
+
+async fn handle_stream_request(
+    app_handle: &tauri::AppHandle,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let path = request.uri().path();
+    let Some(session_id) = parse_session_id_from_path(path) else {
+        return error_response(tauri::http::StatusCode::FORBIDDEN, "invalid session");
+    };
+
+    let sessions = stream_session::STREAM_SESSIONS.get().unwrap();
+    let Some(session) = sessions.get_session(session_id) else {
+        return error_response(tauri::http::StatusCode::FORBIDDEN, "session not found");
+    };
+
+    let range_header = request.headers().get("range").and_then(|v| v.to_str().ok());
+
+    let (start, end) = match parse_range_header(range_header, session.file_size) {
+        Some((s, e)) => cap_range(s, e, session.file_size),
+        None => {
+            if range_header.is_some() {
+                return error_response(
+                    tauri::http::StatusCode::RANGE_NOT_SATISFIABLE,
+                    "range not satisfiable",
+                );
+            }
+            cap_range(0, session.file_size.saturating_sub(1), session.file_size)
+        }
+    };
+
+    let state = app_handle.state::<AppState>();
+    let koofr_response = match state
+        .api
+        .download_response_from(&session.mount_id, &session.remote_path, start)
+        .await
+    {
+        Ok(resp) => resp,
+        Err(error::AppError::NotAuthenticated) => {
+            return error_response(tauri::http::StatusCode::FORBIDDEN, "not authenticated");
+        }
+        Err(error::AppError::NotFound) => {
+            return error_response(tauri::http::StatusCode::NOT_FOUND, "not found");
+        }
+        Err(_) => {
+            return error_response(tauri::http::StatusCode::BAD_GATEWAY, "remote error");
+        }
+    };
+
+    let is_partial = koofr_response.status() == tauri::http::StatusCode::PARTIAL_CONTENT;
+    let skip = if is_partial { 0 } else { start as usize };
+    let needed = (end - start + 1) as usize;
+
+    let body = match read_stream_bytes(koofr_response, skip, needed).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return error_response(tauri::http::StatusCode::BAD_GATEWAY, "stream error");
+        }
+    };
+
+    let actual_end = start + body.len() as u64 - 1;
+    tauri::http::Response::builder()
+        .status(tauri::http::StatusCode::PARTIAL_CONTENT)
+        .header("Content-Type", &session.content_type)
+        .header("Content-Length", body.len().to_string())
+        .header(
+            "Content-Range",
+            format!("bytes {start}-{actual_end}/{}", session.file_size),
+        )
+        .header("Accept-Ranges", "bytes")
+        .header("Cache-Control", "no-store")
+        .body(body)
+        .unwrap_or_else(|_| {
+            error_response(
+                tauri::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "response build error",
+            )
+        })
+}
+
+async fn read_stream_bytes(
+    response: reqwest::Response,
+    skip: usize,
+    needed: usize,
+) -> Result<Vec<u8>, error::AppError> {
+    use futures_util::StreamExt;
+
+    let mut stream = response.bytes_stream();
+    let mut buf = Vec::with_capacity(needed);
+    let mut skipped = 0usize;
+
+    while buf.len() < needed {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                let mut remaining = chunk.as_ref();
+
+                if skipped < skip {
+                    let to_skip = (skip - skipped).min(remaining.len());
+                    remaining = &remaining[to_skip..];
+                    skipped += to_skip;
+                    if remaining.is_empty() {
+                        continue;
+                    }
+                }
+
+                let to_read = (needed - buf.len()).min(remaining.len());
+                buf.extend_from_slice(&remaining[..to_read]);
+            }
+            Some(Err(e)) => return Err(error::AppError::Network(e)),
+            None => break,
+        }
+    }
+
+    Ok(buf)
+}
+
+fn error_response(
+    status: tauri::http::StatusCode,
+    message: &str,
+) -> tauri::http::Response<Vec<u8>> {
+    tauri::http::Response::builder()
+        .status(status)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(message.as_bytes().to_vec())
+        .unwrap_or_else(|_| {
+            tauri::http::Response::builder()
+                .status(tauri::http::StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Vec::new())
+                .unwrap()
+        })
 }

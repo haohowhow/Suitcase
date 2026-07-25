@@ -2,6 +2,21 @@
 
 格式按 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按 [SemVer](https://semver.org/spec/v2.0.0.html)。
 
+## [Unreleased]
+
+### Added
+- 视频和音频文件的流式预览（边下边播）：点击播放按钮或双击媒体文件即可在应用内即时播放，无需等待完整下载
+- 注册 `koofr-stream` 自定义 URI scheme 协议，Rust 侧代理 Koofr HTTP Range 请求，令牌不暴露给 WebView
+- `MediaPreviewModal` 组件：全屏遮罩 + 原生 `<video>`/`<audio>` 控件，支持 seek、关闭自动清理流会话、不支持格式时提示下载
+- `prepare_video_stream` / `close_video_stream` Tauri 命令和 `StreamSessionManager` 会话管理（30 分钟过期、断开连接时清空）
+
+### Fixed
+- 修复 React StrictMode 在播放器首次挂载时提前关闭流会话，导致实时播放返回 `403 session not found`
+
+### Security
+- CSP 新增 `media-src http://koofr-stream.localhost`，不放宽 `connect-src` 或其他指令
+- 流会话 ID 是随机 UUID（非认证令牌），URI scheme handler 每次请求重新校验会话有效性
+
 ## [1.6.1] - 2026-07-24
 
 ### Added
