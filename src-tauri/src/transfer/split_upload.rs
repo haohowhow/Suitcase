@@ -142,6 +142,33 @@ async fn run_registered(
     mut checkpoint: SplitUploadCheckpoint,
     cancel: CancellationToken,
 ) -> Result<TransferResult, AppError> {
+    emit_progress(
+        &runtime.app,
+        &checkpoint.transfer_id,
+        TransferDirection::Upload,
+        TransferState::Queued,
+        committed_bytes(&checkpoint),
+        Some(checkpoint.expected_size),
+    );
+    let _permit = match runtime
+        .manager
+        .acquire(TransferDirection::Upload, &cancel)
+        .await
+    {
+        Ok(permit) => permit,
+        Err(error) => {
+            runtime.manager.finish(&checkpoint.transfer_id);
+            let result = Err(error);
+            emit_terminal(
+                &runtime.app,
+                &checkpoint.transfer_id,
+                TransferDirection::Upload,
+                committed_bytes(&checkpoint),
+                &result,
+            );
+            return result;
+        }
+    };
     let mut retries_completed = 0_u32;
     let result = loop {
         let result = run_inner(&runtime, &cancel, &mut checkpoint).await;
@@ -291,6 +318,7 @@ async fn run_inner(
             hash: manifest.file_sha256,
             path: checkpoint.package_path.clone(),
         }),
+        integrity_status: super::IntegrityStatus::NotRequested,
     })
 }
 

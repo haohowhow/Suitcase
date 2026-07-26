@@ -1,4 +1,9 @@
-import type { RecoveryKind, TransferDirection, TransferState } from './backend'
+import type {
+  IntegrityStatus,
+  RecoveryKind,
+  TransferDirection,
+  TransferState,
+} from './backend'
 
 export type FileKind =
   | 'folder'
@@ -40,6 +45,7 @@ export interface TransferItem {
   readonly startedAt: number | null
   readonly finishedAt: number | null
   readonly speedSamples: readonly TransferSpeedSample[]
+  readonly integrityStatus?: IntegrityStatus
 }
 
 export interface TransferSpeedSample {

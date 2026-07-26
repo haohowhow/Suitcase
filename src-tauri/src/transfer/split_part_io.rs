@@ -9,6 +9,7 @@ use std::{
 
 use futures_util::TryStreamExt;
 use sha2::{Digest, Sha256};
+use tauri::Manager;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::{io::ReaderStream, sync::CancellationToken};
 
@@ -45,23 +46,37 @@ pub(super) async fn upload_next_part(
     let stream_progress = Arc::clone(&streamed);
     let app = runtime.app.clone();
     let transfer_id = checkpoint.transfer_id.clone();
+    let cancel_for_stream = cancel.clone();
     let total = checkpoint.expected_size;
-    let stream = ReaderStream::new(file.take(size)).inspect_ok(move |chunk| {
-        match stream_hasher.lock() {
-            Ok(mut digest) => digest.update(chunk),
-            Err(poisoned) => poisoned.into_inner().update(chunk),
+    let stream = ReaderStream::new(file.take(size)).and_then(move |chunk| {
+        let app = app.clone();
+        let transfer_id = transfer_id.clone();
+        let stream_hasher = stream_hasher.clone();
+        let stream_progress = stream_progress.clone();
+        let cancel = cancel_for_stream.clone();
+        async move {
+            app.state::<crate::AppState>()
+                .transfers
+                .throttle(&transfer_id, chunk.len(), &cancel)
+                .await
+                .map_err(|_| std::io::Error::other("split upload interrupted"))?;
+            match stream_hasher.lock() {
+                Ok(mut digest) => digest.update(&chunk),
+                Err(poisoned) => poisoned.into_inner().update(&chunk),
+            }
+            let part_bytes = stream_progress
+                .fetch_add(chunk.len() as u64, Ordering::Relaxed)
+                .saturating_add(chunk.len() as u64);
+            emit_progress(
+                &app,
+                &transfer_id,
+                TransferDirection::Upload,
+                TransferState::Running,
+                committed.saturating_add(part_bytes),
+                Some(total),
+            );
+            Ok(chunk)
         }
-        let part_bytes = stream_progress
-            .fetch_add(chunk.len() as u64, Ordering::Relaxed)
-            .saturating_add(chunk.len() as u64);
-        emit_progress(
-            &app,
-            &transfer_id,
-            TransferDirection::Upload,
-            TransferState::Running,
-            committed.saturating_add(part_bytes),
-            Some(total),
-        );
     });
     let name = RemoteName::parse(part_file_name(index))?;
     tokio::select! {

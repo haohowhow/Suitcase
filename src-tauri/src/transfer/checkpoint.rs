@@ -30,6 +30,10 @@ pub struct DownloadCheckpoint {
     pub expected_size: u64,
     pub remote_hash: String,
     pub remote_modified: i64,
+    #[serde(default = "default_true")]
+    pub resume_allowed: bool,
+    #[serde(default)]
+    pub retained_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -45,6 +49,10 @@ pub struct VaultDownloadCheckpoint {
     pub expected_size: u64,
     pub remote_hash: String,
     pub remote_modified: i64,
+    #[serde(default = "default_true")]
+    pub resume_allowed: bool,
+    #[serde(default)]
+    pub retained_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -117,6 +125,30 @@ impl TransferCheckpoint {
             Self::Upload(checkpoint) => &checkpoint.owner_id,
         }
     }
+
+    fn resume_allowed(&self) -> bool {
+        match self {
+            Self::Download(checkpoint) => checkpoint.resume_allowed,
+            Self::VaultDownload(checkpoint) => checkpoint.resume_allowed,
+            _ => true,
+        }
+    }
+
+    fn retention(&self) -> Option<(u64, PathBuf)> {
+        match self {
+            Self::Download(checkpoint) if checkpoint.retained_at > 0 => {
+                Some((checkpoint.retained_at, checkpoint.partial_path.clone()))
+            }
+            Self::VaultDownload(checkpoint) if checkpoint.retained_at > 0 => {
+                Some((checkpoint.retained_at, checkpoint.partial_path.clone()))
+            }
+            _ => None,
+        }
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -216,7 +248,7 @@ impl TransferCheckpointStore {
             .await
             .checkpoints
             .values()
-            .filter(|checkpoint| checkpoint.owner_id() == owner_id)
+            .filter(|checkpoint| checkpoint.owner_id() == owner_id && checkpoint.resume_allowed())
             .cloned()
             .collect::<Vec<_>>();
         let mut snapshots = Vec::with_capacity(checkpoints.len());
@@ -224,6 +256,100 @@ impl TransferCheckpointStore {
             snapshots.push(snapshot(checkpoint).await?);
         }
         Ok(snapshots)
+    }
+
+    pub async fn mark_active(&self, transfer_id: &str) -> Result<(), AppError> {
+        self.update_retention(transfer_id, true, 0).await
+    }
+
+    pub async fn mark_failed(
+        &self,
+        transfer_id: &str,
+        resume_allowed: bool,
+    ) -> Result<(), AppError> {
+        let retained_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        self.update_retention(transfer_id, resume_allowed, retained_at)
+            .await
+    }
+
+    async fn update_retention(
+        &self,
+        transfer_id: &str,
+        resume_allowed: bool,
+        retained_at: u64,
+    ) -> Result<(), AppError> {
+        validate_transfer_id(transfer_id)?;
+        {
+            let mut state = self.state.write().await;
+            let checkpoint = state
+                .checkpoints
+                .get_mut(transfer_id)
+                .ok_or(AppError::NotFound)?;
+            match checkpoint {
+                TransferCheckpoint::Download(checkpoint) => {
+                    checkpoint.resume_allowed = resume_allowed;
+                    checkpoint.retained_at = retained_at;
+                }
+                TransferCheckpoint::VaultDownload(checkpoint) => {
+                    checkpoint.resume_allowed = resume_allowed;
+                    checkpoint.retained_at = retained_at;
+                }
+                _ => return Ok(()),
+            }
+        }
+        self.persist().await
+    }
+
+    pub async fn cleanup_expired(&self, keep_days: u32) -> Result<usize, AppError> {
+        let now: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        let cutoff = now.saturating_sub(u64::from(keep_days) * 86_400_000);
+        let candidates = self
+            .state
+            .read()
+            .await
+            .checkpoints
+            .values()
+            .filter_map(|checkpoint| {
+                checkpoint
+                    .retention()
+                    .filter(|(retained_at, _)| *retained_at <= cutoff)
+                    .map(|(_, path)| {
+                        (
+                            checkpoint.transfer_id().to_owned(),
+                            checkpoint.clone(),
+                            path,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        let mut removed = 0;
+        for (transfer_id, checkpoint, partial_path) in candidates {
+            // Re-run the checkpoint snapshot validation before touching its exact path.
+            if snapshot(checkpoint).await.is_err() {
+                continue;
+            }
+            match tokio::fs::symlink_metadata(&partial_path).await {
+                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    tokio::fs::remove_file(&partial_path).await?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => continue,
+            }
+            if self.remove(&transfer_id).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     async fn persist(&self) -> Result<(), AppError> {

@@ -83,6 +83,12 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
   - Import/export of rclone crypt configs. Exported configs contain an obscured but recoverable Safe Key and must be handled as credentials.
 
 - **Settings**
+  - All settings load at startup. The UI can switch immediately between Simplified Chinese, English, and the Windows UI language; compact density and reduced motion apply live.
+  - Launch at login, close/minimize to tray, active-transfer quit confirmation, native completion notifications, and taskbar activity overlays are supported.
+  - Upload/download concurrency and global/per-task KiB/s limits apply live. “Full speed while idle” means five continuous minutes without Windows keyboard or mouse input.
+  - Download conflicts can ask, skip, or add a stable numeric suffix and never overwrite. Optional Koofr MD5 verification, failed-part retention, and open-folder-on-complete are supported.
+  - Public-link defaults include type, expiration, and a server-generated random password. The password appears only in the creation response and is never persisted.
+  - Per-account download history applies retention days and item counts continuously; `0` means unlimited.
   - Configurable default download folder, optional "ask each time" per-download prompt.
   - Configurable application work directory, with an optional complete migration of settings, transfer state, download history, cache, and logs before the next start.
   - Metadata cache: memory / disk / off. Diagnostic log level, retention, rotation size, usage, and cleanup remain configurable.

@@ -26,6 +26,50 @@ pub enum LogLevel {
     Debug,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InterfaceLanguage {
+    #[default]
+    System,
+    ZhCn,
+    EnUs,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UiDensity {
+    #[default]
+    Standard,
+    Compact,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadConflictStrategy {
+    Ask,
+    Skip,
+    #[default]
+    #[serde(alias = "overwrite")]
+    Rename,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BandwidthMode {
+    #[default]
+    Full,
+    Limited,
+    IdleFull,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkDefaultKind {
+    #[default]
+    Download,
+    Upload,
+}
+
 #[derive(Clone, Debug)]
 pub struct SettingsDefaults {
     pub download_directory: PathBuf,
@@ -38,6 +82,69 @@ pub struct NetworkRetrySettings {
     pub enabled: bool,
     pub max_retries: Option<u32>,
     pub interval_seconds: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TransferAdvancedSettings {
+    pub upload_concurrency: u32,
+    pub download_concurrency: u32,
+    pub default_split_part_mib: u32,
+    pub auto_split_threshold_mib: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DownloadBehaviorSettings {
+    pub conflict_strategy: DownloadConflictStrategy,
+    pub open_folder_after_download: bool,
+    pub verify_hash_after_download: bool,
+    pub keep_failed_part_days: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BandwidthSettings {
+    pub global_kbps: u32,
+    pub per_task_kbps: u32,
+    pub mode: BandwidthMode,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NotificationSettings {
+    pub notify_on_complete: bool,
+    pub notify_sound: bool,
+    pub tray_badge: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LinkDefaults {
+    pub kind: LinkDefaultKind,
+    pub expire_days: u32,
+    pub require_password: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SecuritySettings {
+    pub idle_auto_logout_minutes: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HistoryPolicy {
+    pub keep_days: u32,
+    pub keep_count: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AppearanceSettings {
+    pub language: InterfaceLanguage,
+    pub reduce_motion: bool,
+    pub density: UiDensity,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct GeneralSettings {
+    pub launch_at_login: bool,
+    pub close_to_tray: bool,
+    pub minimize_to_tray: bool,
+    pub confirm_quit_with_transfers: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,26 +170,112 @@ struct StoredSettings {
     network_retry_limit: Option<u32>,
     #[serde(default = "default_network_retry_interval_seconds")]
     network_retry_interval_seconds: u32,
+    #[serde(default)]
+    language: InterfaceLanguage,
+    #[serde(default)]
+    reduce_motion: bool,
+    #[serde(default)]
+    density: UiDensity,
+    #[serde(default)]
+    launch_at_login: bool,
+    #[serde(default = "default_close_to_tray")]
+    close_to_tray: bool,
+    #[serde(default)]
+    minimize_to_tray: bool,
+    #[serde(default = "default_confirm_quit")]
+    confirm_quit_with_transfers: bool,
+    #[serde(default = "default_upload_concurrency")]
+    upload_concurrency: u32,
+    #[serde(default = "default_download_concurrency")]
+    download_concurrency: u32,
+    #[serde(default = "default_split_part_mib")]
+    default_split_part_mib: u32,
+    #[serde(default = "default_auto_split_threshold_mib")]
+    auto_split_threshold_mib: u32,
+    #[serde(default)]
+    download_conflict_strategy: DownloadConflictStrategy,
+    #[serde(default)]
+    open_folder_after_download: bool,
+    #[serde(default = "default_verify_hash")]
+    verify_hash_after_download: bool,
+    #[serde(default = "default_keep_failed_part_days")]
+    keep_failed_part_days: u32,
+    #[serde(default)]
+    global_bandwidth_limit_kbps: u32,
+    #[serde(default)]
+    per_task_bandwidth_limit_kbps: u32,
+    #[serde(default)]
+    bandwidth_mode: BandwidthMode,
+    #[serde(default = "default_notify_on_complete")]
+    notify_on_complete: bool,
+    #[serde(default)]
+    notify_sound: bool,
+    #[serde(default = "default_tray_badge")]
+    tray_badge: bool,
+    #[serde(default)]
+    link_default_kind: LinkDefaultKind,
+    #[serde(default)]
+    link_default_expire_days: u32,
+    #[serde(default)]
+    link_default_require_password: bool,
+    #[serde(default)]
+    idle_auto_logout_minutes: u32,
+    #[serde(default = "default_history_keep_days")]
+    download_history_keep_days: u32,
+    #[serde(default = "default_history_keep_count")]
+    download_history_keep_count: u32,
 }
 
 const fn default_ask_download_location() -> bool {
     true
 }
-
 const fn default_log_retention_days() -> u32 {
     14
 }
-
 const fn default_log_max_file_size_mb() -> u32 {
     10
 }
-
 const fn default_network_retry_limit() -> Option<u32> {
     Some(8)
 }
-
 const fn default_network_retry_interval_seconds() -> u32 {
     5
+}
+const fn default_close_to_tray() -> bool {
+    true
+}
+const fn default_confirm_quit() -> bool {
+    true
+}
+const fn default_upload_concurrency() -> u32 {
+    2
+}
+const fn default_download_concurrency() -> u32 {
+    3
+}
+const fn default_split_part_mib() -> u32 {
+    64
+}
+const fn default_auto_split_threshold_mib() -> u32 {
+    512
+}
+const fn default_verify_hash() -> bool {
+    true
+}
+const fn default_keep_failed_part_days() -> u32 {
+    3
+}
+const fn default_notify_on_complete() -> bool {
+    true
+}
+const fn default_tray_badge() -> bool {
+    true
+}
+const fn default_history_keep_days() -> u32 {
+    30
+}
+const fn default_history_keep_count() -> u32 {
+    500
 }
 
 impl Default for StoredSettings {
@@ -100,6 +293,33 @@ impl Default for StoredSettings {
             auto_retry_network_errors: false,
             network_retry_limit: default_network_retry_limit(),
             network_retry_interval_seconds: default_network_retry_interval_seconds(),
+            language: InterfaceLanguage::default(),
+            reduce_motion: false,
+            density: UiDensity::default(),
+            launch_at_login: false,
+            close_to_tray: default_close_to_tray(),
+            minimize_to_tray: false,
+            confirm_quit_with_transfers: default_confirm_quit(),
+            upload_concurrency: default_upload_concurrency(),
+            download_concurrency: default_download_concurrency(),
+            default_split_part_mib: default_split_part_mib(),
+            auto_split_threshold_mib: default_auto_split_threshold_mib(),
+            download_conflict_strategy: DownloadConflictStrategy::default(),
+            open_folder_after_download: false,
+            verify_hash_after_download: default_verify_hash(),
+            keep_failed_part_days: default_keep_failed_part_days(),
+            global_bandwidth_limit_kbps: 0,
+            per_task_bandwidth_limit_kbps: 0,
+            bandwidth_mode: BandwidthMode::default(),
+            notify_on_complete: default_notify_on_complete(),
+            notify_sound: false,
+            tray_badge: default_tray_badge(),
+            link_default_kind: LinkDefaultKind::default(),
+            link_default_expire_days: 0,
+            link_default_require_password: false,
+            idle_auto_logout_minutes: 0,
+            download_history_keep_days: default_history_keep_days(),
+            download_history_keep_count: default_history_keep_count(),
         }
     }
 }
@@ -129,6 +349,39 @@ impl SettingsStore {
         }
         if !(1..=3_600).contains(&state.network_retry_interval_seconds) {
             state.network_retry_interval_seconds = default_network_retry_interval_seconds();
+        }
+        if !(1..=16).contains(&state.upload_concurrency) {
+            state.upload_concurrency = default_upload_concurrency();
+        }
+        if !(1..=16).contains(&state.download_concurrency) {
+            state.download_concurrency = default_download_concurrency();
+        }
+        if !(1..=1024).contains(&state.default_split_part_mib) {
+            state.default_split_part_mib = default_split_part_mib();
+        }
+        if !(16..=4096).contains(&state.auto_split_threshold_mib) {
+            state.auto_split_threshold_mib = default_auto_split_threshold_mib();
+        }
+        if state.keep_failed_part_days > 30 {
+            state.keep_failed_part_days = default_keep_failed_part_days();
+        }
+        if state.global_bandwidth_limit_kbps > 10_000_000 {
+            state.global_bandwidth_limit_kbps = 0;
+        }
+        if state.per_task_bandwidth_limit_kbps > 10_000_000 {
+            state.per_task_bandwidth_limit_kbps = 0;
+        }
+        if state.link_default_expire_days > 365 {
+            state.link_default_expire_days = 0;
+        }
+        if state.idle_auto_logout_minutes > 1440 {
+            state.idle_auto_logout_minutes = 0;
+        }
+        if state.download_history_keep_days > 3650 {
+            state.download_history_keep_days = default_history_keep_days();
+        }
+        if state.download_history_keep_count > 100_000 {
+            state.download_history_keep_count = default_history_keep_count();
         }
         let initial_cache_directory = defaults.cache_directory.clone();
         let initial_log_config = (
@@ -195,6 +448,87 @@ impl SettingsStore {
             enabled: state.auto_retry_network_errors,
             max_retries: state.network_retry_limit,
             interval_seconds: state.network_retry_interval_seconds,
+        }
+    }
+
+    pub async fn appearance(&self) -> AppearanceSettings {
+        let state = self.state.read().await;
+        AppearanceSettings {
+            language: state.language,
+            reduce_motion: state.reduce_motion,
+            density: state.density,
+        }
+    }
+
+    pub async fn general(&self) -> GeneralSettings {
+        let state = self.state.read().await;
+        GeneralSettings {
+            launch_at_login: state.launch_at_login,
+            close_to_tray: state.close_to_tray,
+            minimize_to_tray: state.minimize_to_tray,
+            confirm_quit_with_transfers: state.confirm_quit_with_transfers,
+        }
+    }
+
+    pub async fn transfer_advanced(&self) -> TransferAdvancedSettings {
+        let state = self.state.read().await;
+        TransferAdvancedSettings {
+            upload_concurrency: state.upload_concurrency,
+            download_concurrency: state.download_concurrency,
+            default_split_part_mib: state.default_split_part_mib,
+            auto_split_threshold_mib: state.auto_split_threshold_mib,
+        }
+    }
+
+    pub async fn download_behavior(&self) -> DownloadBehaviorSettings {
+        let state = self.state.read().await;
+        DownloadBehaviorSettings {
+            conflict_strategy: state.download_conflict_strategy,
+            open_folder_after_download: state.open_folder_after_download,
+            verify_hash_after_download: state.verify_hash_after_download,
+            keep_failed_part_days: state.keep_failed_part_days,
+        }
+    }
+
+    pub async fn bandwidth(&self) -> BandwidthSettings {
+        let state = self.state.read().await;
+        BandwidthSettings {
+            global_kbps: state.global_bandwidth_limit_kbps,
+            per_task_kbps: state.per_task_bandwidth_limit_kbps,
+            mode: state.bandwidth_mode,
+        }
+    }
+
+    pub async fn notifications(&self) -> NotificationSettings {
+        let state = self.state.read().await;
+        NotificationSettings {
+            notify_on_complete: state.notify_on_complete,
+            notify_sound: state.notify_sound,
+            tray_badge: state.tray_badge,
+        }
+    }
+
+    pub async fn link_defaults(&self) -> LinkDefaults {
+        let state = self.state.read().await;
+        LinkDefaults {
+            kind: state.link_default_kind,
+            expire_days: state.link_default_expire_days,
+            require_password: state.link_default_require_password,
+        }
+    }
+
+    pub async fn security(&self) -> SecuritySettings {
+        let state = self.state.read().await;
+        SecuritySettings {
+            idle_auto_logout_minutes: state.idle_auto_logout_minutes,
+        }
+    }
+
+    pub async fn history_policy(&self) -> HistoryPolicy {
+        let state = self.state.read().await;
+        HistoryPolicy {
+            keep_days: state.download_history_keep_days,
+            keep_count: state.download_history_keep_count,
         }
     }
 
@@ -281,6 +615,171 @@ impl SettingsStore {
         self.persist().await
     }
 
+    pub async fn update_appearance(
+        &self,
+        language: InterfaceLanguage,
+        reduce_motion: bool,
+        density: UiDensity,
+    ) -> Result<(), AppError> {
+        {
+            let mut state = self.state.write().await;
+            state.language = language;
+            state.reduce_motion = reduce_motion;
+            state.density = density;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_general(
+        &self,
+        launch_at_login: bool,
+        close_to_tray: bool,
+        minimize_to_tray: bool,
+        confirm_quit_with_transfers: bool,
+    ) -> Result<(), AppError> {
+        {
+            let mut state = self.state.write().await;
+            state.launch_at_login = launch_at_login;
+            state.close_to_tray = close_to_tray;
+            state.minimize_to_tray = minimize_to_tray;
+            state.confirm_quit_with_transfers = confirm_quit_with_transfers;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_transfer_advanced(
+        &self,
+        upload_concurrency: u32,
+        download_concurrency: u32,
+        default_split_part_mib: u32,
+        auto_split_threshold_mib: u32,
+    ) -> Result<(), AppError> {
+        if !(1..=16).contains(&upload_concurrency) {
+            return Err(AppError::InvalidInput("upload_concurrency"));
+        }
+        if !(1..=16).contains(&download_concurrency) {
+            return Err(AppError::InvalidInput("download_concurrency"));
+        }
+        if !(1..=1024).contains(&default_split_part_mib) {
+            return Err(AppError::InvalidInput("default_split_part_mib"));
+        }
+        if !(16..=4096).contains(&auto_split_threshold_mib) {
+            return Err(AppError::InvalidInput("auto_split_threshold_mib"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.upload_concurrency = upload_concurrency;
+            state.download_concurrency = download_concurrency;
+            state.default_split_part_mib = default_split_part_mib;
+            state.auto_split_threshold_mib = auto_split_threshold_mib;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_download_behavior(
+        &self,
+        conflict_strategy: DownloadConflictStrategy,
+        open_folder_after_download: bool,
+        verify_hash_after_download: bool,
+        keep_failed_part_days: u32,
+    ) -> Result<(), AppError> {
+        if keep_failed_part_days > 30 {
+            return Err(AppError::InvalidInput("keep_failed_part_days"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.download_conflict_strategy = conflict_strategy;
+            state.open_folder_after_download = open_folder_after_download;
+            state.verify_hash_after_download = verify_hash_after_download;
+            state.keep_failed_part_days = keep_failed_part_days;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_bandwidth(
+        &self,
+        global_kbps: u32,
+        per_task_kbps: u32,
+        mode: BandwidthMode,
+    ) -> Result<(), AppError> {
+        if global_kbps > 10_000_000 {
+            return Err(AppError::InvalidInput("global_bandwidth_limit_kbps"));
+        }
+        if per_task_kbps > 10_000_000 {
+            return Err(AppError::InvalidInput("per_task_bandwidth_limit_kbps"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.global_bandwidth_limit_kbps = global_kbps;
+            state.per_task_bandwidth_limit_kbps = per_task_kbps;
+            state.bandwidth_mode = mode;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_notifications(
+        &self,
+        notify_on_complete: bool,
+        notify_sound: bool,
+        tray_badge: bool,
+    ) -> Result<(), AppError> {
+        {
+            let mut state = self.state.write().await;
+            state.notify_on_complete = notify_on_complete;
+            state.notify_sound = notify_sound;
+            state.tray_badge = tray_badge;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_link_defaults(
+        &self,
+        kind: LinkDefaultKind,
+        expire_days: u32,
+        require_password: bool,
+    ) -> Result<(), AppError> {
+        if expire_days > 365 {
+            return Err(AppError::InvalidInput("link_default_expire_days"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.link_default_kind = kind;
+            state.link_default_expire_days = expire_days;
+            state.link_default_require_password = require_password;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_security(&self, idle_auto_logout_minutes: u32) -> Result<(), AppError> {
+        if idle_auto_logout_minutes > 1440 {
+            return Err(AppError::InvalidInput("idle_auto_logout_minutes"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.idle_auto_logout_minutes = idle_auto_logout_minutes;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_history_policy(
+        &self,
+        keep_days: u32,
+        keep_count: u32,
+    ) -> Result<(), AppError> {
+        if keep_days > 3650 {
+            return Err(AppError::InvalidInput("download_history_keep_days"));
+        }
+        if keep_count > 100_000 {
+            return Err(AppError::InvalidInput("download_history_keep_count"));
+        }
+        {
+            let mut state = self.state.write().await;
+            state.download_history_keep_days = keep_days;
+            state.download_history_keep_count = keep_count;
+        }
+        self.persist().await
+    }
+
     async fn persist(&self) -> Result<(), AppError> {
         let payload = serde_json::to_vec_pretty(&*self.state.read().await)
             .map_err(|_| AppError::LocalData)?;
@@ -305,7 +804,10 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{CacheMode, SettingsDefaults, SettingsStore};
+    use super::{
+        BandwidthMode, CacheMode, DownloadConflictStrategy, InterfaceLanguage, LinkDefaultKind,
+        SettingsDefaults, SettingsStore, UiDensity,
+    };
 
     fn defaults(directory: &std::path::Path) -> SettingsDefaults {
         SettingsDefaults {
@@ -365,7 +867,6 @@ mod tests {
 
     #[tokio::test]
     async fn persists_validated_download_preferences() {
-        // Given
         let directory =
             std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
         let custom_download_directory = directory.join("Koofr downloads");
@@ -374,14 +875,12 @@ mod tests {
         let path = directory.join("settings.json");
         let store = SettingsStore::load(path.clone(), defaults(&directory));
 
-        // When
         store
             .update_download(custom_download_directory.clone(), false)
             .await
             .expect("save download settings");
         let reloaded = SettingsStore::load(path, defaults(&directory));
 
-        // Then
         assert_eq!(
             reloaded.download_policy().await,
             (custom_download_directory, false)
@@ -391,7 +890,6 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_a_download_destination_that_is_not_a_directory() {
-        // Given
         let directory =
             std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).expect("create settings directory");
@@ -399,10 +897,8 @@ mod tests {
         std::fs::write(&file_path, b"not a directory").expect("create test file");
         let store = SettingsStore::load(directory.join("settings.json"), defaults(&directory));
 
-        // When
         let result = store.update_download(file_path, true).await;
 
-        // Then
         assert!(result.is_err());
         std::fs::remove_dir_all(directory).expect("remove settings directory");
     }
@@ -450,6 +946,152 @@ mod tests {
 
         assert_eq!(store.initial_cache_directory(), &directory.join("Cache"));
         assert_eq!(store.log_policy().await.0, directory.join("Logs"));
+        std::fs::remove_dir_all(directory).expect("remove settings directory");
+    }
+
+    #[tokio::test]
+    async fn persists_appearance_general_and_transfer_advanced_settings() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("settings.json");
+        let store = SettingsStore::load(path.clone(), defaults(&directory));
+
+        store
+            .update_appearance(InterfaceLanguage::ZhCn, true, UiDensity::Compact)
+            .await
+            .expect("save appearance");
+        store
+            .update_general(true, false, true, false)
+            .await
+            .expect("save general");
+        store
+            .update_transfer_advanced(4, 6, 128, 1024)
+            .await
+            .expect("save transfer advanced");
+
+        let reloaded = SettingsStore::load(path, defaults(&directory));
+        let appearance = reloaded.appearance().await;
+        assert_eq!(appearance.language, InterfaceLanguage::ZhCn);
+        assert!(appearance.reduce_motion);
+        assert_eq!(appearance.density, UiDensity::Compact);
+        let general = reloaded.general().await;
+        assert!(general.launch_at_login);
+        assert!(!general.close_to_tray);
+        assert!(general.minimize_to_tray);
+        assert!(!general.confirm_quit_with_transfers);
+        let advanced = reloaded.transfer_advanced().await;
+        assert_eq!(advanced.upload_concurrency, 4);
+        assert_eq!(advanced.download_concurrency, 6);
+        assert_eq!(advanced.default_split_part_mib, 128);
+        assert_eq!(advanced.auto_split_threshold_mib, 1024);
+
+        std::fs::remove_dir_all(directory).expect("remove settings directory");
+    }
+
+    #[tokio::test]
+    async fn rejects_out_of_range_transfer_advanced_settings() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
+        let store = SettingsStore::load(directory.join("settings.json"), defaults(&directory));
+
+        assert!(store.update_transfer_advanced(0, 1, 64, 512).await.is_err());
+        assert!(
+            store
+                .update_transfer_advanced(1, 100, 64, 512)
+                .await
+                .is_err()
+        );
+        assert!(store.update_transfer_advanced(1, 1, 0, 512).await.is_err());
+        assert!(store.update_transfer_advanced(1, 1, 64, 8).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn persists_all_new_categories() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("settings.json");
+        let store = SettingsStore::load(path.clone(), defaults(&directory));
+
+        store
+            .update_download_behavior(DownloadConflictStrategy::Rename, true, false, 7)
+            .await
+            .expect("save download behavior");
+        store
+            .update_bandwidth(2048, 512, BandwidthMode::Limited)
+            .await
+            .expect("save bandwidth");
+        store
+            .update_notifications(false, true, false)
+            .await
+            .expect("save notifications");
+        store
+            .update_link_defaults(LinkDefaultKind::Upload, 30, true)
+            .await
+            .expect("save link defaults");
+        store.update_security(15).await.expect("save security");
+        store
+            .update_history_policy(60, 200)
+            .await
+            .expect("save history policy");
+
+        let reloaded = SettingsStore::load(path, defaults(&directory));
+        let behavior = reloaded.download_behavior().await;
+        assert_eq!(behavior.conflict_strategy, DownloadConflictStrategy::Rename);
+        assert!(behavior.open_folder_after_download);
+        assert!(!behavior.verify_hash_after_download);
+        assert_eq!(behavior.keep_failed_part_days, 7);
+        let bandwidth = reloaded.bandwidth().await;
+        assert_eq!(bandwidth.global_kbps, 2048);
+        assert_eq!(bandwidth.per_task_kbps, 512);
+        assert_eq!(bandwidth.mode, BandwidthMode::Limited);
+        let notifications = reloaded.notifications().await;
+        assert!(!notifications.notify_on_complete);
+        assert!(notifications.notify_sound);
+        assert!(!notifications.tray_badge);
+        let links = reloaded.link_defaults().await;
+        assert_eq!(links.kind, LinkDefaultKind::Upload);
+        assert_eq!(links.expire_days, 30);
+        assert!(links.require_password);
+        let security = reloaded.security().await;
+        assert_eq!(security.idle_auto_logout_minutes, 15);
+        let history = reloaded.history_policy().await;
+        assert_eq!(history.keep_days, 60);
+        assert_eq!(history.keep_count, 200);
+
+        std::fs::remove_dir_all(directory).expect("remove settings directory");
+    }
+
+    #[tokio::test]
+    async fn migrates_legacy_overwrite_and_drops_removed_diagnostic_setting() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-settings-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create settings directory");
+        let path = directory.join("settings.json");
+        std::fs::write(
+            &path,
+            br#"{
+                "version": 1,
+                "cacheMode": "memory",
+                "cacheTtlMinutes": 15,
+                "rememberedEmail": null,
+                "downloadConflictStrategy": "overwrite",
+                "clipboardStripPaths": true
+            }"#,
+        )
+        .expect("write legacy settings");
+        let store = SettingsStore::load(path.clone(), defaults(&directory));
+
+        assert_eq!(
+            store.download_behavior().await.conflict_strategy,
+            DownloadConflictStrategy::Rename
+        );
+        store
+            .update_security(15)
+            .await
+            .expect("save migrated settings");
+        let payload = std::fs::read_to_string(path).expect("read migrated settings");
+        assert!(!payload.contains("overwrite"));
+        assert!(!payload.contains("clipboardStripPaths"));
         std::fs::remove_dir_all(directory).expect("remove settings directory");
     }
 }

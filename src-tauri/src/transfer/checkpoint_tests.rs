@@ -28,6 +28,8 @@ async fn persists_download_offsets_and_upload_restart_semantics() {
             expected_size: 128,
             remote_hash: "hash".to_owned(),
             remote_modified: 42,
+            resume_allowed: true,
+            retained_at: 0,
         }))
         .await
         .expect("save download checkpoint");

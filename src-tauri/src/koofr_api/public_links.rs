@@ -34,6 +34,8 @@ pub struct PublicLink {
     pub short_url: String,
     pub has_password: bool,
     pub kind: PublicLinkKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +52,8 @@ struct RemotePublicLink {
     short_url: String,
     #[serde(default)]
     has_password: bool,
+    #[serde(default)]
+    password: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +85,7 @@ impl RemotePublicLink {
             short_url: self.short_url,
             has_password: self.has_password,
             kind,
+            generated_password: self.password,
         }
     }
 }
@@ -118,6 +123,12 @@ impl UploadList {
 #[derive(Serialize)]
 struct CreateLinkRequest<'a> {
     path: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkValidity {
+    valid_to: u64,
 }
 
 #[derive(Debug)]
@@ -191,6 +202,53 @@ impl KoofrApi {
             .await?;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::NO_CONTENT])?;
         Ok(())
+    }
+
+    pub async fn set_public_link_validity(
+        &self,
+        mount_id: &MountId,
+        link_id: &str,
+        kind: PublicLinkKind,
+        valid_to: u64,
+    ) -> Result<PublicLink, AppError> {
+        let link_id = PublicLinkId::parse(link_id)?;
+        let mut url = self.public_link_endpoint(mount_id, kind, &link_id)?;
+        url.path_segments_mut()
+            .map_err(|_| AppError::Initialization)?
+            .push("validity");
+        let response = self
+            .authenticated_request(Method::PUT, url)
+            .await?
+            .json(&LinkValidity { valid_to })
+            .send()
+            .await?;
+        let response = Self::expect_status(response, &[StatusCode::OK])?;
+        let payload: RemotePublicLink = Self::decode_json(response).await?;
+        Ok(payload.with_kind(kind))
+    }
+
+    pub async fn reset_public_link_password(
+        &self,
+        mount_id: &MountId,
+        link_id: &str,
+        kind: PublicLinkKind,
+    ) -> Result<PublicLink, AppError> {
+        let link_id = PublicLinkId::parse(link_id)?;
+        let mut url = self.public_link_endpoint(mount_id, kind, &link_id)?;
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| AppError::Initialization)?;
+            segments.push("password").push("reset");
+        }
+        let response = self
+            .authenticated_request(Method::PUT, url)
+            .await?
+            .send()
+            .await?;
+        let response = Self::expect_status(response, &[StatusCode::OK])?;
+        let payload: RemotePublicLink = Self::decode_json(response).await?;
+        Ok(payload.with_kind(kind))
     }
 
     async fn list_public_links_by_kind(

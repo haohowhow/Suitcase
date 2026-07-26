@@ -17,12 +17,22 @@ pub enum TransferDirection {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferState {
+    Queued,
     Running,
     Retrying,
     Paused,
     Completed,
     Cancelled,
     Failed,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IntegrityStatus {
+    #[default]
+    NotRequested,
+    Unavailable,
+    Verified,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +92,7 @@ pub struct TransferResult {
     pub transfer_id: String,
     pub bytes_transferred: u64,
     pub file: Option<FileInfo>,
+    pub integrity_status: IntegrityStatus,
 }
 
 pub fn emit_progress(
@@ -136,6 +147,11 @@ pub fn emit_terminal(
     );
     fields.insert("bytesTransferred".to_owned(), Value::from(bytes));
     let logger = &app.state::<AppState>().logger;
+    if let Ok(completed) = result {
+        app.state::<AppState>()
+            .download_history
+            .record_integrity(transfer_id, completed.integrity_status);
+    }
     match result {
         Ok(_) => logger.info("transfer", "transfer_completed", Some(transfer_id), fields),
         Err(AppError::TransferPaused) => {

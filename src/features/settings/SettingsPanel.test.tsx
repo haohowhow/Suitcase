@@ -24,6 +24,33 @@ const SETTINGS: AppSettings = {
   autoRetryNetworkErrors: false,
   networkRetryLimit: 8,
   networkRetryIntervalSeconds: 5,
+  language: 'system',
+  reduceMotion: false,
+  density: 'standard',
+  launchAtLogin: false,
+  closeToTray: true,
+  minimizeToTray: false,
+  confirmQuitWithTransfers: true,
+  uploadConcurrency: 2,
+  downloadConcurrency: 3,
+  defaultSplitPartMib: 64,
+  autoSplitThresholdMib: 512,
+  downloadConflictStrategy: 'rename',
+  openFolderAfterDownload: false,
+  verifyHashAfterDownload: true,
+  keepFailedPartDays: 3,
+  globalBandwidthLimitKbps: 0,
+  perTaskBandwidthLimitKbps: 0,
+  bandwidthMode: 'full',
+  notifyOnComplete: true,
+  notifySound: false,
+  trayBadge: true,
+  linkDefaultKind: 'download',
+  linkDefaultExpireDays: 0,
+  linkDefaultRequirePassword: false,
+  idleAutoLogoutMinutes: 0,
+  downloadHistoryKeepDays: 30,
+  downloadHistoryKeepCount: 500,
 }
 
 function renderSettings(overrides: Partial<Parameters<typeof SettingsPanel>[0]> = {}) {
@@ -54,6 +81,7 @@ describe('SettingsPanel download preferences', () => {
   it('saves a manually entered default directory', async () => {
     const user = userEvent.setup()
     const props = renderSettings()
+    await user.click(screen.getByRole('tab', { name: '下载' }))
     const input = screen.getByRole('textbox', { name: '默认下载位置' })
 
     await user.clear(input)
@@ -70,14 +98,17 @@ describe('SettingsPanel download preferences', () => {
       onBrowseDownloadDirectory: vi.fn(async () => 'D:\\Selected Downloads'),
       onDownloadSettingsChange,
     })
+    await user.click(screen.getByRole('tab', { name: '下载' }))
 
     await user.click(screen.getByRole('button', { name: '选择默认下载文件夹' }))
 
     expect(onDownloadSettingsChange).toHaveBeenCalledWith('D:\\Selected Downloads', true)
   })
 
-  it('associates a download path error with the path input', () => {
+  it('associates a download path error with the path input', async () => {
+    const user = userEvent.setup()
     renderSettings({ downloadError: '请选择一个已有的文件夹。' })
+    await user.click(screen.getByRole('tab', { name: '下载' }))
 
     const input = screen.getByRole('textbox', { name: '默认下载位置' })
     expect(input.getAttribute('aria-invalid')).toBe('true')
@@ -94,6 +125,7 @@ describe('SettingsPanel storage and diagnostics', () => {
       onBrowseWorkDirectory: vi.fn(async () => 'D:\\Koofr Work'),
       onWorkDirectoryChange,
     })
+    await user.click(screen.getByRole('tab', { name: '缓存' }))
 
     await user.click(screen.getByRole('button', { name: '选择应用工作目录' }))
     await user.click(screen.getByRole('button', { name: '保存工作目录' }))
@@ -108,6 +140,7 @@ describe('SettingsPanel storage and diagnostics', () => {
       onBrowseWorkDirectory: vi.fn(async () => 'D:\\Fresh Koofr Work'),
       onWorkDirectoryChange,
     })
+    await user.click(screen.getByRole('tab', { name: '缓存' }))
 
     await user.click(screen.getByRole('button', { name: '选择应用工作目录' }))
     await user.click(screen.getByRole('checkbox', { name: /移动当前工作目录/ }))
@@ -120,6 +153,7 @@ describe('SettingsPanel storage and diagnostics', () => {
     const user = userEvent.setup()
     const onLoggingSettingsChange = vi.fn()
     renderSettings({ onLoggingSettingsChange })
+    await user.click(screen.getByRole('tab', { name: '诊断日志' }))
 
     await user.selectOptions(screen.getByRole('combobox', { name: '记录级别' }), 'debug')
     await user.selectOptions(screen.getByRole('combobox', { name: '保留时间' }), '30')
@@ -139,6 +173,7 @@ describe('SettingsPanel transfer recovery', () => {
     const user = userEvent.setup()
     const onTransferSettingsChange = vi.fn()
     renderSettings({ onTransferSettingsChange })
+    await user.click(screen.getByRole('tab', { name: '传输' }))
 
     await user.click(screen.getByRole('switch', { name: '遇到网络错误时自动继续' }))
 
@@ -147,5 +182,72 @@ describe('SettingsPanel transfer recovery', () => {
       networkRetryLimit: 8,
       networkRetryIntervalSeconds: 5,
     })
+  })
+})
+
+describe('SettingsPanel new sections', () => {
+  it('changes appearance density', async () => {
+    const user = userEvent.setup()
+    const onAppearanceChange = vi.fn()
+    renderSettings({ onAppearanceChange })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /界面密度/ }), 'compact')
+
+    expect(onAppearanceChange).toHaveBeenCalledWith({
+      language: 'system',
+      reduceMotion: false,
+      density: 'compact',
+    })
+  })
+
+  it('toggles launch at login under general', async () => {
+    const user = userEvent.setup()
+    const onGeneralChange = vi.fn()
+    renderSettings({ onGeneralChange })
+    await user.click(screen.getByRole('tab', { name: '通用' }))
+
+    await user.click(screen.getByRole('switch', { name: '开机启动 Koofr GUI' }))
+
+    expect(onGeneralChange).toHaveBeenCalledWith({
+      launchAtLogin: true,
+      closeToTray: true,
+      minimizeToTray: false,
+      confirmQuitWithTransfers: true,
+    })
+  })
+
+  it('updates transfer advanced concurrency', async () => {
+    const user = userEvent.setup()
+    const onTransferAdvancedChange = vi.fn()
+    renderSettings({ onTransferAdvancedChange })
+    await user.click(screen.getByRole('tab', { name: '传输' }))
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /并发下载任务数/ }),
+      '8',
+    )
+
+    expect(onTransferAdvancedChange).toHaveBeenCalledWith({
+      uploadConcurrency: 2,
+      downloadConcurrency: 8,
+      defaultSplitPartMib: 64,
+      autoSplitThresholdMib: 512,
+    })
+  })
+
+  it('shows version info in the about section', async () => {
+    const user = userEvent.setup()
+    renderSettings({
+      versionInfo: {
+        version: '2.1.0',
+        homepageUrl: 'https://example.test/home',
+        releasesUrl: 'https://example.test/releases',
+        issuesUrl: 'https://example.test/issues',
+        license: 'MIT',
+      },
+    })
+    await user.click(screen.getByRole('tab', { name: '关于' }))
+    expect(screen.getByText('2.1.0')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'https://example.test/home' })).toBeTruthy()
   })
 })

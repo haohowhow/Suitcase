@@ -27,6 +27,8 @@ pub enum AppError {
     TransferPaused,
     #[error("the remote transfer ended before all bytes were received")]
     IncompleteTransfer,
+    #[error("download integrity verification failed")]
+    Integrity,
     #[error("the transfer identifier is already active")]
     DuplicateTransfer,
     #[error("remote service returned HTTP {status}")]
@@ -92,6 +94,7 @@ impl AppError {
             Self::Cancelled => "cancelled",
             Self::TransferPaused => "transfer_paused",
             Self::IncompleteTransfer => "incomplete_transfer",
+            Self::Integrity => "integrity_error",
             Self::DuplicateTransfer => "duplicate_transfer",
             Self::RemoteStatus { .. } => "remote_error",
             Self::Network(_) => "network_error",
@@ -198,6 +201,7 @@ impl From<AppError> for CommandError {
             AppError::IncompleteTransfer => {
                 Self::new("incomplete_transfer", "传输未完整结束，请重试。")
             }
+            AppError::Integrity => Self::new("integrity_error", "下载内容校验失败，文件未发布。"),
             AppError::RemoteStatus { .. } => {
                 Self::new("remote_error", "Koofr 暂时无法完成此操作。")
             }

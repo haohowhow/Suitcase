@@ -1,6 +1,8 @@
 mod checkpoint;
 mod checkpoint_snapshot;
 mod download;
+mod integrity;
+mod limiter;
 mod manager;
 mod model;
 mod part;
@@ -17,10 +19,12 @@ mod vault;
 
 pub use checkpoint::{RecoveryKind, ResumableTransfer, TransferCheckpointStore};
 pub use download::{download, resume_download};
+pub use integrity::verify_file_integrity;
+pub use limiter::BandwidthLimiter;
 pub use manager::TransferManager;
 pub use model::{
-    NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferResult, TransferState,
-    emit_progress, emit_terminal, normalize_interruption, should_retry_network,
+    IntegrityStatus, NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferResult,
+    TransferState, emit_progress, emit_terminal, normalize_interruption, should_retry_network,
     wait_for_network_retry,
 };
 pub use split_upload::{

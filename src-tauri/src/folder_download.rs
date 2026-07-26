@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
@@ -105,15 +105,51 @@ pub async fn download_folder(
     request: FolderDownloadRequest,
 ) -> Result<TransferResult, AppError> {
     let cancel = context.manager.register(&request.transfer_id)?;
+    emit_progress(
+        &context.app,
+        &request.transfer_id,
+        TransferDirection::Download,
+        TransferState::Queued,
+        0,
+        None,
+    );
+    let _permit = match context
+        .manager
+        .acquire(TransferDirection::Download, &cancel)
+        .await
+    {
+        Ok(permit) => permit,
+        Err(error) => {
+            context.manager.finish(&request.transfer_id);
+            let result = Err(error);
+            emit_terminal(
+                &context.app,
+                &request.transfer_id,
+                TransferDirection::Download,
+                0,
+                &result,
+            );
+            return result;
+        }
+    };
     let progress = Arc::new(AtomicU64::new(0));
     let app = context.app.clone();
     let transfer_id = request.transfer_id.clone();
     let progress_for_events = progress.clone();
+    let verify_hash = context
+        .app
+        .state::<crate::AppState>()
+        .settings
+        .download_behavior()
+        .await
+        .verify_hash_after_download;
     let mut executor = FolderExecutor {
         api: context.api,
+        manager: context.manager,
         mount_id: &request.mount_id,
         target: &request.target,
         cancel: &cancel,
+        verify_hash,
         progress: move |transferred, total| {
             progress_for_events.store(transferred, Ordering::Relaxed);
             emit_progress(
@@ -176,13 +212,16 @@ struct FolderManifestFile {
     remote_path: RemotePath,
     relative_path: PathBuf,
     size: u64,
+    hash: String,
 }
 
 struct FolderExecutor<'a, F> {
     api: &'a KoofrApi,
+    manager: &'a TransferManager,
     mount_id: &'a MountId,
     target: &'a FolderDownloadTarget,
     cancel: &'a CancellationToken,
+    verify_hash: bool,
     progress: F,
 }
 
@@ -218,13 +257,15 @@ where
             self.ensure_active()?;
             tokio::fs::create_dir_all(staging.join(directory)).await?;
         }
-        let transferred = self.download_files(&manifest, staging).await?;
+        let (transferred, integrity_status) =
+            self.download_files(&manifest, staging, transfer_id).await?;
         self.ensure_active()?;
         tokio::fs::rename(staging, self.target.as_path()).await?;
         Ok(TransferResult {
             transfer_id: transfer_id.to_owned(),
             bytes_transferred: transferred,
             file: None,
+            integrity_status,
         })
     }
 
@@ -267,6 +308,7 @@ where
                             remote_path,
                             relative_path,
                             size,
+                            hash: entry.hash,
                         });
                     }
                     _ => return Err(AppError::InvalidInput("remote entry type")),
@@ -284,8 +326,14 @@ where
         &mut self,
         manifest: &FolderManifest,
         staging: &Path,
-    ) -> Result<u64, AppError> {
+        transfer_id: &str,
+    ) -> Result<(u64, crate::transfer::IntegrityStatus), AppError> {
         let mut transferred = 0_u64;
+        let mut integrity_status = if self.verify_hash {
+            crate::transfer::IntegrityStatus::Verified
+        } else {
+            crate::transfer::IntegrityStatus::NotRequested
+        };
         for file in &manifest.files {
             self.ensure_active()?;
             let response = tokio::select! {
@@ -302,7 +350,7 @@ where
             let mut output = tokio::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open(output_path)
+                .open(&output_path)
                 .await?;
             let mut stream = response.bytes_stream();
             let file_start = transferred;
@@ -313,6 +361,9 @@ where
                 };
                 match next {
                     Some(Ok(chunk)) => {
+                        self.manager
+                            .throttle(transfer_id, chunk.len(), self.cancel)
+                            .await?;
                         output.write_all(&chunk).await?;
                         transferred = transferred
                             .checked_add(chunk.len() as u64)
@@ -328,8 +379,19 @@ where
             }
             output.flush().await?;
             output.sync_all().await?;
+            drop(output);
+            let file_status = crate::transfer::verify_file_integrity(
+                &output_path,
+                &file.hash,
+                self.cancel,
+                self.verify_hash,
+            )
+            .await?;
+            if file_status == crate::transfer::IntegrityStatus::Unavailable {
+                integrity_status = file_status;
+            }
         }
-        Ok(transferred)
+        Ok((transferred, integrity_status))
     }
 
     fn ensure_active(&self) -> Result<(), AppError> {

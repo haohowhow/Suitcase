@@ -10,11 +10,21 @@ interface CreateShareLinkDialogProps {
   readonly mountId: string
   readonly file: RemoteFile
   readonly onClose: () => void
+  readonly defaultKind?: PublicLinkKind
+  readonly expireDays?: number
+  readonly requirePassword?: boolean
 }
 
-export function CreateShareLinkDialog({ mountId, file, onClose }: CreateShareLinkDialogProps) {
+export function CreateShareLinkDialog({
+  mountId,
+  file,
+  onClose,
+  defaultKind = 'download',
+  expireDays = 0,
+  requirePassword = false,
+}: CreateShareLinkDialogProps) {
   const directory = isDirectory(file)
-  const [kind, setKind] = useState<PublicLinkKind>('download')
+  const [kind, setKind] = useState<PublicLinkKind>(directory ? defaultKind : 'download')
   const [created, setCreated] = useState<PublicLink | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -24,7 +34,11 @@ export function CreateShareLinkDialog({ mountId, file, onClose }: CreateShareLin
     setBusy(true)
     setError('')
     try {
-      setCreated(await publicLinks.create(mountId, file.path, kind))
+      setCreated(await publicLinks.create(mountId, file.path, {
+        kind: directory ? kind : 'download',
+        expireDays,
+        requirePassword,
+      }))
     } catch (createError) {
       setError(commandErrorMessage(createError, '无法为所选项目创建分享链接。'))
     } finally {
@@ -76,6 +90,14 @@ export function CreateShareLinkDialog({ mountId, file, onClose }: CreateShareLin
             <strong>链接已创建</strong>
             <small>{created.kind === 'upload' ? '其他人可以向此文件夹上传文件。' : '其他人可以通过此链接下载所选项目。'}</small>
             <input aria-label="分享链接地址" value={created.shortUrl || created.url} readOnly onFocus={(event) => event.currentTarget.select()} />
+            {created.generatedPassword ? (
+              <input
+                aria-label="一次性生成的分享密码"
+                value={created.generatedPassword}
+                readOnly
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            ) : null}
             <button className="secondary-button" type="button" onClick={() => void copyLink()}>
               <Copy aria-hidden="true" />{copied ? '已复制' : '复制链接'}
             </button>

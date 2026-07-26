@@ -20,6 +20,7 @@ pub struct LocalFileSelection {
     pub grant_id: String,
     pub file_name: String,
     pub local_path: Option<String>,
+    pub file_size: Option<u64>,
 }
 
 #[derive(Default)]
@@ -58,6 +59,14 @@ impl LocalAccessManager {
             LocalPathGrant::Download(_) | LocalPathGrant::DownloadDirectory(_)
         )
         .then(|| path.to_string_lossy().into_owned());
+        let file_size = matches!(&grant, LocalPathGrant::Upload(_))
+            .then(|| {
+                std::fs::metadata(path)
+                    .ok()
+                    .filter(|metadata| metadata.is_file())
+                    .map(|metadata| metadata.len())
+            })
+            .flatten();
         let mut grants = self.grants.lock().expect("local path grant store poisoned");
         if grants.len() >= MAX_PENDING_GRANTS {
             grants.clear();
@@ -67,6 +76,7 @@ impl LocalAccessManager {
             grant_id,
             file_name,
             local_path,
+            file_size,
         })
     }
 

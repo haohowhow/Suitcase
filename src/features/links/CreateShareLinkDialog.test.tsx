@@ -41,7 +41,11 @@ describe('CreateShareLinkDialog', () => {
 
     await user.click(screen.getByRole('button', { name: '创建链接' }))
 
-    expect(publicLinks.create).toHaveBeenCalledWith('mount_1', FILE.path, 'download')
+    expect(publicLinks.create).toHaveBeenCalledWith('mount_1', FILE.path, {
+      kind: 'download',
+      expireDays: 0,
+      requirePassword: false,
+    })
     expect((await screen.findByRole('textbox', { name: '分享链接地址' })).getAttribute('value'))
       .toBe(CREATED.shortUrl)
   })
@@ -55,6 +59,10 @@ describe('CreateShareLinkDialog', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: '分享方式' }), 'upload')
     await user.click(screen.getByRole('button', { name: '创建链接' }))
 
-    expect(publicLinks.create).toHaveBeenCalledWith('mount_1', folder.path, 'upload')
+    expect(publicLinks.create).toHaveBeenCalledWith('mount_1', folder.path, {
+      kind: 'upload',
+      expireDays: 0,
+      requirePassword: false,
+    })
   })
 })

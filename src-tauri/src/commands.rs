@@ -4,7 +4,7 @@ use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
 use crate::{
-    AppState,
+    AppState, autostart,
     download_history::{DownloadLocalKind, NewDownloadHistoryItem},
     error::{AppError, CommandError},
     file_ops::{
@@ -15,7 +15,10 @@ use crate::{
     local_access::LocalFileSelection,
     local_open,
     logging::LogConfig,
-    settings::{CacheMode, LogLevel},
+    settings::{
+        BandwidthMode, CacheMode, DownloadConflictStrategy, InterfaceLanguage, LinkDefaultKind,
+        LogLevel, UiDensity,
+    },
     transfer::{self, TransferResult},
 };
 
@@ -57,6 +60,52 @@ pub struct SettingsSnapshot {
     auto_retry_network_errors: bool,
     network_retry_limit: Option<u32>,
     network_retry_interval_seconds: u32,
+    // Appearance
+    language: InterfaceLanguage,
+    reduce_motion: bool,
+    density: UiDensity,
+    // General
+    launch_at_login: bool,
+    close_to_tray: bool,
+    minimize_to_tray: bool,
+    confirm_quit_with_transfers: bool,
+    // Transfer (advanced)
+    upload_concurrency: u32,
+    download_concurrency: u32,
+    default_split_part_mib: u32,
+    auto_split_threshold_mib: u32,
+    // Download behavior
+    download_conflict_strategy: DownloadConflictStrategy,
+    open_folder_after_download: bool,
+    verify_hash_after_download: bool,
+    keep_failed_part_days: u32,
+    // Bandwidth
+    global_bandwidth_limit_kbps: u32,
+    per_task_bandwidth_limit_kbps: u32,
+    bandwidth_mode: BandwidthMode,
+    // Notifications
+    notify_on_complete: bool,
+    notify_sound: bool,
+    tray_badge: bool,
+    // Link defaults
+    link_default_kind: LinkDefaultKind,
+    link_default_expire_days: u32,
+    link_default_require_password: bool,
+    // Security
+    idle_auto_logout_minutes: u32,
+    // History policy
+    download_history_keep_days: u32,
+    download_history_keep_count: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppVersionInfo {
+    version: &'static str,
+    homepage_url: &'static str,
+    releases_url: &'static str,
+    issues_url: &'static str,
+    license: &'static str,
 }
 
 #[tauri::command]
@@ -301,11 +350,31 @@ pub async fn prepare_download_location(
     state: State<'_, AppState>,
     suggested_name: String,
     download_directory: String,
+    conflict_strategy: Option<DownloadConflictStrategy>,
 ) -> CommandResult<LocalFileSelection> {
     let name = RemoteName::parse(suggested_name).map_err(CommandError::from)?;
-    let target = LocalDownloadPath::from_parent(PathBuf::from(download_directory), &name)
-        .await
-        .map_err(CommandError::from)?;
+    let parent = PathBuf::from(download_directory);
+    let strategy =
+        conflict_strategy.unwrap_or(state.settings.download_behavior().await.conflict_strategy);
+    let preferred = parent.join(safe_suggested_file_name(&name));
+    let exists = tokio::fs::try_exists(&preferred).await.unwrap_or(false);
+    let target = if exists {
+        match strategy {
+            DownloadConflictStrategy::Ask => {
+                return Err(CommandError::from(AppError::Conflict));
+            }
+            DownloadConflictStrategy::Skip => {
+                return Err(CommandError::from(AppError::Conflict));
+            }
+            DownloadConflictStrategy::Rename => LocalDownloadPath::from_parent(parent, &name)
+                .await
+                .map_err(CommandError::from)?,
+        }
+    } else {
+        LocalDownloadPath::from_parent(parent, &name)
+            .await
+            .map_err(CommandError::from)?
+    };
     state
         .local_access
         .grant_download(target.as_path().to_path_buf())
@@ -326,6 +395,15 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
     let (log_files, log_disk_bytes) = state.logger.stats().await;
     let network_retry = state.settings.network_retry_settings().await;
     let work_directory = state.work_directory.status();
+    let appearance = state.settings.appearance().await;
+    let general = state.settings.general().await;
+    let advanced = state.settings.transfer_advanced().await;
+    let behavior = state.settings.download_behavior().await;
+    let bandwidth = state.settings.bandwidth().await;
+    let notifications = state.settings.notifications().await;
+    let links = state.settings.link_defaults().await;
+    let security = state.settings.security().await;
+    let history = state.settings.history_policy().await;
     SettingsSnapshot {
         cache_mode,
         cache_ttl_minutes,
@@ -351,6 +429,33 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
         auto_retry_network_errors: network_retry.enabled,
         network_retry_limit: network_retry.max_retries,
         network_retry_interval_seconds: network_retry.interval_seconds,
+        language: appearance.language,
+        reduce_motion: appearance.reduce_motion,
+        density: appearance.density,
+        launch_at_login: general.launch_at_login && autostart::is_launch_at_login_enabled(),
+        close_to_tray: general.close_to_tray,
+        minimize_to_tray: general.minimize_to_tray,
+        confirm_quit_with_transfers: general.confirm_quit_with_transfers,
+        upload_concurrency: advanced.upload_concurrency,
+        download_concurrency: advanced.download_concurrency,
+        default_split_part_mib: advanced.default_split_part_mib,
+        auto_split_threshold_mib: advanced.auto_split_threshold_mib,
+        download_conflict_strategy: behavior.conflict_strategy,
+        open_folder_after_download: behavior.open_folder_after_download,
+        verify_hash_after_download: behavior.verify_hash_after_download,
+        keep_failed_part_days: behavior.keep_failed_part_days,
+        global_bandwidth_limit_kbps: bandwidth.global_kbps,
+        per_task_bandwidth_limit_kbps: bandwidth.per_task_kbps,
+        bandwidth_mode: bandwidth.mode,
+        notify_on_complete: notifications.notify_on_complete,
+        notify_sound: notifications.notify_sound,
+        tray_badge: notifications.tray_badge,
+        link_default_kind: links.kind,
+        link_default_expire_days: links.expire_days,
+        link_default_require_password: links.require_password,
+        idle_auto_logout_minutes: security.idle_auto_logout_minutes,
+        download_history_keep_days: history.keep_days,
+        download_history_keep_count: history.keep_count,
     }
 }
 
@@ -913,5 +1018,210 @@ pub fn pause_transfer(state: State<'_, AppState>, transfer_id: String) -> Comman
         .transfers
         .pause(&transfer_id)
         .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn update_appearance_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    language: InterfaceLanguage,
+    reduce_motion: bool,
+    density: UiDensity,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_appearance(language, reduce_motion, density)
+        .await
+        .map_err(CommandError::from)?;
+    let _ = crate::desktop::update_language(&app, language);
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_general_settings(
+    state: State<'_, AppState>,
+    launch_at_login: bool,
+    close_to_tray: bool,
+    minimize_to_tray: bool,
+    confirm_quit_with_transfers: bool,
+) -> CommandResult<SettingsSnapshot> {
+    let previous = state.settings.general().await.launch_at_login;
+    if previous != launch_at_login {
+        autostart::set_launch_at_login(launch_at_login).map_err(CommandError::from)?;
+    }
+    let update_result = state
+        .settings
+        .update_general(
+            launch_at_login,
+            close_to_tray,
+            minimize_to_tray,
+            confirm_quit_with_transfers,
+        )
+        .await;
+    if let Err(error) = update_result {
+        if previous != launch_at_login {
+            let _ = autostart::set_launch_at_login(previous);
+        }
+        return Err(CommandError::from(error));
+    }
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_transfer_advanced_settings(
+    state: State<'_, AppState>,
+    upload_concurrency: u32,
+    download_concurrency: u32,
+    default_split_part_mib: u32,
+    auto_split_threshold_mib: u32,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_transfer_advanced(
+            upload_concurrency,
+            download_concurrency,
+            default_split_part_mib,
+            auto_split_threshold_mib,
+        )
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .transfers
+        .set_concurrency(upload_concurrency as usize, download_concurrency as usize);
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_download_behavior_settings(
+    state: State<'_, AppState>,
+    conflict_strategy: DownloadConflictStrategy,
+    open_folder_after_download: bool,
+    verify_hash_after_download: bool,
+    keep_failed_part_days: u32,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_download_behavior(
+            conflict_strategy,
+            open_folder_after_download,
+            verify_hash_after_download,
+            keep_failed_part_days,
+        )
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .transfer_checkpoints
+        .cleanup_expired(keep_failed_part_days)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_bandwidth_settings(
+    state: State<'_, AppState>,
+    global_kbps: u32,
+    per_task_kbps: u32,
+    mode: BandwidthMode,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_bandwidth(global_kbps, per_task_kbps, mode)
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .transfers
+        .set_bandwidth(mode, global_kbps, per_task_kbps);
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_notification_settings(
+    state: State<'_, AppState>,
+    notify_on_complete: bool,
+    notify_sound: bool,
+    tray_badge: bool,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_notifications(notify_on_complete, notify_sound, tray_badge)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_link_defaults(
+    state: State<'_, AppState>,
+    kind: LinkDefaultKind,
+    expire_days: u32,
+    require_password: bool,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_link_defaults(kind, expire_days, require_password)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_security_settings(
+    state: State<'_, AppState>,
+    idle_auto_logout_minutes: u32,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_security(idle_auto_logout_minutes)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_history_policy(
+    state: State<'_, AppState>,
+    keep_days: u32,
+    keep_count: u32,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_history_policy(keep_days, keep_count)
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .download_history
+        .set_policy(keep_days, keep_count)
+        .map_err(CommandError::from)?;
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub fn app_version_info() -> AppVersionInfo {
+    AppVersionInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        homepage_url: "https://github.com/koofr/Koofr-GUI",
+        releases_url: "https://github.com/koofr/Koofr-GUI/releases",
+        issues_url: "https://github.com/koofr/Koofr-GUI/issues",
+        license: "MIT",
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExternalPage {
+    Homepage,
+    Releases,
+    Issues,
+}
+
+#[tauri::command]
+pub fn open_external_page(page: ExternalPage) -> CommandResult<()> {
+    let url = match page {
+        ExternalPage::Homepage => "https://github.com/koofr/Koofr-GUI",
+        ExternalPage::Releases => "https://github.com/koofr/Koofr-GUI/releases",
+        ExternalPage::Issues => "https://github.com/koofr/Koofr-GUI/issues",
+    };
+    local_open::open_url(url).map_err(CommandError::from)
 }
 use std::path::PathBuf;

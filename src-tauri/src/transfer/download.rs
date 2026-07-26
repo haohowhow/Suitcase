@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use futures_util::StreamExt;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
@@ -51,6 +51,8 @@ pub async fn download(
         expected_size: 0,
         remote_hash: String::new(),
         remote_modified: 0,
+        resume_allowed: true,
+        retained_at: 0,
     };
     checkpoints
         .insert(TransferCheckpoint::Download(checkpoint.clone()))
@@ -83,11 +85,52 @@ async fn run_download(
     let transfer_id = checkpoint.transfer_id.clone();
     validate_checkpoint_paths(&checkpoint).await?;
     let cancel = manager.register(&transfer_id)?;
-    let progress = Arc::new(AtomicU64::new(partial_length(&checkpoint).await?));
+    let initial_progress = partial_length(&checkpoint).await?;
+    emit_progress(
+        &app,
+        &transfer_id,
+        TransferDirection::Download,
+        TransferState::Queued,
+        initial_progress,
+        Some(checkpoint.expected_size),
+    );
+    let _permit = match manager.acquire(TransferDirection::Download, &cancel).await {
+        Ok(permit) => permit,
+        Err(error) => {
+            manager.finish(&transfer_id);
+            let result = Err(error);
+            emit_terminal(
+                &app,
+                &transfer_id,
+                TransferDirection::Download,
+                initial_progress,
+                &result,
+            );
+            return result;
+        }
+    };
+    checkpoints.mark_active(&transfer_id).await?;
+    let progress = Arc::new(AtomicU64::new(initial_progress));
+    let verify_hash = app
+        .state::<crate::AppState>()
+        .settings
+        .download_behavior()
+        .await
+        .verify_hash_after_download;
     let mut retries_completed = 0_u32;
     let result = loop {
         let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
-            Ok(()) => download_inner(&app, api, &cancel, &checkpoint, progress.clone()).await,
+            Ok(()) => {
+                download_inner(
+                    &app,
+                    api,
+                    &cancel,
+                    &checkpoint,
+                    progress.clone(),
+                    verify_hash,
+                )
+                .await
+            }
             Err(error) => Err(error),
         };
         if !should_retry_network(&result, retry_policy, retries_completed) {
@@ -116,7 +159,24 @@ async fn run_download(
             checkpoints.remove(&transfer_id).await?;
             Ok(result)
         }
-        other => normalize_interruption(other, paused),
+        other => {
+            let normalized = normalize_interruption(other, paused);
+            match &normalized {
+                Err(AppError::Cancelled) => {
+                    let _ = tokio::fs::remove_file(&checkpoint.partial_path).await;
+                    let _ = checkpoints.remove(&transfer_id).await;
+                }
+                Err(AppError::TransferPaused) => {}
+                Err(AppError::Integrity) => {
+                    checkpoints.mark_failed(&transfer_id, false).await?;
+                }
+                Err(_) => {
+                    checkpoints.mark_failed(&transfer_id, true).await?;
+                }
+                Ok(_) => {}
+            }
+            normalized
+        }
     };
     emit_terminal(
         &app,
@@ -161,6 +221,7 @@ async fn download_inner(
     cancel: &CancellationToken,
     checkpoint: &DownloadCheckpoint,
     progress: Arc<AtomicU64>,
+    verify_hash: bool,
 ) -> Result<TransferResult, AppError> {
     let mount_id = MountId::parse(checkpoint.mount_id.clone())?;
     let remote_path = RemotePath::parse(checkpoint.remote_path.clone())?;
@@ -169,11 +230,19 @@ async fn download_inner(
         let output = open_partial(checkpoint, ResponseMode::Append).await?;
         output.sync_all().await?;
         drop(output);
+        let integrity_status = super::verify_file_integrity(
+            &checkpoint.partial_path,
+            &checkpoint.remote_hash,
+            cancel,
+            verify_hash,
+        )
+        .await?;
         tokio::fs::rename(&checkpoint.partial_path, &checkpoint.local_path).await?;
         return Ok(TransferResult {
             transfer_id: checkpoint.transfer_id.clone(),
             bytes_transferred: offset,
             file: None,
+            integrity_status,
         });
     }
     let response = tokio::select! {
@@ -210,6 +279,10 @@ async fn download_inner(
         };
         match next {
             Some(Ok(chunk)) => {
+                app.state::<crate::AppState>()
+                    .transfers
+                    .throttle(&checkpoint.transfer_id, chunk.len(), cancel)
+                    .await?;
                 output.write_all(&chunk).await?;
                 transferred = transferred.saturating_add(chunk.len() as u64);
                 progress.store(transferred, Ordering::Relaxed);
@@ -232,11 +305,19 @@ async fn download_inner(
     output.flush().await?;
     output.sync_all().await?;
     drop(output);
+    let integrity_status = super::verify_file_integrity(
+        &checkpoint.partial_path,
+        &checkpoint.remote_hash,
+        cancel,
+        verify_hash,
+    )
+    .await?;
     tokio::fs::rename(&checkpoint.partial_path, &checkpoint.local_path).await?;
     Ok(TransferResult {
         transfer_id: checkpoint.transfer_id.clone(),
         bytes_transferred: transferred,
         file: None,
+        integrity_status,
     })
 }
 
