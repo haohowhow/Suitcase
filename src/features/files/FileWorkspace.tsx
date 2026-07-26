@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderInput,
   LayoutList,
   Palette,
   Pencil,
@@ -46,6 +47,7 @@ interface FileWorkspaceProps {
   onPlay: (file: RemoteFile) => void
   onShare: (file: RemoteFile) => void
   onRename: (file: RemoteFile) => void
+  onMove: (files: RemoteFile[]) => void
   onDelete: (files: RemoteFile[]) => void
 }
 
@@ -80,6 +82,7 @@ export function FileWorkspace({
   onPlay,
   onShare,
   onRename,
+  onMove,
   onDelete,
 }: FileWorkspaceProps) {
   const [query, setQuery] = useState('')
@@ -237,6 +240,9 @@ export function FileWorkspace({
           </button>
           <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onRename(singleSelection)}>
             <Pencil size={17} />重命名
+          </button>
+          <button type="button" onClick={() => onMove(selectedFiles)}>
+            <FolderInput size={17} />移动
           </button>
           <button className="selection-action--danger" type="button" onClick={() => onDelete(selectedFiles)}>
             <Trash2 size={17} />删除

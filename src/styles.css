@@ -1241,6 +1241,39 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .download-dialog__preference strong { color: #353a41; font-size: 12px; }
 .download-dialog__preference small { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
 
+.move-dialog__summary { padding: var(--space-3); border-radius: 9px; background: var(--surface-subtle); display: flex; align-items: center; gap: var(--space-3); }
+.move-dialog__icon { width: 40px; height: 40px; border-radius: 9px; display: grid; place-items: center; color: var(--accent-dark); background: var(--accent-soft-strong); flex: 0 0 auto; }
+.move-dialog__icon svg { width: 20px; height: 20px; }
+.move-dialog__summary > span:last-child { min-width: 0; display: grid; gap: var(--space-1); }
+.move-dialog__summary small { color: var(--muted); font-size: 11.5px; }
+.move-dialog__summary strong { color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.move-dialog__browser { margin-top: var(--space-3); border: 1px solid var(--border-strong); border-radius: 9px; overflow: hidden; }
+
+.move-dialog__nav { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-subtle); }
+
+.move-dialog__breadcrumbs { min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 13px; white-space: nowrap; }
+.move-dialog__breadcrumbs > span { color: #a2a6ad; }
+.move-dialog__breadcrumbs button { min-width: 0; max-width: 130px; padding: 3px 2px; border: 0; background: transparent; overflow: hidden; color: #555c65; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; font-size: 13px; }
+.move-dialog__breadcrumbs button:hover:not(:disabled) { color: var(--accent-dark); }
+.move-dialog__breadcrumbs button:disabled { color: #252a30; cursor: default; }
+
+.move-dialog__current { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.move-dialog__current strong { color: var(--text); font-weight: 560; }
+
+.move-dialog__status { padding: 32px 16px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 12.5px; }
+.move-dialog__status--error { color: var(--status-error); flex-direction: column; gap: 12px; }
+.move-dialog__status--muted { color: var(--muted); }
+
+.move-dialog__folder-list { max-height: 280px; overflow-y: auto; }
+.move-dialog__folder-row { width: 100%; padding: 11px 14px; border: 0; border-bottom: 1px solid var(--border); background: transparent; display: flex; align-items: center; gap: 12px; color: var(--text); font-size: 12.5px; cursor: pointer; text-align: left; transition: background-color .12s ease; }
+.move-dialog__folder-row:last-child { border-bottom: 0; }
+.move-dialog__folder-row:hover:not(:disabled) { background: var(--surface-subtle); }
+.move-dialog__folder-row:disabled { cursor: default; }
+.move-dialog__folder-row > svg:first-child { color: var(--accent-dark); flex: 0 0 auto; width: 18px; height: 18px; }
+.move-dialog__folder-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-dialog__folder-row > svg:last-child { color: #a2a6ad; flex: 0 0 auto; width: 16px; height: 16px; }
+
 .settings-loading {
   min-height: 220px;
   display: flex;

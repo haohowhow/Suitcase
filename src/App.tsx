@@ -9,6 +9,7 @@ import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
 import { MediaPreviewModal } from './features/files/MediaPreviewModal'
+import { MoveDestinationDialog } from './features/files/MoveDestinationDialog'
 import { isDirectory } from './features/files/filePresentation'
 import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
 import { useKoofrWorkspace } from './features/files/useKoofrWorkspace'
@@ -50,7 +51,7 @@ import type {
 import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
 import type { VaultTransferSpec } from './types/vault'
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'share' | 'createFolder' | 'rename' | 'delete' | 'emptyTrash' | null
+type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
 interface PendingDownload {
@@ -1163,6 +1164,35 @@ function App() {
     }
   }
 
+  const openMove = (files: RemoteFile[]) => {
+    setPendingFiles(files)
+    setModalKind('move')
+  }
+
+  const executeMove = async (destinationMountId: string, destinationPath: string) => {
+    if (!workspace.activeMountId || pendingFiles.length === 0) return
+    setOperationBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        pendingFiles.map((file) =>
+          koofr.moveEntry(workspace.activeMountId, file.path, destinationMountId, destinationPath),
+        ),
+      )
+      const moved = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.filter((result) => result.status === 'rejected')
+      setModalKind(null)
+      if (failed.length === 0) {
+        showNotice(`已移动 ${moved} 个项目`)
+      } else {
+        const prefix = moved > 0 ? `已移动 ${moved} 个项目；` : ''
+        showNotice(`${prefix}${commandErrorMessage(failed[0]?.reason, '其余项目移动失败。')}`)
+      }
+    } finally {
+      await workspace.refresh()
+      setOperationBusy(false)
+    }
+  }
+
   const openLocatedFile = (file: LocatedFile) => {
     const segments = file.path.split('/').filter(Boolean)
     const targetPath = isDirectory(file)
@@ -1307,6 +1337,7 @@ function App() {
               onPlay={(file) => void handlePlay(file)}
               onShare={openShare}
               onRename={openRename}
+              onMove={openMove}
               onDelete={openDelete}
             />
           )}
@@ -1429,6 +1460,17 @@ function App() {
         >
           <p>删除后，所选文件和文件夹将从当前 Koofr 存储位置移除。此操作需要明确确认。</p>
         </Modal>
+      ) : null}
+
+      {authState === 'signedIn' && modalKind === 'move' && pendingFiles.length > 0 && workspace.activeMountId ? (
+        <MoveDestinationDialog
+          files={pendingFiles}
+          mountId={workspace.activeMountId}
+          mounts={workspace.mounts}
+          busy={operationBusy}
+          onClose={() => setModalKind(null)}
+          onConfirm={(mntId, path) => void executeMove(mntId, path)}
+        />
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'emptyTrash' ? (
