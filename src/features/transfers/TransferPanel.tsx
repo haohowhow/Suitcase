@@ -29,6 +29,7 @@ interface TransferPanelProps {
 }
 
 const stateLabels = {
+  queued: '排队中',
   running: '正在传输',
   retrying: '等待网络重试',
   paused: '已暂停',
@@ -246,7 +247,7 @@ export function TransferPanel({
 
   const selected = filteredItems.find((item) => item.id === selectedId) ?? null
   const runningCount = items.filter((item) => (
-    item.state === 'running' || item.state === 'retrying'
+    item.state === 'queued' || item.state === 'running' || item.state === 'retrying'
   )).length
   const finishedCount = items.filter((item) => (
     item.state === 'completed'
@@ -298,7 +299,8 @@ export function TransferPanel({
         {filteredItems.map((item) => {
           const percent = percentage(item)
           const recovery = item.recoveryKind ? recoveryActions[item.recoveryKind] : null
-          const active = item.state === 'running' || item.state === 'retrying'
+          const active =
+            item.state === 'queued' || item.state === 'running' || item.state === 'retrying'
           return (
             <div
               className={`transfer-item${selectedId === item.id ? ' transfer-item--selected' : ''}`}
@@ -409,6 +411,16 @@ export function TransferPanel({
             <div><span>开始时间</span><strong>{formatDate(selected.startedAt)}</strong></div>
             <div><span>完成时间</span><strong>{formatDate(selected.finishedAt)}</strong></div>
             <div><span>文件大小</span><strong>{formatBytes(selected.totalBytes ?? selected.bytesTransferred)}</strong></div>
+            <div>
+              <span>完整性校验</span>
+              <strong>
+                {selected.integrityStatus === 'verified'
+                  ? '已验证'
+                  : selected.integrityStatus === 'unavailable'
+                    ? '无法校验'
+                    : '未请求'}
+              </strong>
+            </div>
             <div><span>平均速度</span><strong><Gauge size={14} />{formatRate(averageBytesPerSecond(selected))}/s</strong></div>
           </div>
 
@@ -438,7 +450,9 @@ export function TransferPanel({
                 <Play size={15} />{recoveryActions[selected.recoveryKind].label}
               </button>
             ) : null}
-            {selected.state === 'running' || selected.state === 'retrying' ? (
+            {selected.state === 'queued'
+              || selected.state === 'running'
+              || selected.state === 'retrying' ? (
               <>
                 <button type="button" aria-label={`在详情中暂停 ${selected.name}`} onClick={() => onPause(selected.id)}>
                   <Pause size={15} />暂停

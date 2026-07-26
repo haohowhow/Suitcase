@@ -10,6 +10,7 @@ export interface CommandError {
     | 'cancelled'
     | 'transfer_paused'
     | 'incomplete_transfer'
+    | 'integrity_error'
     | 'remote_error'
     | 'network_error'
     | 'local_io_error'
@@ -39,6 +40,11 @@ export interface LoginBootstrap {
 
 export type CacheMode = 'off' | 'memory' | 'disk'
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
+export type InterfaceLanguage = 'system' | 'zhCn' | 'enUs'
+export type UiDensity = 'standard' | 'compact'
+export type DownloadConflictStrategy = 'ask' | 'skip' | 'rename'
+export type BandwidthMode = 'full' | 'limited' | 'idleFull'
+export type LinkDefaultKind = 'download' | 'upload'
 
 export interface AppSettings {
   readonly cacheMode: CacheMode
@@ -60,6 +66,41 @@ export interface AppSettings {
   readonly autoRetryNetworkErrors: boolean
   readonly networkRetryLimit: number | null
   readonly networkRetryIntervalSeconds: number
+  readonly language: InterfaceLanguage
+  readonly reduceMotion: boolean
+  readonly density: UiDensity
+  readonly launchAtLogin: boolean
+  readonly closeToTray: boolean
+  readonly minimizeToTray: boolean
+  readonly confirmQuitWithTransfers: boolean
+  readonly uploadConcurrency: number
+  readonly downloadConcurrency: number
+  readonly defaultSplitPartMib: number
+  readonly autoSplitThresholdMib: number
+  readonly downloadConflictStrategy: DownloadConflictStrategy
+  readonly openFolderAfterDownload: boolean
+  readonly verifyHashAfterDownload: boolean
+  readonly keepFailedPartDays: number
+  readonly globalBandwidthLimitKbps: number
+  readonly perTaskBandwidthLimitKbps: number
+  readonly bandwidthMode: BandwidthMode
+  readonly notifyOnComplete: boolean
+  readonly notifySound: boolean
+  readonly trayBadge: boolean
+  readonly linkDefaultKind: LinkDefaultKind
+  readonly linkDefaultExpireDays: number
+  readonly linkDefaultRequirePassword: boolean
+  readonly idleAutoLogoutMinutes: number
+  readonly downloadHistoryKeepDays: number
+  readonly downloadHistoryKeepCount: number
+}
+
+export interface AppVersionInfo {
+  readonly version: string
+  readonly homepageUrl: string
+  readonly releasesUrl: string
+  readonly issuesUrl: string
+  readonly license: string
 }
 
 export interface KoofrMount {
@@ -84,6 +125,13 @@ export interface PublicLink {
   readonly shortUrl: string
   readonly hasPassword: boolean
   readonly kind: PublicLinkKind
+  readonly generatedPassword?: string
+}
+
+export interface CreatePublicLinkOptions {
+  readonly kind: PublicLinkKind
+  readonly expireDays: number
+  readonly requirePassword: boolean
 }
 
 export interface RemoteFile {
@@ -124,7 +172,8 @@ export interface TrashRestoreTarget {
 }
 
 export type TransferDirection = 'upload' | 'download'
-export type TransferState = 'running' | 'retrying' | 'paused' | 'completed' | 'cancelled' | 'failed'
+export type TransferState = 'queued' | 'running' | 'retrying' | 'paused' | 'completed' | 'cancelled' | 'failed'
+export type IntegrityStatus = 'notRequested' | 'unavailable' | 'verified'
 export type RecoveryKind = 'byte_resume' | 'chunk_resume' | 'restart'
 
 export interface TransferProgress {
@@ -153,12 +202,14 @@ export interface DownloadHistoryItem {
   readonly startedAt: number
   readonly finishedAt: number | null
   readonly speedSamples: DownloadSpeedSample[]
+  readonly integrityStatus: IntegrityStatus
 }
 
 export interface TransferResult {
   transferId: string
   bytesTransferred: number
   file: RemoteFile | null
+  integrityStatus: IntegrityStatus
 }
 
 export interface ResumableTransfer {
@@ -174,6 +225,7 @@ export interface LocalFileSelection {
   readonly grantId: string
   readonly fileName: string
   readonly localPath: string | null
+  readonly fileSize: number | null
 }
 
 export interface VaultSummary {

@@ -359,13 +359,22 @@ pub enum AppError {
 - `code` 是稳定的英文标识（例如 `unauthorized`、`not_found`、`invalid_input:remote_path`），前端可以用来做逻辑判断（`isCommandErrorCode`）。
 - `message` 是安全的国际化消息，**不含**具体路径、令牌、服务端响应正文。
 
+## 设置驱动的运行时行为
+
+- `settings.json` 在 Tauri setup 阶段加载，React 启动时也会与登录恢复并行读取，因此语言、密度、动效、并发、限速、通知和空闲登出不依赖打开设置面板。
+- `TransferManager` 先注册任务，再通过上传 / 下载动态闸门进入 `queued` 或 `running`。降低并发只阻止新任务进入，增加并发立即唤醒队列；排队任务使用同一个取消令牌。
+- `BandwidthLimiter` 是普通、分卷、文件夹和 Vault 文件传输共享的 token bucket。全局与单任务限速均以 KiB/s 计算，`0` 表示该层不限速，容量允许 1 秒突发；媒体预览和元数据请求不经过限速器。
+- 下载在临时文件 `sync_all` 后、改名发布前校验 Koofr MD5。缺失合法 hash 时记录 `unavailable`，不一致返回 `integrity_error`。Vault 校验远端密文后仍执行加密认证。
+- 失败临时文件由 checkpoint 记录精确路径和保留时间。到期清理会先重新生成 checkpoint snapshot 验证路径，只删除该精确普通文件并同步移除 checkpoint，不扫描下载目录。
+- 托盘、开机启动和通知使用 Tauri 官方能力。外部项目页面只能通过 Rust 固定枚举打开；WebView 没有任意 shell / URL 权限。
+
 ## 事件与命令目录
 
 **Tauri 命令**（前端 → Rust，由各 `*_commands.rs` 注册）：
 
 认证 / 会话：`connect_koofr`, `restore_saved_login`, `disconnect_koofr`, `koofr_session`, `forget_saved_login`
 
-设置：`get_settings`, `update_settings`, `update_download_settings`, `update_logging_settings`, `update_transfer_settings`, `update_work_directory`, `clear_metadata_cache`, `clear_logs`, `select_work_directory`
+设置：`get_settings`, `update_settings`, `update_download_settings`, `update_logging_settings`, `update_transfer_settings`, `update_work_directory`, `clear_metadata_cache`, `clear_logs`, `select_work_directory`, `update_appearance_settings`, `update_general_settings`, `update_transfer_advanced_settings`, `update_download_behavior_settings`, `update_bandwidth_settings`, `update_notification_settings`, `update_link_defaults`, `update_security_settings`, `update_history_policy`, `app_version_info`
 
 文件浏览：`list_mounts`, `list_files`, `list_recent`, `list_shared`, `list_trash`
 

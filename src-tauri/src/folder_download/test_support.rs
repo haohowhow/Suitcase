@@ -31,11 +31,14 @@ pub(super) async fn run_executor(
 ) -> Result<TransferResult, AppError> {
     let mount_id = MountId::parse("mount_1".to_owned()).expect("mount id");
     let cancel = CancellationToken::new();
+    let manager = crate::transfer::TransferManager::default();
     let mut executor = FolderExecutor {
         api,
+        manager: &manager,
         mount_id: &mount_id,
         target,
         cancel: &cancel,
+        verify_hash: false,
         progress: |_, _| {},
     };
     executor

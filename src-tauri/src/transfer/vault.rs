@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use futures_util::{StreamExt, TryStreamExt};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::{
     compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt},
@@ -133,6 +133,23 @@ async fn run_vault_upload(
     let plain_name = RemoteName::parse(local_path.file_name()?)?;
     let encrypted_name = RemoteName::parse(cipher.encrypt_name(plain_name.as_str()))?;
     let cancel = manager.register(&transfer_id)?;
+    emit_progress(
+        &app,
+        &transfer_id,
+        TransferDirection::Upload,
+        TransferState::Queued,
+        0,
+        Some(plain_size),
+    );
+    let _permit = match manager.acquire(TransferDirection::Upload, &cancel).await {
+        Ok(permit) => permit,
+        Err(error) => {
+            manager.finish(&transfer_id);
+            let result = Err(error);
+            emit_terminal(&app, &transfer_id, TransferDirection::Upload, 0, &result);
+            return result;
+        }
+    };
     let progress = Arc::new(AtomicU64::new(0));
     let mut retries_completed = 0;
     let result = loop {
@@ -209,6 +226,7 @@ async fn upload_once(
     let reader = cipher.encrypt_reader(file.compat()).compat();
     let app_for_stream = app.clone();
     let id_for_stream = transfer_id.to_owned();
+    let cancel_for_stream = cancel.clone();
     let encrypted_progress = Arc::new(AtomicU64::new(0));
     let encrypted_progress_for_stream = encrypted_progress.clone();
     let progress_for_stream = progress.clone();
@@ -220,20 +238,33 @@ async fn upload_once(
         0,
         Some(plain_size),
     );
-    let stream = ReaderStream::new(reader).inspect_ok(move |chunk| {
-        let encrypted = encrypted_progress_for_stream
-            .fetch_add(chunk.len() as u64, Ordering::Relaxed)
-            .saturating_add(chunk.len() as u64);
-        let plain = plaintext_progress(encrypted, plain_size);
-        progress_for_stream.store(plain, Ordering::Relaxed);
-        emit_progress(
-            &app_for_stream,
-            &id_for_stream,
-            TransferDirection::Upload,
-            TransferState::Running,
-            plain,
-            Some(plain_size),
-        );
+    let stream = ReaderStream::new(reader).and_then(move |chunk| {
+        let app = app_for_stream.clone();
+        let transfer_id = id_for_stream.clone();
+        let cancel = cancel_for_stream.clone();
+        let encrypted_progress = encrypted_progress_for_stream.clone();
+        let progress = progress_for_stream.clone();
+        async move {
+            app.state::<crate::AppState>()
+                .transfers
+                .throttle(&transfer_id, chunk.len(), &cancel)
+                .await
+                .map_err(|_| std::io::Error::other("vault upload interrupted"))?;
+            let encrypted = encrypted_progress
+                .fetch_add(chunk.len() as u64, Ordering::Relaxed)
+                .saturating_add(chunk.len() as u64);
+            let plain = plaintext_progress(encrypted, plain_size);
+            progress.store(plain, Ordering::Relaxed);
+            emit_progress(
+                &app,
+                &transfer_id,
+                TransferDirection::Upload,
+                TransferState::Running,
+                plain,
+                Some(plain_size),
+            );
+            Ok(chunk)
+        }
     });
     let body = reqwest::Body::wrap_stream(stream);
     tokio::select! {
@@ -247,6 +278,7 @@ async fn upload_once(
         transfer_id: transfer_id.to_owned(),
         bytes_transferred: plain_size,
         file: None,
+        integrity_status: super::IntegrityStatus::NotRequested,
     })
 }
 
@@ -276,6 +308,8 @@ pub async fn download_vault_file(
         expected_size: 0,
         remote_hash: String::new(),
         remote_modified: 0,
+        resume_allowed: true,
+        retained_at: 0,
     };
     checkpoints
         .insert(TransferCheckpoint::VaultDownload(checkpoint.clone()))
@@ -333,8 +367,40 @@ async fn run_vault_download(
     validate_paths(&checkpoint).await?;
     let transfer_id = checkpoint.transfer_id.clone();
     let cancel = manager.register(&transfer_id)?;
-    let encrypted_progress = Arc::new(AtomicU64::new(partial_length(&checkpoint).await?));
+    let initial_encrypted = partial_length(&checkpoint).await?;
+    let initial_plain = decrypted_total(initial_encrypted).unwrap_or(0);
+    emit_progress(
+        &app,
+        &transfer_id,
+        TransferDirection::Download,
+        TransferState::Queued,
+        initial_plain,
+        decrypted_total(checkpoint.expected_size).ok(),
+    );
+    let _permit = match manager.acquire(TransferDirection::Download, &cancel).await {
+        Ok(permit) => permit,
+        Err(error) => {
+            manager.finish(&transfer_id);
+            let result = Err(error);
+            emit_terminal(
+                &app,
+                &transfer_id,
+                TransferDirection::Download,
+                initial_plain,
+                &result,
+            );
+            return result;
+        }
+    };
+    checkpoints.mark_active(&transfer_id).await?;
+    let encrypted_progress = Arc::new(AtomicU64::new(initial_encrypted));
     let plain_progress = Arc::new(AtomicU64::new(0));
+    let verify_hash = app
+        .state::<crate::AppState>()
+        .settings
+        .download_behavior()
+        .await
+        .verify_hash_after_download;
     let mut retries_completed = 0;
     let result = loop {
         let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
@@ -352,6 +418,7 @@ async fn run_vault_download(
                     encrypted_progress.clone(),
                     plain_progress.clone(),
                     total_plain,
+                    verify_hash,
                 )
                 .await
             }
@@ -389,7 +456,24 @@ async fn run_vault_download(
             let _ = checkpoints.remove(&transfer_id).await;
             Err(error)
         }
-        other => normalize_interruption(other, paused),
+        other => {
+            let normalized = normalize_interruption(other, paused);
+            match &normalized {
+                Err(AppError::Cancelled) => {
+                    let _ = tokio::fs::remove_file(&checkpoint.partial_path).await;
+                    let _ = checkpoints.remove(&transfer_id).await;
+                }
+                Err(AppError::TransferPaused) => {}
+                Err(AppError::Integrity) => {
+                    checkpoints.mark_failed(&transfer_id, false).await?;
+                }
+                Err(_) => {
+                    checkpoints.mark_failed(&transfer_id, true).await?;
+                }
+                Ok(_) => {}
+            }
+            normalized
+        }
     };
     emit_terminal(
         &app,
@@ -448,6 +532,7 @@ async fn download_once(
     encrypted_progress: Arc<AtomicU64>,
     plain_progress: Arc<AtomicU64>,
     total_plain: u64,
+    verify_hash: bool,
 ) -> Result<TransferResult, AppError> {
     let mount_id = MountId::parse(checkpoint.mount_id.clone())?;
     let remote_path = RemotePath::parse(checkpoint.remote_path.clone())?;
@@ -488,6 +573,10 @@ async fn download_once(
             };
             match next {
                 Some(Ok(chunk)) => {
+                    app.state::<crate::AppState>()
+                        .transfers
+                        .throttle(&checkpoint.transfer_id, chunk.len(), cancel)
+                        .await?;
                     output.write_all(&chunk).await?;
                     transferred = transferred.saturating_add(chunk.len() as u64);
                     encrypted_progress.store(transferred, Ordering::Relaxed);
@@ -512,12 +601,20 @@ async fn download_once(
         output.flush().await?;
         output.sync_all().await?;
     }
+    let integrity_status = super::verify_file_integrity(
+        &checkpoint.partial_path,
+        &checkpoint.remote_hash,
+        cancel,
+        verify_hash,
+    )
+    .await?;
     decrypt_to_destination(checkpoint, cipher, cancel, total_plain).await?;
     plain_progress.store(total_plain, Ordering::Relaxed);
     Ok(TransferResult {
         transfer_id: checkpoint.transfer_id.clone(),
         bytes_transferred: total_plain,
         file: None,
+        integrity_status,
     })
 }
 
@@ -690,6 +787,8 @@ mod tests {
             expected_size: 100,
             remote_hash: "hash-a".to_owned(),
             remote_modified: 10,
+            resume_allowed: true,
+            retained_at: 0,
         };
         assert!(!remote_identity_changed(&checkpoint, 100, 10, "hash-a"));
         assert!(remote_identity_changed(&checkpoint, 101, 10, "hash-a"));

@@ -1,9 +1,20 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification'
 import type {
   AppSettings,
+  AppVersionInfo,
+  BandwidthMode,
   CacheMode,
+  DownloadConflictStrategy,
+  InterfaceLanguage,
+  LinkDefaultKind,
   LogLevel,
+  UiDensity,
   KoofrMount,
   KoofrSession,
   LocatedFile,
@@ -29,6 +40,20 @@ export function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
 }
 
+export async function ensureNotificationPermission() {
+  if (await isPermissionGranted()) return true
+  return (await requestPermission()) === 'granted'
+}
+
+export function showTransferNotification(displayName: string, sound: boolean) {
+  const english = document.documentElement.lang === 'en-US'
+  sendNotification({
+    title: english ? 'Koofr transfer complete' : 'Koofr 传输完成',
+    body: displayName || (english ? 'The file transfer is complete.' : '文件传输已完成'),
+    sound: sound ? 'Default' : undefined,
+  })
+}
+
 export function commandErrorMessage(error: unknown, fallback: string) {
   if (
     typeof error === 'object'
@@ -36,9 +61,40 @@ export function commandErrorMessage(error: unknown, fallback: string) {
     && typeof (error as Partial<CommandError>).code === 'string'
     && typeof (error as Partial<CommandError>).message === 'string'
   ) {
-    return (error as CommandError).message
+    const commandError = error as CommandError
+    if (document.documentElement.lang === 'en-US') {
+      return englishErrorMessages[commandError.code] ?? fallback
+    }
+    return commandError.message
   }
   return fallback
+}
+
+const englishErrorMessages: Partial<Record<CommandError['code'], string>> = {
+  authentication_failed: 'The email or app password is incorrect.',
+  not_authenticated: 'Connect a Koofr account first.',
+  account_identity_unavailable: 'The current Koofr account could not be verified.',
+  invalid_input: 'The request contains an invalid path, name, or identifier.',
+  conflict: 'The target already exists or the operation is already active.',
+  not_found: 'The requested file, folder, or mount was not found.',
+  forbidden: 'This account is not allowed to perform the operation.',
+  cancelled: 'The transfer was cancelled.',
+  transfer_paused: 'The transfer is paused and can be resumed from Transfers.',
+  incomplete_transfer: 'The transfer ended before all bytes were received.',
+  integrity_error: 'Integrity verification failed. The file was not published.',
+  remote_error: 'Koofr could not complete the operation.',
+  network_error: 'Koofr could not be reached. Check the network and try again.',
+  local_io_error: 'The selected local file could not be read or written.',
+  invalid_response: 'Koofr returned data the app could not understand.',
+  initialization_error: 'The app backend could not be initialized.',
+  dialog_error: 'The native file picker could not be opened.',
+  local_open_error: 'The downloaded item could not be opened.',
+  local_data_error: 'Local application data could not be read or saved.',
+  credential_store_error: 'Windows Credential Manager could not be accessed.',
+  vault_locked: 'The Vault is locked.',
+  vault_invalid_key: 'The Safe Key is incorrect.',
+  vault_crypto_error: 'The Vault data failed cryptographic validation.',
+  vault_prompt_error: 'The native Safe Key prompt could not be opened.',
 }
 
 export function commandErrorDiagnostic(error: unknown) {
@@ -136,6 +192,117 @@ export const koofr = {
     return invoke<AppSettings>('forget_saved_login')
   },
 
+  updateAppearanceSettings(
+    language: InterfaceLanguage,
+    reduceMotion: boolean,
+    density: UiDensity,
+  ) {
+    return invoke<AppSettings>('update_appearance_settings', {
+      language,
+      reduceMotion,
+      density,
+    })
+  },
+
+  updateGeneralSettings(
+    launchAtLogin: boolean,
+    closeToTray: boolean,
+    minimizeToTray: boolean,
+    confirmQuitWithTransfers: boolean,
+  ) {
+    return invoke<AppSettings>('update_general_settings', {
+      launchAtLogin,
+      closeToTray,
+      minimizeToTray,
+      confirmQuitWithTransfers,
+    })
+  },
+
+  updateTransferAdvancedSettings(
+    uploadConcurrency: number,
+    downloadConcurrency: number,
+    defaultSplitPartMib: number,
+    autoSplitThresholdMib: number,
+  ) {
+    return invoke<AppSettings>('update_transfer_advanced_settings', {
+      uploadConcurrency,
+      downloadConcurrency,
+      defaultSplitPartMib,
+      autoSplitThresholdMib,
+    })
+  },
+
+  updateDownloadBehaviorSettings(
+    conflictStrategy: DownloadConflictStrategy,
+    openFolderAfterDownload: boolean,
+    verifyHashAfterDownload: boolean,
+    keepFailedPartDays: number,
+  ) {
+    return invoke<AppSettings>('update_download_behavior_settings', {
+      conflictStrategy,
+      openFolderAfterDownload,
+      verifyHashAfterDownload,
+      keepFailedPartDays,
+    })
+  },
+
+  updateBandwidthSettings(globalKbps: number, perTaskKbps: number, mode: BandwidthMode) {
+    return invoke<AppSettings>('update_bandwidth_settings', {
+      globalKbps,
+      perTaskKbps,
+      mode,
+    })
+  },
+
+  updateNotificationSettings(
+    notifyOnComplete: boolean,
+    notifySound: boolean,
+    trayBadge: boolean,
+  ) {
+    return invoke<AppSettings>('update_notification_settings', {
+      notifyOnComplete,
+      notifySound,
+      trayBadge,
+    })
+  },
+
+  updateLinkDefaults(
+    kind: LinkDefaultKind,
+    expireDays: number,
+    requirePassword: boolean,
+  ) {
+    return invoke<AppSettings>('update_link_defaults', {
+      kind,
+      expireDays,
+      requirePassword,
+    })
+  },
+
+  updateSecuritySettings(idleAutoLogoutMinutes: number) {
+    return invoke<AppSettings>('update_security_settings', {
+      idleAutoLogoutMinutes,
+    })
+  },
+
+  updateHistoryPolicy(keepDays: number, keepCount: number) {
+    return invoke<AppSettings>('update_history_policy', {
+      keepDays,
+      keepCount,
+    })
+  },
+
+  appVersionInfo() {
+    return invoke<AppVersionInfo>('app_version_info')
+  },
+
+  openExternalPage(page: 'homepage' | 'releases' | 'issues') {
+    return invoke<void>('open_external_page', { page })
+  },
+
+  setTaskbarBadge(count: number, enabled: boolean) {
+    return invoke<void>('set_taskbar_badge', { count, enabled })
+  },
+
   listMounts(refresh = false) {
     return invoke<KoofrMount[]>('list_mounts', { refresh })
   },
@@ -190,17 +357,27 @@ export const koofr = {
     return invoke<string | null>('select_work_directory')
   },
 
-  prepareDownloadLocation(suggestedName: string, downloadDirectory: string) {
+  prepareDownloadLocation(
+    suggestedName: string,
+    downloadDirectory: string,
+    conflictStrategy?: DownloadConflictStrategy,
+  ) {
     return invoke<LocalFileSelection>('prepare_download_location', {
       suggestedName,
       downloadDirectory,
+      conflictStrategy,
     })
   },
 
-  prepareDownloadFolder(suggestedName: string, downloadDirectory: string) {
+  prepareDownloadFolder(
+    suggestedName: string,
+    downloadDirectory: string,
+    conflictStrategy?: DownloadConflictStrategy,
+  ) {
     return invoke<LocalFileSelection>('prepare_download_folder', {
       suggestedName,
       downloadDirectory,
+      conflictStrategy,
     })
   },
 

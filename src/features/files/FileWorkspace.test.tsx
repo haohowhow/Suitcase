@@ -15,6 +15,7 @@ const defaultCallbacks = {
   onPlay: vi.fn(),
   onShare: vi.fn(),
   onRename: vi.fn(),
+  onMove: vi.fn(),
   onDelete: vi.fn(),
 }
 

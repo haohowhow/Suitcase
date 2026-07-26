@@ -1,6 +1,8 @@
+mod autostart;
 mod commands;
 mod credential_manager;
 mod crypto;
+mod desktop;
 mod download_history;
 mod error;
 mod file_ops;
@@ -52,7 +54,12 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .register_asynchronous_uri_scheme_protocol(
             "koofr-stream",
             move |ctx, request, responder| {
@@ -64,6 +71,7 @@ pub fn run() {
             },
         )
         .setup(|app| {
+            autostart::initialize(app.handle().clone());
             let default_data_dir = app.path().app_local_data_dir()?;
             let work_directory = WorkDirectoryStore::initialize(default_data_dir)?;
             let data_dir = work_directory.current_directory();
@@ -75,6 +83,16 @@ pub fn run() {
             std::fs::create_dir_all(&defaults.cache_directory)?;
             std::fs::create_dir_all(&defaults.log_directory)?;
             let settings = SettingsStore::load(data_dir.join("settings.json"), defaults);
+            let general = tauri::async_runtime::block_on(settings.general());
+            let registered_autostart = autostart::is_launch_at_login_enabled();
+            if general.launch_at_login != registered_autostart {
+                tauri::async_runtime::block_on(settings.update_general(
+                    registered_autostart,
+                    general.close_to_tray,
+                    general.minimize_to_tray,
+                    general.confirm_quit_with_transfers,
+                ))?;
+            }
             let (log_directory, log_level, retention_days, max_file_size_mb) =
                 settings.initial_log_config().clone();
             std::fs::create_dir_all(&log_directory)?;
@@ -99,16 +117,34 @@ pub fn run() {
                     vault_auto_lock.lock_expired().await;
                 }
             });
+            let advanced = tauri::async_runtime::block_on(settings.transfer_advanced());
+            let bandwidth = tauri::async_runtime::block_on(settings.bandwidth());
+            let history_policy = tauri::async_runtime::block_on(settings.history_policy());
+            let download_behavior = tauri::async_runtime::block_on(settings.download_behavior());
+            let transfers = TransferManager::default();
+            transfers.set_concurrency(
+                advanced.upload_concurrency as usize,
+                advanced.download_concurrency as usize,
+            );
+            transfers.set_bandwidth(
+                bandwidth.mode,
+                bandwidth.global_kbps,
+                bandwidth.per_task_kbps,
+            );
+            let download_history =
+                DownloadHistoryStore::load(data_dir.join("download-history.json"));
+            download_history.set_policy(history_policy.keep_days, history_policy.keep_count)?;
+            let transfer_checkpoints =
+                TransferCheckpointStore::load(data_dir.join("transfer-checkpoints.json"));
+            tauri::async_runtime::block_on(
+                transfer_checkpoints.cleanup_expired(download_behavior.keep_failed_part_days),
+            )?;
             app.manage(AppState {
                 api: KoofrApi::production()?,
                 local_access: LocalAccessManager::default(),
-                download_history: DownloadHistoryStore::load(
-                    data_dir.join("download-history.json"),
-                ),
-                transfers: TransferManager::default(),
-                transfer_checkpoints: TransferCheckpointStore::load(
-                    data_dir.join("transfer-checkpoints.json"),
-                ),
+                download_history,
+                transfers,
+                transfer_checkpoints,
                 settings,
                 cache,
                 credentials: CredentialManager::initialize()?,
@@ -118,8 +154,10 @@ pub fn run() {
             });
             let _ = stream_session::STREAM_SESSIONS
                 .set(stream_session::StreamSessionManager::default());
+            desktop::setup(app)?;
             Ok(())
         })
+        .on_window_event(desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::connect_koofr,
             commands::restore_saved_login,
@@ -164,6 +202,18 @@ pub fn run() {
             commands::open_downloaded_folder,
             commands::cancel_transfer,
             commands::pause_transfer,
+            commands::update_appearance_settings,
+            commands::update_general_settings,
+            commands::update_transfer_advanced_settings,
+            commands::update_download_behavior_settings,
+            commands::update_bandwidth_settings,
+            commands::update_notification_settings,
+            commands::update_link_defaults,
+            commands::update_security_settings,
+            commands::update_history_policy,
+            commands::app_version_info,
+            commands::open_external_page,
+            desktop::set_taskbar_badge,
             transfer_commands::list_resumable_transfers,
             transfer_commands::list_download_history,
             transfer_commands::clear_finished_download_history,

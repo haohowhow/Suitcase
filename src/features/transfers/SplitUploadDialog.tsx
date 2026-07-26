@@ -12,6 +12,7 @@ const MAX_REMOTE_NAME_UNITS = 255
 
 interface SplitUploadDialogProps {
   readonly fileName: string
+  readonly defaultPartMiB?: number
   readonly onClose: () => void
   readonly onConfirm: (settings: SplitUploadSettings) => void
 }
@@ -26,9 +27,14 @@ export function defaultSplitPackageName(fileName: string) {
   return `${base || 'file'}${PACKAGE_SUFFIX}`
 }
 
-export function SplitUploadDialog({ fileName, onClose, onConfirm }: SplitUploadDialogProps) {
+export function SplitUploadDialog({
+  fileName,
+  defaultPartMiB = 64,
+  onClose,
+  onConfirm,
+}: SplitUploadDialogProps) {
   const [packageName, setPackageName] = useState(() => defaultSplitPackageName(fileName))
-  const [partMiB, setPartMiB] = useState('64')
+  const [partMiB, setPartMiB] = useState(() => String(defaultPartMiB))
   const parsedPartMiB = Number(partMiB)
   const validPartSize = Number.isInteger(parsedPartMiB)
     && parsedPartMiB >= MIN_PART_MIB

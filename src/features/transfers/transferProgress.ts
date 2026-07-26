@@ -7,7 +7,7 @@ const MIN_SPEED_SAMPLE_INTERVAL_MS = 1000
 export function countActiveDownloads(items: readonly TransferItem[]) {
   return items.filter((transfer) => (
     transfer.direction === 'download'
-    && (transfer.state === 'running' || transfer.state === 'retrying')
+    && (transfer.state === 'queued' || transfer.state === 'running' || transfer.state === 'retrying')
   )).length
 }
 

@@ -7,7 +7,7 @@ use std::{
 };
 
 use futures_util::TryStreamExt;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio_util::{io::ReaderStream, sync::CancellationToken};
 
 use crate::{
@@ -111,6 +111,23 @@ async fn run_upload(
 ) -> Result<TransferResult, AppError> {
     let total = tokio::fs::metadata(local_path.as_path()).await?.len();
     let cancel = manager.register(&transfer_id)?;
+    emit_progress(
+        &app,
+        &transfer_id,
+        TransferDirection::Upload,
+        TransferState::Queued,
+        0,
+        Some(total),
+    );
+    let _permit = match manager.acquire(TransferDirection::Upload, &cancel).await {
+        Ok(permit) => permit,
+        Err(error) => {
+            manager.finish(&transfer_id);
+            let result = Err(error);
+            emit_terminal(&app, &transfer_id, TransferDirection::Upload, 0, &result);
+            return result;
+        }
+    };
     let progress = Arc::new(AtomicU64::new(0));
     let mut retries_completed = 0_u32;
     let result = loop {
@@ -180,6 +197,7 @@ async fn upload_inner(
     let total = file.metadata().await?.len();
     let app_for_stream = app.clone();
     let id_for_stream = transfer_id.to_owned();
+    let cancel_for_stream = cancel.clone();
     emit_progress(
         app,
         transfer_id,
@@ -188,16 +206,28 @@ async fn upload_inner(
         0,
         Some(total),
     );
-    let stream = ReaderStream::new(file).inspect_ok(move |chunk| {
-        let previous = progress.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-        emit_progress(
-            &app_for_stream,
-            &id_for_stream,
-            TransferDirection::Upload,
-            TransferState::Running,
-            previous.saturating_add(chunk.len() as u64),
-            Some(total),
-        );
+    let stream = ReaderStream::new(file).and_then(move |chunk| {
+        let app = app_for_stream.clone();
+        let transfer_id = id_for_stream.clone();
+        let progress = progress.clone();
+        let cancel = cancel_for_stream.clone();
+        async move {
+            app.state::<crate::AppState>()
+                .transfers
+                .throttle(&transfer_id, chunk.len(), &cancel)
+                .await
+                .map_err(|_| std::io::Error::other("upload interrupted"))?;
+            let previous = progress.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+            emit_progress(
+                &app,
+                &transfer_id,
+                TransferDirection::Upload,
+                TransferState::Running,
+                previous.saturating_add(chunk.len() as u64),
+                Some(total),
+            );
+            Ok(chunk)
+        }
     });
     let body = reqwest::Body::wrap_stream(stream);
     let file_info = tokio::select! {
@@ -208,6 +238,7 @@ async fn upload_inner(
         transfer_id: transfer_id.to_owned(),
         bytes_transferred: total,
         file: Some(file_info),
+        integrity_status: super::IntegrityStatus::NotRequested,
     })
 }
 

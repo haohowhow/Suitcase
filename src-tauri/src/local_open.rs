@@ -28,7 +28,35 @@ pub fn open(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+#[cfg(windows)]
+pub fn open_url(url: &str) -> Result<(), AppError> {
+    use std::ptr;
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+    let operation: Vec<u16> = "open\0".encode_utf16().collect();
+    let target: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize <= 32 {
+        return Err(AppError::LocalOpen);
+    }
+    Ok(())
+}
+
 #[cfg(not(windows))]
 pub fn open(_path: &Path) -> Result<(), AppError> {
+    Err(AppError::LocalOpen)
+}
+
+#[cfg(not(windows))]
+pub fn open_url(_url: &str) -> Result<(), AppError> {
     Err(AppError::LocalOpen)
 }

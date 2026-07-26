@@ -10,11 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::AppError,
-    transfer::{RecoveryKind, TransferState},
+    transfer::{IntegrityStatus, RecoveryKind, TransferState},
 };
 
 const HISTORY_VERSION: u8 = 1;
-const MAX_HISTORY_ITEMS: usize = 200;
 const MAX_SPEED_SAMPLES: usize = 300;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 1000;
 
@@ -48,6 +47,8 @@ struct StoredDownloadHistoryItem {
     pub started_at: u64,
     pub finished_at: Option<u64>,
     pub speed_samples: Vec<DownloadSpeedSample>,
+    #[serde(default)]
+    pub integrity_status: IntegrityStatus,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -65,6 +66,7 @@ pub struct DownloadHistoryItem {
     pub started_at: u64,
     pub finished_at: Option<u64>,
     pub speed_samples: Vec<DownloadSpeedSample>,
+    pub integrity_status: IntegrityStatus,
 }
 
 impl From<&StoredDownloadHistoryItem> for DownloadHistoryItem {
@@ -82,6 +84,7 @@ impl From<&StoredDownloadHistoryItem> for DownloadHistoryItem {
             started_at: item.started_at,
             finished_at: item.finished_at,
             speed_samples: item.speed_samples.clone(),
+            integrity_status: item.integrity_status,
         }
     }
 }
@@ -115,6 +118,7 @@ pub struct NewDownloadHistoryItem<'a> {
 pub struct DownloadHistoryStore {
     path: PathBuf,
     state: Mutex<StoredDownloadHistory>,
+    policy: Mutex<(u32, u32)>,
 }
 
 impl DownloadHistoryStore {
@@ -127,6 +131,7 @@ impl DownloadHistoryStore {
         Self {
             path,
             state: Mutex::new(state),
+            policy: Mutex::new((30, 500)),
         }
     }
 
@@ -151,12 +156,13 @@ impl DownloadHistoryStore {
                 recorded_at: now,
                 bytes_transferred: 0,
             }],
+            integrity_status: IntegrityStatus::NotRequested,
         };
         let mut state = self.state();
         state
             .items
             .insert(item.transfer_id.to_owned(), history_item);
-        trim_history(&mut state.items);
+        self.prune(&mut state.items);
         self.persist(&state)
     }
 
@@ -191,14 +197,33 @@ impl DownloadHistoryStore {
             }
         }
         if is_terminal(state_value) {
-            if state_value == TransferState::Completed {
+            if state_value != TransferState::Paused {
                 item.finished_at = Some(now);
             }
             if state_value != TransferState::Paused && state_value != TransferState::Failed {
                 item.recovery_kind = None;
             }
+            self.prune(&mut state.items);
             let _ = self.persist(&state);
         }
+    }
+
+    pub fn record_integrity(&self, transfer_id: &str, integrity_status: IntegrityStatus) {
+        if let Some(item) = self.state().items.get_mut(transfer_id) {
+            item.integrity_status = integrity_status;
+        }
+    }
+
+    pub fn set_policy(&self, keep_days: u32, keep_count: u32) -> Result<usize, AppError> {
+        *lock_mutex(&self.policy) = (keep_days, keep_count);
+        let mut state = self.state();
+        let before = state.items.len();
+        self.prune(&mut state.items);
+        let removed = before.saturating_sub(state.items.len());
+        if removed > 0 {
+            self.persist(&state)?;
+        }
+        Ok(removed)
     }
 
     pub fn list(&self, owner_id: &str) -> Result<Vec<DownloadHistoryItem>, AppError> {
@@ -224,7 +249,10 @@ impl DownloadHistoryStore {
         let mut changed = false;
         for item in state.items.values_mut().filter(|item| {
             item.owner_id == owner_id
-                && matches!(item.state, TransferState::Running | TransferState::Retrying)
+                && matches!(
+                    item.state,
+                    TransferState::Queued | TransferState::Running | TransferState::Retrying
+                )
         }) {
             if let Some(recovery_kind) = resumable.get(&item.transfer_id) {
                 item.state = TransferState::Paused;
@@ -300,6 +328,46 @@ impl DownloadHistoryStore {
             Err(poisoned) => poisoned.into_inner(),
         }
     }
+
+    fn prune(&self, items: &mut BTreeMap<String, StoredDownloadHistoryItem>) {
+        let (keep_days, keep_count) = *lock_mutex(&self.policy);
+        let now = now_millis();
+        if keep_days > 0 {
+            let cutoff = now.saturating_sub(u64::from(keep_days) * 24 * 60 * 60 * 1000);
+            items.retain(|_, item| {
+                !is_finished_for_clearing(item.state, item.recovery_kind)
+                    || item.finished_at.is_none_or(|finished| finished >= cutoff)
+            });
+        }
+        if keep_count == 0 {
+            return;
+        }
+        let owners = items
+            .values()
+            .map(|item| item.owner_id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for owner in owners {
+            let mut eligible = items
+                .values()
+                .filter(|item| {
+                    item.owner_id == owner
+                        && is_finished_for_clearing(item.state, item.recovery_kind)
+                })
+                .map(|item| (item.started_at, item.transfer_id.clone()))
+                .collect::<Vec<_>>();
+            eligible.sort_by_key(|(started_at, _)| Reverse(*started_at));
+            for (_, transfer_id) in eligible.into_iter().skip(keep_count as usize) {
+                items.remove(&transfer_id);
+            }
+        }
+    }
+}
+
+fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(value) => value,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 fn is_terminal(state: TransferState) -> bool {
@@ -316,20 +384,6 @@ fn is_finished_for_clearing(state: TransferState, recovery_kind: Option<Recovery
     state == TransferState::Completed
         || state == TransferState::Cancelled
         || (state == TransferState::Failed && recovery_kind.is_none())
-}
-
-fn trim_history(items: &mut BTreeMap<String, StoredDownloadHistoryItem>) {
-    while items.len() > MAX_HISTORY_ITEMS {
-        let oldest = items
-            .iter()
-            .min_by_key(|(_, item)| item.started_at)
-            .map(|(id, _)| id.clone());
-        if let Some(id) = oldest {
-            items.remove(&id);
-        } else {
-            break;
-        }
-    }
 }
 
 fn now_millis() -> u64 {

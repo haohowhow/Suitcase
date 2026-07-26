@@ -9,6 +9,7 @@ import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
 import { MediaPreviewModal } from './features/files/MediaPreviewModal'
+import { MoveDestinationDialog } from './features/files/MoveDestinationDialog'
 import { isDirectory } from './features/files/filePresentation'
 import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
 import { useKoofrWorkspace } from './features/files/useKoofrWorkspace'
@@ -21,14 +22,22 @@ import { countActiveDownloads, mergeTransferProgress } from './features/transfer
 import { beginDownload } from './features/transfers/beginDownload'
 import {
   commandErrorMessage,
+  ensureNotificationPermission,
   isCommandErrorCode,
   isTauriRuntime,
   koofr,
+  showTransferNotification,
 } from './services/koofr'
 import { readStoredTheme, storeTheme, type ThemeId } from './theme'
+import { installRuntimeTranslations } from './i18n'
 import type {
   AppSettings,
+  AppVersionInfo,
+  BandwidthMode,
   CacheMode,
+  DownloadConflictStrategy,
+  InterfaceLanguage,
+  LinkDefaultKind,
   LogLevel,
   LocatedFile,
   LocalFileSelection,
@@ -36,12 +45,13 @@ import type {
   TransferProgress,
   TransferResult,
   TrashItem,
+  UiDensity,
   VideoStreamInfo,
 } from './types/backend'
 import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
 import type { VaultTransferSpec } from './types/vault'
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'share' | 'createFolder' | 'rename' | 'delete' | 'emptyTrash' | null
+type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
 interface PendingDownload {
@@ -72,6 +82,7 @@ function App() {
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [settingsError, setSettingsError] = useState('')
+  const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null)
   const [downloadSettingsError, setDownloadSettingsError] = useState('')
   const [pendingDownload, setPendingDownload] = useState<PendingDownload | null>(null)
   const [pendingSplitUpload, setPendingSplitUpload] = useState<PendingSplitUpload | null>(null)
@@ -84,6 +95,8 @@ function App() {
   const workspaceLocation = useRef({ activeMountId: '', path: '/' })
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
   const activeDownloadCount = countActiveDownloads(transfers)
+  const activeTransferCount = transfers.filter((item) =>
+    item.state === 'queued' || item.state === 'running' || item.state === 'retrying').length
 
   useEffect(() => {
     workspaceLocation.current = {
@@ -93,12 +106,35 @@ function App() {
   }, [workspace.activeMountId, workspace.path])
 
   useEffect(() => {
+    if (!isTauriRuntime()) return
+    void koofr
+      .setTaskbarBadge(activeTransferCount, settings?.trayBadge ?? false)
+      .catch(() => {})
+  }, [activeTransferCount, settings?.trayBadge])
+
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>('.app-shell')
+    if (!root) return
+    return installRuntimeTranslations(root, settings?.language ?? 'system')
+  }, [settings?.language, authState, modalKind])
+
+  useEffect(() => {
     let active = true
 
     if (!isTauriRuntime()) {
       setAuthState('signedOut')
       return () => { active = false }
     }
+
+    void koofr.getSettings()
+      .then((loadedSettings) => {
+        if (active) setSettings(loadedSettings)
+      })
+      .catch((error) => {
+        if (active) {
+          setSettingsError(commandErrorMessage(error, '无法加载应用设置。'))
+        }
+      })
 
     koofr.restoreSavedLogin()
       .then((bootstrap) => {
@@ -128,7 +164,29 @@ function App() {
     let unlisten: (() => void) | undefined
 
     void koofr.onTransferProgress((progress: TransferProgress) => {
-      setTransfers((current) => mergeTransferProgress(current, progress))
+      setTransfers((current) => {
+        const previous = current.find((item) => item.id === progress.transferId)
+        const merged = mergeTransferProgress(current, progress)
+        if (
+          settings?.notifyOnComplete
+          && previous
+          && previous.state !== 'completed'
+          && progress.state === 'completed'
+        ) {
+          showTransferNotification(previous.name, settings?.notifySound ?? false)
+        }
+        if (
+          settings?.openFolderAfterDownload
+          && previous?.direction === 'download'
+          && previous.state !== 'completed'
+          && progress.state === 'completed'
+        ) {
+          void koofr.openDownloadedFolder(progress.transferId).catch((error) => {
+            showNotice(commandErrorMessage(error, '下载已完成，但无法打开所在文件夹。'))
+          })
+        }
+        return merged
+      })
     }).then((stopListening) => {
       if (disposed) stopListening()
       else unlisten = stopListening
@@ -138,7 +196,12 @@ function App() {
       disposed = true
       unlisten?.()
     }
-  }, [authState])
+  }, [
+    authState,
+    settings?.notifyOnComplete,
+    settings?.notifySound,
+    settings?.openFolderAfterDownload,
+  ])
 
   useEffect(() => {
     if (authState !== 'signedIn') return
@@ -164,6 +227,7 @@ function App() {
               startedAt: item.startedAt,
               finishedAt: item.finishedAt,
               speedSamples: item.speedSamples,
+              integrityStatus: item.integrityStatus,
             }))
           const cachedById = new Map(cached.map((item) => [item.id, item]))
           const restored = resumable
@@ -203,6 +267,50 @@ function App() {
     window.setTimeout(() => setNotice(''), 3200)
   }
 
+  useEffect(() => {
+    if (authState !== 'signedIn') return
+    if (!settings?.confirmQuitWithTransfers) return
+    const hasActive = transfers.some(
+      (item) =>
+        item.state === 'queued' || item.state === 'running' || item.state === 'retrying',
+    )
+    if (!hasActive) return
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [authState, settings?.confirmQuitWithTransfers, transfers])
+
+  useEffect(() => {
+    if (authState !== 'signedIn') return
+    const minutes = settings?.idleAutoLogoutMinutes ?? 0
+    if (!minutes) return
+    const timeout = minutes * 60 * 1000
+    let lastActive = Date.now()
+    const markActive = () => {
+      lastActive = Date.now()
+    }
+    const events: Array<keyof WindowEventMap> = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'wheel',
+    ]
+    events.forEach((event) => window.addEventListener(event, markActive, { passive: true }))
+    const interval = window.setInterval(() => {
+      if (Date.now() - lastActive >= timeout && authState === 'signedIn') {
+        void logout()
+      }
+    }, Math.max(30_000, Math.min(timeout / 2, 5 * 60_000)))
+    return () => {
+      window.clearInterval(interval)
+      events.forEach((event) => window.removeEventListener(event, markActive))
+    }
+  }, [authState, settings?.idleAutoLogoutMinutes])
+
   const selectTheme = (nextTheme: ThemeId) => {
     setThemeId(nextTheme)
     storeTheme(nextTheme)
@@ -237,7 +345,12 @@ function App() {
     setSettingsError('')
     setDownloadSettingsError('')
     try {
-      setSettings(await koofr.getSettings())
+      const [next, version] = await Promise.all([
+        koofr.getSettings(),
+        koofr.appVersionInfo().catch(() => null),
+      ])
+      setSettings(next)
+      if (version) setVersionInfo(version)
     } catch (error) {
       setSettingsError(commandErrorMessage(error, '无法读取本地设置。'))
     } finally {
@@ -400,6 +513,169 @@ function App() {
     }
   }
 
+  const runSettingsMutation = async (
+    mutate: () => Promise<AppSettings>,
+    successMessage: string,
+    failureMessage: string,
+  ) => {
+    setSettingsBusy(true)
+    setSettingsError('')
+    try {
+      setSettings(await mutate())
+      showNotice(successMessage)
+    } catch (error) {
+      setSettingsError(commandErrorMessage(error, failureMessage))
+    } finally {
+      setSettingsBusy(false)
+    }
+  }
+
+  const updateAppearance = (next: {
+    language: InterfaceLanguage
+    reduceMotion: boolean
+    density: UiDensity
+  }) =>
+    void runSettingsMutation(
+      () => koofr.updateAppearanceSettings(next.language, next.reduceMotion, next.density),
+      '外观设置已保存',
+      '无法保存外观设置。',
+    )
+
+  const updateGeneral = (next: {
+    launchAtLogin: boolean
+    closeToTray: boolean
+    minimizeToTray: boolean
+    confirmQuitWithTransfers: boolean
+  }) =>
+    void runSettingsMutation(
+      () =>
+        koofr.updateGeneralSettings(
+          next.launchAtLogin,
+          next.closeToTray,
+          next.minimizeToTray,
+          next.confirmQuitWithTransfers,
+        ),
+      '通用设置已保存',
+      '无法保存通用设置。',
+    )
+
+  const updateAdvancedTransfer = (next: {
+    uploadConcurrency: number
+    downloadConcurrency: number
+    defaultSplitPartMib: number
+    autoSplitThresholdMib: number
+  }) =>
+    void runSettingsMutation(
+      () =>
+        koofr.updateTransferAdvancedSettings(
+          next.uploadConcurrency,
+          next.downloadConcurrency,
+          next.defaultSplitPartMib,
+          next.autoSplitThresholdMib,
+        ),
+      '传输高级设置已保存',
+      '无法保存传输高级设置。',
+    )
+
+  const updateDownloadBehavior = (next: {
+    conflictStrategy: DownloadConflictStrategy
+    openFolderAfterDownload: boolean
+    verifyHashAfterDownload: boolean
+    keepFailedPartDays: number
+  }) =>
+    void runSettingsMutation(
+      () =>
+        koofr.updateDownloadBehaviorSettings(
+          next.conflictStrategy,
+          next.openFolderAfterDownload,
+          next.verifyHashAfterDownload,
+          next.keepFailedPartDays,
+        ),
+      '下载行为已保存',
+      '无法保存下载行为。',
+    )
+
+  const updateBandwidth = (next: {
+    globalKbps: number
+    perTaskKbps: number
+    mode: BandwidthMode
+  }) =>
+    void runSettingsMutation(
+      () => koofr.updateBandwidthSettings(next.globalKbps, next.perTaskKbps, next.mode),
+      '带宽设置已保存',
+      '无法保存带宽设置。',
+    )
+
+  const updateNotifications = (next: {
+    notifyOnComplete: boolean
+    notifySound: boolean
+    trayBadge: boolean
+  }) => {
+    void (async () => {
+      if (next.notifyOnComplete && !(await ensureNotificationPermission())) {
+        setSettingsError('Windows 通知权限未获准，完成通知未开启。')
+        return
+      }
+      await runSettingsMutation(
+        () =>
+          koofr.updateNotificationSettings(
+            next.notifyOnComplete,
+            next.notifySound,
+            next.trayBadge,
+          ),
+        '通知设置已保存',
+        '无法保存通知设置。',
+      )
+    })()
+  }
+
+  const updateLinkDefaults = (next: {
+    kind: LinkDefaultKind
+    expireDays: number
+    requirePassword: boolean
+  }) =>
+    void runSettingsMutation(
+      () => koofr.updateLinkDefaults(next.kind, next.expireDays, next.requirePassword),
+      '链接默认设置已保存',
+      '无法保存链接默认设置。',
+    )
+
+  const updateSecurity = (next: {
+    idleAutoLogoutMinutes: number
+  }) =>
+    void runSettingsMutation(
+      () =>
+        koofr.updateSecuritySettings(next.idleAutoLogoutMinutes),
+      '安全设置已保存',
+      '无法保存安全设置。',
+    )
+
+  const updateHistoryPolicy = (next: { keepDays: number; keepCount: number }) =>
+    void runSettingsMutation(
+      () => koofr.updateHistoryPolicy(next.keepDays, next.keepCount),
+      '历史策略已保存',
+      '无法保存历史策略。',
+    )
+
+  const clearDownloadHistoryRecords = async () => {
+    try {
+      await koofr.clearFinishedDownloadHistory()
+      setTransfers((current) =>
+        current.filter(
+          (item) =>
+            item.state === 'queued'
+            || item.state === 'running'
+            || item.state === 'retrying'
+            || item.state === 'paused'
+            || (item.state === 'failed' && item.recoveryKind !== null),
+        ),
+      )
+      showNotice('已清除下载历史')
+    } catch (error) {
+      showNotice(commandErrorMessage(error, '无法清除下载历史。'))
+    }
+  }
+
   const logout = async () => {
     try {
       await koofr.disconnect()
@@ -438,6 +714,7 @@ function App() {
               ...item,
               state: 'completed',
               bytesTransferred: result.bytesTransferred,
+              integrityStatus: result.integrityStatus,
               totalBytes: item.totalBytes ?? result.bytesTransferred,
               finishedAt: Date.now(),
             }
@@ -507,6 +784,7 @@ function App() {
           ...item,
           state: 'completed',
           bytesTransferred: result.bytesTransferred,
+          integrityStatus: result.integrityStatus,
           totalBytes: item.totalBytes ?? result.bytesTransferred,
           finishedAt: Date.now(),
         }
@@ -535,6 +813,18 @@ function App() {
         setModalKind('splitUpload')
         return
       }
+      const thresholdBytes = (settings?.autoSplitThresholdMib ?? 512) * 1024 * 1024
+      if (
+        selection.fileSize !== null
+        && selection.fileSize > thresholdBytes
+        && window.confirm(
+          `文件超过 ${settings?.autoSplitThresholdMib ?? 512} MiB。选择“确定”改用分卷上传；选择“取消”继续普通上传。`,
+        )
+      ) {
+        setPendingSplitUpload({ selection, mountId: uploadMountId, path: uploadPath })
+        setModalKind('splitUpload')
+        return
+      }
       await startSelectedUpload(selection, uploadMountId, uploadPath, null)
     } catch (error) {
       showNotice(commandErrorMessage(error, '无法选择本地文件。'))
@@ -554,7 +844,27 @@ function App() {
     mountId: string,
     targetDirectory: string,
   ) => {
-    const transfer = await beginDownload(file, mountId, targetDirectory)
+    let transfer
+    try {
+      transfer = await beginDownload(file, mountId, targetDirectory)
+    } catch (error) {
+      if (!isCommandErrorCode(error, 'conflict')) throw error
+      const strategy = settings?.downloadConflictStrategy ?? 'rename'
+      if (strategy === 'skip') {
+        showNotice('目标已存在，已按设置跳过下载。')
+        return
+      }
+      if (strategy === 'ask') {
+        const rename = window.confirm('目标已存在。选择“确定”自动加序号；选择“取消”跳过下载。')
+        if (!rename) {
+          showNotice('已跳过下载。')
+          return
+        }
+        transfer = await beginDownload(file, mountId, targetDirectory, 'rename')
+      } else {
+        throw error
+      }
+    }
     const startedAt = Date.now()
     setTransfers((current) => [{
       id: transfer.transferId,
@@ -581,6 +891,7 @@ function App() {
               ...item,
               state: 'completed',
               bytesTransferred: result.bytesTransferred,
+              integrityStatus: result.integrityStatus,
               totalBytes: item.totalBytes ?? result.bytesTransferred,
               finishedAt: Date.now(),
             }
@@ -718,6 +1029,7 @@ function App() {
             ...item,
             state: 'completed',
             bytesTransferred: result.bytesTransferred,
+            integrityStatus: result.integrityStatus,
             totalBytes: item.totalBytes ?? result.bytesTransferred,
             finishedAt: Date.now(),
           }
@@ -748,7 +1060,8 @@ function App() {
     try {
       await koofr.clearFinishedDownloadHistory()
       setTransfers((current) => current.filter((item) => (
-        item.state === 'running'
+        item.state === 'queued'
+        || item.state === 'running'
         || item.state === 'retrying'
         || item.state === 'paused'
         || (item.state === 'failed' && item.recoveryKind !== null)
@@ -851,6 +1164,35 @@ function App() {
     }
   }
 
+  const openMove = (files: RemoteFile[]) => {
+    setPendingFiles(files)
+    setModalKind('move')
+  }
+
+  const executeMove = async (destinationMountId: string, destinationPath: string) => {
+    if (!workspace.activeMountId || pendingFiles.length === 0) return
+    setOperationBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        pendingFiles.map((file) =>
+          koofr.moveEntry(workspace.activeMountId, file.path, destinationMountId, destinationPath),
+        ),
+      )
+      const moved = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.filter((result) => result.status === 'rejected')
+      setModalKind(null)
+      if (failed.length === 0) {
+        showNotice(`已移动 ${moved} 个项目`)
+      } else {
+        const prefix = moved > 0 ? `已移动 ${moved} 个项目；` : ''
+        showNotice(`${prefix}${commandErrorMessage(failed[0]?.reason, '其余项目移动失败。')}`)
+      }
+    } finally {
+      await workspace.refresh()
+      setOperationBusy(false)
+    }
+  }
+
   const openLocatedFile = (file: LocatedFile) => {
     const segments = file.path.split('/').filter(Boolean)
     const targetPath = isDirectory(file)
@@ -918,7 +1260,12 @@ function App() {
   }
 
   return (
-    <div className="app-shell" data-theme={themeId}>
+    <div
+      className="app-shell"
+      data-theme={themeId}
+      data-density={settings?.density ?? 'standard'}
+      data-reduce-motion={settings?.reduceMotion ? 'true' : 'false'}
+    >
       <TitleBar />
 
       {authState === 'checking' ? (
@@ -990,6 +1337,7 @@ function App() {
               onPlay={(file) => void handlePlay(file)}
               onShare={openShare}
               onRename={openRename}
+              onMove={openMove}
               onDelete={openDelete}
             />
           )}
@@ -1052,6 +1400,7 @@ function App() {
       {authState === 'signedIn' && modalKind === 'splitUpload' && pendingSplitUpload ? (
         <SplitUploadDialog
           fileName={pendingSplitUpload.selection.fileName}
+          defaultPartMiB={settings?.defaultSplitPartMib ?? 64}
           onClose={() => {
             setModalKind(null)
             setPendingSplitUpload(null)
@@ -1079,6 +1428,9 @@ function App() {
         <CreateShareLinkDialog
           mountId={workspace.activeMountId}
           file={pendingFiles[0]}
+          defaultKind={settings?.linkDefaultKind ?? 'download'}
+          expireDays={settings?.linkDefaultExpireDays ?? 0}
+          requirePassword={settings?.linkDefaultRequirePassword ?? false}
           onClose={() => setModalKind(null)}
         />
       ) : null}
@@ -1110,6 +1462,17 @@ function App() {
         </Modal>
       ) : null}
 
+      {authState === 'signedIn' && modalKind === 'move' && pendingFiles.length > 0 && workspace.activeMountId ? (
+        <MoveDestinationDialog
+          files={pendingFiles}
+          mountId={workspace.activeMountId}
+          mounts={workspace.mounts}
+          busy={operationBusy}
+          onClose={() => setModalKind(null)}
+          onConfirm={(mntId, path) => void executeMove(mntId, path)}
+        />
+      ) : null}
+
       {authState === 'signedIn' && modalKind === 'emptyTrash' ? (
         <Modal
           title="永久清空回收站"
@@ -1137,7 +1500,7 @@ function App() {
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'settings' ? (
-        <Modal title="设置" actionLabel="完成" wide onClose={() => setModalKind(null)}>
+        <Modal title="设置" actionLabel="完成" extraWide onClose={() => setModalKind(null)}>
           <SettingsPanel
             settings={settings}
             loading={settingsLoading}
@@ -1177,6 +1540,24 @@ function App() {
             onClearCache={() => void clearMetadataCache()}
             onClearLogs={() => void clearLogs()}
             onForgetLogin={() => void forgetSavedLogin()}
+            themeId={themeId}
+            onThemeChange={selectTheme}
+            onAppearanceChange={updateAppearance}
+            onGeneralChange={updateGeneral}
+            onTransferAdvancedChange={updateAdvancedTransfer}
+            onDownloadBehaviorChange={updateDownloadBehavior}
+            onBandwidthChange={updateBandwidth}
+            onNotificationChange={updateNotifications}
+            onLinkDefaultsChange={updateLinkDefaults}
+            onSecurityChange={updateSecurity}
+            onHistoryPolicyChange={updateHistoryPolicy}
+            onClearDownloadHistory={() => void clearDownloadHistoryRecords()}
+            versionInfo={versionInfo}
+            onOpenExternalPage={(page) => {
+              void koofr.openExternalPage(page).catch((error) => {
+                setSettingsError(commandErrorMessage(error, '无法打开外部页面。'))
+              })
+            }}
           />
         </Modal>
       ) : null}
