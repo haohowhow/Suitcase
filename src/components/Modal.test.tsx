@@ -73,4 +73,31 @@ describe('Modal', () => {
     expect(backdrop?.getAttribute('tabindex')).toBe('-1')
     expect(backdrop?.getAttribute('aria-hidden')).toBe('true')
   })
+
+  it('renders two peer actions in one equal-width action group', async () => {
+    const user = userEvent.setup()
+    const onPrimary = vi.fn()
+    const onSecondary = vi.fn()
+    render(
+      <Modal
+        title="显示传输悬浮窗？"
+        actionLabel="开启悬浮窗"
+        secondaryActionLabel="暂不开启"
+        onClose={vi.fn()}
+        onAction={onPrimary}
+        onSecondaryAction={onSecondary}
+      >
+        <p>悬浮窗说明</p>
+      </Modal>,
+    )
+
+    const actions = document.querySelector('.modal__actions')
+    expect(actions).toBeInstanceOf(HTMLElement)
+    expect(actions?.querySelectorAll('button')).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: '暂不开启' }))
+    await user.click(screen.getByRole('button', { name: '开启悬浮窗' }))
+    expect(onSecondary).toHaveBeenCalledOnce()
+    expect(onPrimary).toHaveBeenCalledOnce()
+  })
 })

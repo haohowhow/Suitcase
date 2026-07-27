@@ -66,6 +66,7 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 
 - **单进程**：一个 `koofr-gui.exe`，包含 Tauri 主进程 + WebView2 子进程（由 WebView2 Runtime 管理）。
 - **主线程**：Tauri 事件循环、UI 事件调度。
+- **WebView 窗口**：`main` 持有完整应用状态；可选的 `transfer-float` 是固定大小、置顶且跳过任务栏的轻量状态窗口，只接收脱敏聚合传输快照。
 - **tokio runtime**：`rt-multi-thread`，异步 HTTP、异步磁盘 IO、传输任务、进度事件发射都在这里跑。
 - **传输并发**：`TransferManager` 允许多个传输任务并行（每个任务一个 tokio task），共享同一个 `reqwest::Client`（连接池、rustls 会话复用）。
 
@@ -207,14 +208,22 @@ src-tauri/src/
 ```typescript
 {
   transferId: string,
+  direction: 'upload' | 'download',
   state: 'running' | 'paused' | 'completed' | 'cancelled' | 'failed',
   bytesTransferred: number,
   totalBytes: number,
-  errorCode?: string,  // 仅 failed 状态
+  splitProgress?: {
+    completedParts: number,
+    currentPart: number | null,
+    totalParts: number,
+    phase: 'parts' | 'finalizing',
+  },
 }
 ```
 
 **payload 里没有文件名 / 路径 / 令牌**，前端自己维护 transferId → 文件名的映射。
+分卷上传在每个 part 成功写入 checkpoint 后更新 `completedParts`；所有数据 part
+完成后先进入 `finalizing`，直到整文件哈希、清单和恢复脚本上传完成。
 
 ### 单文件下载：字节级续传
 
@@ -366,7 +375,7 @@ pub enum AppError {
 - `BandwidthLimiter` 是普通、分卷、文件夹和 Vault 文件传输共享的 token bucket。全局与单任务限速均以 KiB/s 计算，`0` 表示该层不限速，容量允许 1 秒突发；媒体预览和元数据请求不经过限速器。
 - 下载在临时文件 `sync_all` 后、改名发布前校验 Koofr MD5。缺失合法 hash 时记录 `unavailable`，不一致返回 `integrity_error`。Vault 校验远端密文后仍执行加密认证。
 - 失败临时文件由 checkpoint 记录精确路径和保留时间。到期清理会先重新生成 checkpoint snapshot 验证路径，只删除该精确普通文件并同步移除 checkpoint，不扫描下载目录。
-- 托盘、开机启动和通知使用 Tauri 官方能力。外部项目页面只能通过 Rust 固定枚举打开；WebView 没有任意 shell / URL 权限。
+- 托盘、开机启动、通知和传输悬浮窗使用 Tauri 官方能力。悬浮窗默认关闭，整个表面可左键拖动；右键由校验窗口标签的 Rust 命令弹出原生菜单。菜单关闭会同步关闭持久设置，安全退出复用活动传输确认。首次提示状态与拖动后的物理坐标存入 `settings.json`；显示器布局变化时坐标会被收回可见范围。外部项目页面只能通过 Rust 固定枚举打开；WebView 没有任意 shell / URL 权限。
 
 ## 事件与命令目录
 
@@ -382,7 +391,7 @@ pub enum AppError {
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 
-传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `list_resumable_transfers`, `resume_transfer`, `discard_resumable_transfer`
+传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `list_resumable_transfers`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`
 
 分享链接：`list_public_links`, `create_public_link`, `delete_public_link`
 
@@ -397,6 +406,8 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 **Tauri 事件**（Rust → 前端）：
 
 - `koofr://transfer-progress`：传输进度 / 状态变化。
+- `koofr://floating-transfer-state`：主窗口 → `transfer-float` 的脱敏聚合状态；只含方向、任务数、百分比、外观偏好和完成计数。
+- `koofr://floating-window-disabled`：原生右键菜单关闭悬浮窗后，同步主窗口中的通知设置开关。
 
 ## 本地数据布局
 

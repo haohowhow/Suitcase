@@ -19,6 +19,10 @@ import { SplitUploadDialog } from './features/transfers/SplitUploadDialog'
 import { TransferPanel } from './features/transfers/TransferPanel'
 import { VaultDialog } from './features/vault/VaultDialog'
 import { countActiveDownloads, mergeTransferProgress } from './features/transfers/transferProgress'
+import {
+  shouldPromptForFloatingWindow,
+  summarizeFloatingTransfers,
+} from './features/transfers/floatingTransfer'
 import { beginDownload } from './features/transfers/beginDownload'
 import {
   commandErrorMessage,
@@ -51,7 +55,7 @@ import type {
 import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
 import type { VaultTransferSpec } from './types/vault'
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
+type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
 interface PendingDownload {
@@ -76,6 +80,7 @@ function App() {
   const [operationBusy, setOperationBusy] = useState(false)
   const [transferVisible, setTransferVisible] = useState(false)
   const [transfers, setTransfers] = useState<TransferItem[]>([])
+  const [floatingCompletionVersion, setFloatingCompletionVersion] = useState(0)
   const [notice, setNotice] = useState('')
   const [themeId, setThemeId] = useState<ThemeId>(readStoredTheme)
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -164,6 +169,9 @@ function App() {
     let unlisten: (() => void) | undefined
 
     void koofr.onTransferProgress((progress: TransferProgress) => {
+      if (progress.state === 'completed') {
+        setFloatingCompletionVersion((current) => current + 1)
+      }
       setTransfers((current) => {
         const previous = current.find((item) => item.id === progress.transferId)
         const merged = mergeTransferProgress(current, progress)
@@ -204,6 +212,57 @@ function App() {
   ])
 
   useEffect(() => {
+    if (!isTauriRuntime()) return
+    const summary = summarizeFloatingTransfers(transfers)
+    void koofr.publishFloatingTransferSnapshot({
+      ...summary,
+      completionVersion: floatingCompletionVersion,
+      language: settings?.language ?? 'system',
+      reduceMotion: settings?.reduceMotion ?? false,
+      themeId,
+    }).catch(() => {})
+  }, [
+    floatingCompletionVersion,
+    settings?.language,
+    settings?.reduceMotion,
+    themeId,
+    transfers,
+  ])
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void koofr.onFloatingWindowDisabled(() => {
+      setSettings((current) => current
+        ? {
+            ...current,
+            floatingWindowEnabled: false,
+            floatingWindowPrompted: true,
+          }
+        : current)
+    }).then((stopListening) => {
+      if (disposed) stopListening()
+      else unlisten = stopListening
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (shouldPromptForFloatingWindow(
+      authState === 'signedIn',
+      settings !== null,
+      settings?.floatingWindowPrompted ?? false,
+      modalKind !== null,
+    )) {
+      setModalKind('floatingPrompt')
+    }
+  }, [authState, modalKind, settings])
+
+  useEffect(() => {
     if (authState !== 'signedIn') return
     let active = true
     void Promise.all([koofr.listDownloadHistory(), koofr.listResumableTransfers()])
@@ -228,6 +287,7 @@ function App() {
               finishedAt: item.finishedAt,
               speedSamples: item.speedSamples,
               integrityStatus: item.integrityStatus,
+              splitProgress: undefined,
             }))
           const cachedById = new Map(cached.map((item) => [item.id, item]))
           const restored = resumable
@@ -247,6 +307,7 @@ function App() {
               startedAt: cachedById.get(item.transferId)?.startedAt ?? null,
               finishedAt: cachedById.get(item.transferId)?.finishedAt ?? null,
               speedSamples: cachedById.get(item.transferId)?.speedSamples ?? [],
+              splitProgress: item.splitProgress,
             }))
           const resumableIds = new Set(restored.map((item) => item.id))
           return [
@@ -610,9 +671,15 @@ function App() {
     notifyOnComplete: boolean
     notifySound: boolean
     trayBadge: boolean
+    floatingWindowEnabled: boolean
+    floatingWindowPrompted: boolean
   }) => {
     void (async () => {
-      if (next.notifyOnComplete && !(await ensureNotificationPermission())) {
+      if (
+        next.notifyOnComplete
+        && !settings?.notifyOnComplete
+        && !(await ensureNotificationPermission())
+      ) {
         setSettingsError('Windows 通知权限未获准，完成通知未开启。')
         return
       }
@@ -622,11 +689,35 @@ function App() {
             next.notifyOnComplete,
             next.notifySound,
             next.trayBadge,
+            next.floatingWindowEnabled,
+            next.floatingWindowPrompted,
           ),
         '通知设置已保存',
         '无法保存通知设置。',
       )
     })()
+  }
+
+  const answerFloatingWindowPrompt = async (enabled: boolean) => {
+    if (!settings) return
+    setSettingsBusy(true)
+    setSettingsError('')
+    try {
+      const next = await koofr.updateNotificationSettings(
+        settings.notifyOnComplete,
+        settings.notifySound,
+        settings.trayBadge,
+        enabled,
+        true,
+      )
+      setSettings(next)
+      setModalKind(null)
+      showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在通知设置中开启悬浮窗')
+    } catch (error) {
+      setSettingsError(commandErrorMessage(error, '无法保存悬浮窗设置。'))
+    } finally {
+      setSettingsBusy(false)
+    }
   }
 
   const updateLinkDefaults = (next: {
@@ -761,6 +852,14 @@ function App() {
       startedAt,
       finishedAt: null,
       speedSamples: [{ recordedAt: startedAt, bytesTransferred: 0 }],
+      splitProgress: splitSettings && selection.fileSize
+        ? {
+            completedParts: 0,
+            currentPart: 1,
+            totalParts: Math.ceil(selection.fileSize / splitSettings.partBytes),
+            phase: 'parts',
+          }
+        : undefined,
     }, ...current])
     setTransferVisible(true)
 
@@ -1497,6 +1596,28 @@ function App() {
           onNotice={showNotice}
           onTransferStarted={startVaultTransfer}
         />
+      ) : null}
+
+      {authState === 'signedIn' && modalKind === 'floatingPrompt' ? (
+        <Modal
+          title="显示传输悬浮窗？"
+          actionLabel={settingsBusy ? '正在开启…' : '开启悬浮窗'}
+          actionDisabled={settingsBusy}
+          secondaryActionLabel="暂不开启"
+          secondaryActionDisabled={settingsBusy}
+          onClose={() => {
+            if (!settingsBusy) void answerFloatingWindowPrompt(false)
+          }}
+          onSecondaryAction={() => void answerFloatingWindowPrompt(false)}
+          onAction={() => void answerFloatingWindowPrompt(true)}
+        >
+          <div className="floating-window-prompt">
+            <p>
+              悬浮窗会置顶显示上传、下载和暂停状态，只同步任务数量与汇总百分比，不包含文件名或路径。
+            </p>
+            <p>可拖动到合适位置，单击即可回到传输面板。</p>
+          </div>
+        </Modal>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'settings' ? (

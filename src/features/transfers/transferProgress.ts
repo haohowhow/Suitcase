@@ -39,6 +39,7 @@ export function mergeTransferProgress(
           state: progress.state,
           bytesTransferred: progress.bytesTransferred,
           totalBytes: progress.totalBytes ?? transfer.totalBytes,
+          splitProgress: progress.splitProgress ?? transfer.splitProgress,
           finishedAt: terminal ? transfer.finishedAt ?? recordedAt : transfer.finishedAt,
           speedSamples,
         }

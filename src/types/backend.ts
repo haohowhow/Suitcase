@@ -87,6 +87,8 @@ export interface AppSettings {
   readonly notifyOnComplete: boolean
   readonly notifySound: boolean
   readonly trayBadge: boolean
+  readonly floatingWindowEnabled: boolean
+  readonly floatingWindowPrompted: boolean
   readonly linkDefaultKind: LinkDefaultKind
   readonly linkDefaultExpireDays: number
   readonly linkDefaultRequirePassword: boolean
@@ -176,12 +178,20 @@ export type TransferState = 'queued' | 'running' | 'retrying' | 'paused' | 'comp
 export type IntegrityStatus = 'notRequested' | 'unavailable' | 'verified'
 export type RecoveryKind = 'byte_resume' | 'chunk_resume' | 'restart'
 
+export interface SplitProgress {
+  readonly completedParts: number
+  readonly currentPart: number | null
+  readonly totalParts: number
+  readonly phase: 'parts' | 'finalizing'
+}
+
 export interface TransferProgress {
   transferId: string
   direction: TransferDirection
   state: TransferState
   bytesTransferred: number
   totalBytes: number | null
+  splitProgress?: SplitProgress
 }
 
 export interface DownloadSpeedSample {
@@ -219,6 +229,7 @@ export interface ResumableTransfer {
   readonly recoveryKind: RecoveryKind
   readonly bytesTransferred: number
   readonly totalBytes: number
+  readonly splitProgress?: SplitProgress
 }
 
 export interface LocalFileSelection {

@@ -155,6 +155,7 @@ async fn run_upload(
             retry_attempt: retries_completed,
             bytes_transferred: progress.load(Ordering::Relaxed),
             total_bytes: Some(total),
+            split_progress: None,
             policy: retry_policy,
         })
         .await

@@ -19,11 +19,11 @@ use crate::{
 };
 
 use super::{
-    TransferDirection, TransferState,
+    SplitProgressPhase, TransferDirection, TransferState,
     checkpoint::{SplitUploadCheckpoint, TransferCheckpoint},
-    emit_progress,
+    emit_progress_with_split,
     split_package::{SplitPart, encode_sha256, part_file_name},
-    split_upload::SplitTransferRuntime,
+    split_upload::{SplitTransferRuntime, split_progress},
 };
 
 pub(super) async fn upload_next_part(
@@ -48,6 +48,7 @@ pub(super) async fn upload_next_part(
     let transfer_id = checkpoint.transfer_id.clone();
     let cancel_for_stream = cancel.clone();
     let total = checkpoint.expected_size;
+    let part_progress = split_progress(checkpoint, SplitProgressPhase::Parts)?;
     let stream = ReaderStream::new(file.take(size)).and_then(move |chunk| {
         let app = app.clone();
         let transfer_id = transfer_id.clone();
@@ -67,13 +68,14 @@ pub(super) async fn upload_next_part(
             let part_bytes = stream_progress
                 .fetch_add(chunk.len() as u64, Ordering::Relaxed)
                 .saturating_add(chunk.len() as u64);
-            emit_progress(
+            emit_progress_with_split(
                 &app,
                 &transfer_id,
                 TransferDirection::Upload,
                 TransferState::Running,
                 committed.saturating_add(part_bytes),
                 Some(total),
+                Some(part_progress),
             );
             Ok(chunk)
         }
@@ -100,7 +102,17 @@ pub(super) async fn upload_next_part(
     runtime
         .checkpoints
         .insert(TransferCheckpoint::SplitUpload(checkpoint.clone()))
-        .await
+        .await?;
+    emit_progress_with_split(
+        &runtime.app,
+        &checkpoint.transfer_id,
+        TransferDirection::Upload,
+        TransferState::Running,
+        committed_bytes(checkpoint),
+        Some(checkpoint.expected_size),
+        Some(split_progress(checkpoint, SplitProgressPhase::Parts)?),
+    );
+    Ok(())
 }
 
 pub(super) async fn hash_file(

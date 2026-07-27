@@ -181,6 +181,7 @@ async fn run_vault_upload(
             retry_attempt: retries_completed,
             bytes_transferred: progress.load(Ordering::Relaxed),
             total_bytes: Some(plain_size),
+            split_progress: None,
             policy: retry_policy,
         })
         .await
@@ -437,6 +438,7 @@ async fn run_vault_download(
             retry_attempt: retries_completed,
             bytes_transferred: plain_progress.load(Ordering::Relaxed),
             total_bytes: Some(total_plain),
+            split_progress: None,
             policy: retry_policy,
         })
         .await

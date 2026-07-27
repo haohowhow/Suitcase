@@ -8,9 +8,10 @@ use crate::{
 };
 
 use super::{
-    NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferResult, TransferState,
+    NetworkRetryPolicy, NetworkRetryRequest, SplitProgress, SplitProgressPhase, TransferDirection,
+    TransferResult, TransferState,
     checkpoint::{SplitUploadCheckpoint, TransferCheckpoint, TransferCheckpointStore},
-    emit_progress, emit_terminal,
+    emit_progress_with_split, emit_terminal,
     manager::TransferManager,
     normalize_interruption, should_retry_network,
     split_package::{
@@ -142,13 +143,14 @@ async fn run_registered(
     mut checkpoint: SplitUploadCheckpoint,
     cancel: CancellationToken,
 ) -> Result<TransferResult, AppError> {
-    emit_progress(
+    emit_progress_with_split(
         &runtime.app,
         &checkpoint.transfer_id,
         TransferDirection::Upload,
         TransferState::Queued,
         committed_bytes(&checkpoint),
         Some(checkpoint.expected_size),
+        Some(split_progress(&checkpoint, SplitProgressPhase::Parts)?),
     );
     let _permit = match runtime
         .manager
@@ -184,6 +186,7 @@ async fn run_registered(
             retry_attempt: retries_completed,
             bytes_transferred: committed_bytes(&checkpoint),
             total_bytes: Some(checkpoint.expected_size),
+            split_progress: Some(split_progress(&checkpoint, SplitProgressPhase::Parts)?),
             policy: runtime.retry_policy,
         })
         .await
@@ -251,6 +254,7 @@ async fn prepare_new_package(
             retry_attempt: retries_completed,
             bytes_transferred: 0,
             total_bytes: Some(checkpoint.expected_size),
+            split_progress: Some(split_progress(checkpoint, SplitProgressPhase::Parts)?),
             policy: runtime.retry_policy,
         })
         .await?;
@@ -285,18 +289,28 @@ async fn run_inner(
     let package_path = RemotePath::parse(checkpoint.package_path.clone())?;
     ensure_package(runtime.api, &mount_id, &package_path).await?;
     reconcile_parts(runtime, cancel, &mount_id, &package_path, checkpoint).await?;
-    emit_progress(
+    emit_progress_with_split(
         &runtime.app,
         &checkpoint.transfer_id,
         TransferDirection::Upload,
         TransferState::Running,
         committed_bytes(checkpoint),
         Some(checkpoint.expected_size),
+        Some(split_progress(checkpoint, SplitProgressPhase::Parts)?),
     );
 
     while committed_bytes(checkpoint) < checkpoint.expected_size {
         upload_next_part(runtime, cancel, &mount_id, &package_path, checkpoint).await?;
     }
+    emit_progress_with_split(
+        &runtime.app,
+        &checkpoint.transfer_id,
+        TransferDirection::Upload,
+        TransferState::Running,
+        checkpoint.expected_size,
+        Some(checkpoint.expected_size),
+        Some(split_progress(checkpoint, SplitProgressPhase::Finalizing)?),
+    );
     let full_hash = hash_file(checkpoint.local_path.clone(), cancel.clone()).await?;
     let manifest = SplitManifest::new(
         file_name(&checkpoint.local_path)?,
@@ -320,6 +334,18 @@ async fn run_inner(
         }),
         integrity_status: super::IntegrityStatus::NotRequested,
     })
+}
+
+pub(super) fn split_progress(
+    checkpoint: &SplitUploadCheckpoint,
+    phase: SplitProgressPhase,
+) -> Result<SplitProgress, AppError> {
+    SplitProgress::new(
+        checkpoint.expected_size,
+        checkpoint.chunk_size,
+        checkpoint.completed_chunks.len(),
+        phase,
+    )
 }
 
 async fn ensure_package(

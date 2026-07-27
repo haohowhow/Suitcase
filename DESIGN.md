@@ -143,6 +143,15 @@ All spacing derives from a 4px base.
 - **States**: open, hidden, empty, running, completed, failed, cancelled.
 - **Accessibility**: live transfer values remain textual; action buttons have explicit labels.
 
+### Floating transfer window
+
+- **Structure**: fixed 252×64 Windows always-on-top window with a continuous 18px corner radius. The whole surface is the left-button drag target; there is no separate drag strip.
+- **States**: weighted upload/download/mixed progress, indeterminate total, paused, short completion acknowledgement, and idle.
+- **Context menu**: right-click opens the native Windows menu for opening Koofr GUI, closing the floating window, or safely quitting the application.
+- **Privacy**: receives only direction, task count, aggregate percentage, theme/language, and a completion counter; never a file name or path.
+- **Motion**: progress retargets from its current transform over `--motion-standard`; icons use restrained micro feedback. Reduced motion keeps the state change but removes spatial transition.
+- **Surface**: one compact structural material with a soft outline, rounded clipping, and solid accent progress fill; no decorative gradient, looping pulse, or nested glass.
+
 ### File type icon
 
 - **Structure**: a reusable 36x38 inline SVG with a layered folder or folded document silhouette and a type-specific interior mark.

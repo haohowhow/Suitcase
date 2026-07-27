@@ -1,11 +1,24 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use tauri::{
-    App, AppHandle, Manager, Runtime,
-    menu::{Menu, MenuItem},
+    App, AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::{AppState, settings::InterfaceLanguage};
+
+pub const FLOATING_WINDOW_LABEL: &str = "transfer-float";
+pub const FLOATING_WINDOW_DISABLED_EVENT: &str = "koofr://floating-window-disabled";
+const FLOATING_MENU_OPEN_ID: &str = "floating-open-app";
+const FLOATING_MENU_CLOSE_ID: &str = "floating-close-window";
+const FLOATING_MENU_QUIT_ID: &str = "floating-quit-app";
+const FLOATING_WINDOW_WIDTH: f64 = 252.0;
+const FLOATING_WINDOW_HEIGHT: f64 = 64.0;
+const FLOATING_WINDOW_MARGIN: i32 = 20;
+static FLOATING_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 #[tauri::command]
 pub fn set_taskbar_badge(
@@ -46,6 +59,7 @@ pub fn set_taskbar_badge(
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let appearance = tauri::async_runtime::block_on(app.state::<AppState>().settings.appearance());
+    setup_floating_window(app)?;
     let english = resolved_english(appearance.language);
     let menu = tray_menu(app.handle(), english)?;
     let icon = app
@@ -79,11 +93,192 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn setup_floating_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    let notifications =
+        tauri::async_runtime::block_on(app.state::<AppState>().settings.notifications());
+    let saved_position =
+        tauri::async_runtime::block_on(app.state::<AppState>().settings.floating_window_position());
+    let window = WebviewWindowBuilder::new(
+        app,
+        FLOATING_WINDOW_LABEL,
+        WebviewUrl::App("index.html?view=transfer-float".into()),
+    )
+    .title("Koofr Transfers")
+    .inner_size(FLOATING_WINDOW_WIDTH, FLOATING_WINDOW_HEIGHT)
+    .decorations(false)
+    .resizable(false)
+    .minimizable(false)
+    .maximizable(false)
+    .closable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .focused(false)
+    .shadow(false)
+    .visible(false)
+    .build()?;
+    window.on_menu_event(|window, event| match event.id.as_ref() {
+        FLOATING_MENU_OPEN_ID => show_main_window(window.app_handle()),
+        FLOATING_MENU_CLOSE_ID => disable_floating_window(window.app_handle()),
+        FLOATING_MENU_QUIT_ID => request_quit(window.app_handle()),
+        _ => {}
+    });
+    place_floating_window(&window, saved_position)?;
+    if notifications.floating_window_enabled {
+        window.show()?;
+    }
+    Ok(())
+}
+
+fn place_floating_window<R: Runtime>(
+    window: &WebviewWindow<R>,
+    saved_position: Option<(i32, i32)>,
+) -> tauri::Result<()> {
+    let monitors = window.available_monitors()?;
+    if let Some(((x, y), monitor)) = saved_position.and_then(|position| {
+        monitors.iter().find_map(|monitor| {
+            let (x, y) = position;
+            let position = monitor.position();
+            let size = monitor.size();
+            let right = position
+                .x
+                .saturating_add(i32::try_from(size.width).unwrap_or(i32::MAX));
+            let bottom = position
+                .y
+                .saturating_add(i32::try_from(size.height).unwrap_or(i32::MAX));
+            (x >= position.x && x < right && y >= position.y && y < bottom)
+                .then_some(((x, y), monitor))
+        })
+    }) {
+        let scale = monitor.scale_factor();
+        let width = (FLOATING_WINDOW_WIDTH * scale).round() as i32;
+        let height = (FLOATING_WINDOW_HEIGHT * scale).round() as i32;
+        let position = monitor.position();
+        let size = monitor.size();
+        let right = position
+            .x
+            .saturating_add(i32::try_from(size.width).unwrap_or(i32::MAX));
+        let bottom = position
+            .y
+            .saturating_add(i32::try_from(size.height).unwrap_or(i32::MAX));
+        let x = x.clamp(
+            position.x.saturating_add(FLOATING_WINDOW_MARGIN),
+            right
+                .saturating_sub(width)
+                .saturating_sub(FLOATING_WINDOW_MARGIN),
+        );
+        let y = y.clamp(
+            position.y.saturating_add(FLOATING_WINDOW_MARGIN),
+            bottom
+                .saturating_sub(height)
+                .saturating_sub(FLOATING_WINDOW_MARGIN),
+        );
+        return window.set_position(PhysicalPosition::new(x, y));
+    }
+    let Some(monitor) = window.primary_monitor()? else {
+        return Ok(());
+    };
+    let scale = monitor.scale_factor();
+    let width = (FLOATING_WINDOW_WIDTH * scale).round() as i32;
+    let position = monitor.position();
+    let size = monitor.size();
+    let x = position
+        .x
+        .saturating_add(i32::try_from(size.width).unwrap_or(i32::MAX))
+        .saturating_sub(width)
+        .saturating_sub(FLOATING_WINDOW_MARGIN);
+    let y = position.y.saturating_add(FLOATING_WINDOW_MARGIN);
+    window.set_position(PhysicalPosition::new(x, y))
+}
+
+pub fn set_floating_window_visible<R: Runtime>(
+    app: &AppHandle<R>,
+    visible: bool,
+) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) else {
+        return Ok(());
+    };
+    if visible {
+        window.show()
+    } else {
+        window.hide()
+    }
+}
+
+#[tauri::command]
+pub fn show_floating_context_menu(window: WebviewWindow) -> Result<(), crate::error::CommandError> {
+    if window.label() != FLOATING_WINDOW_LABEL {
+        return Err(crate::error::AppError::Forbidden.into());
+    }
+    let appearance =
+        tauri::async_runtime::block_on(window.state::<AppState>().settings.appearance());
+    let menu = floating_context_menu(window.app_handle(), resolved_english(appearance.language))
+        .map_err(|_| crate::error::AppError::LocalData)?;
+    window
+        .popup_menu(&menu)
+        .map_err(|_| crate::error::AppError::LocalData.into())
+}
+
 pub fn update_language(app: &AppHandle, language: InterfaceLanguage) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
     };
     tray.set_menu(Some(tray_menu(app, resolved_english(language))?))
+}
+
+fn floating_context_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri::Result<Menu<R>> {
+    let open = MenuItem::with_id(
+        app,
+        FLOATING_MENU_OPEN_ID,
+        if english {
+            "Open Koofr GUI"
+        } else {
+            "打开应用"
+        },
+        true,
+        None::<&str>,
+    )?;
+    let close = MenuItem::with_id(
+        app,
+        FLOATING_MENU_CLOSE_ID,
+        if english {
+            "Close Floating Window"
+        } else {
+            "关闭悬浮窗"
+        },
+        true,
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(
+        app,
+        FLOATING_MENU_QUIT_ID,
+        if english {
+            "Quit Koofr GUI"
+        } else {
+            "退出应用"
+        },
+        true,
+        None::<&str>,
+    )?;
+    Menu::with_items(app, &[&open, &close, &separator, &quit])
+}
+
+fn disable_floating_window<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if app
+            .state::<AppState>()
+            .settings
+            .disable_floating_window()
+            .await
+            .is_err()
+        {
+            return;
+        }
+        let _ = set_floating_window_visible(&app, false);
+        let _ = app.emit_to("main", FLOATING_WINDOW_DISABLED_EVENT, ());
+    });
 }
 
 fn tray_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri::Result<Menu<R>> {
@@ -110,6 +305,22 @@ fn tray_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri::Result<Men
 
 pub fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
     let app = window.app_handle();
+    if window.label() == FLOATING_WINDOW_LABEL {
+        match event {
+            tauri::WindowEvent::Moved(position) => {
+                persist_floating_position(app.clone(), *position);
+            }
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
+        }
+        return;
+    }
+    if window.label() != "main" {
+        return;
+    }
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
             let general =
@@ -135,6 +346,23 @@ pub fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri:
         }
         _ => {}
     }
+}
+
+fn persist_floating_position<R: Runtime>(app: AppHandle<R>, position: PhysicalPosition<i32>) {
+    let generation = FLOATING_MOVE_GENERATION
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        if FLOATING_MOVE_GENERATION.load(Ordering::Relaxed) != generation {
+            return;
+        }
+        let _ = app
+            .state::<AppState>()
+            .settings
+            .update_floating_window_position(position.x, position.y)
+            .await;
+    });
 }
 
 fn show_main_window<R: Runtime>(app: &AppHandle<R>) {

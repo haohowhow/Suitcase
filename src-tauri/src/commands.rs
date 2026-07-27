@@ -87,6 +87,8 @@ pub struct SettingsSnapshot {
     notify_on_complete: bool,
     notify_sound: bool,
     tray_badge: bool,
+    floating_window_enabled: bool,
+    floating_window_prompted: bool,
     // Link defaults
     link_default_kind: LinkDefaultKind,
     link_default_expire_days: u32,
@@ -450,6 +452,8 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
         notify_on_complete: notifications.notify_on_complete,
         notify_sound: notifications.notify_sound,
         tray_badge: notifications.tray_badge,
+        floating_window_enabled: notifications.floating_window_enabled,
+        floating_window_prompted: notifications.floating_window_prompted,
         link_default_kind: links.kind,
         link_default_expire_days: links.expire_days,
         link_default_require_password: links.require_password,
@@ -1137,16 +1141,27 @@ pub async fn update_bandwidth_settings(
 
 #[tauri::command]
 pub async fn update_notification_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     notify_on_complete: bool,
     notify_sound: bool,
     tray_badge: bool,
+    floating_window_enabled: bool,
+    floating_window_prompted: bool,
 ) -> CommandResult<SettingsSnapshot> {
     state
         .settings
-        .update_notifications(notify_on_complete, notify_sound, tray_badge)
+        .update_notifications(
+            notify_on_complete,
+            notify_sound,
+            tray_badge,
+            floating_window_enabled,
+            floating_window_prompted,
+        )
         .await
         .map_err(CommandError::from)?;
+    crate::desktop::set_floating_window_visible(&app, floating_window_enabled)
+        .map_err(|_| CommandError::from(AppError::LocalData))?;
     Ok(settings_snapshot(&state).await)
 }
 

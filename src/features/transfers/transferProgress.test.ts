@@ -98,4 +98,38 @@ describe('mergeTransferProgress', () => {
     ])
     vi.restoreAllMocks()
   })
+
+  it('preserves split metadata when a terminal event omits it', () => {
+    const upload: TransferItem = {
+      id: 'split-1',
+      name: 'archive.parts',
+      direction: 'upload',
+      state: 'running',
+      bytesTransferred: 96,
+      totalBytes: 128,
+      localKind: 'file',
+      recoveryKind: 'chunk_resume',
+      remotePath: null,
+      localPath: null,
+      startedAt: 1_700_000_000_000,
+      finishedAt: null,
+      speedSamples: [],
+      splitProgress: {
+        completedParts: 3,
+        currentPart: 4,
+        totalParts: 4,
+        phase: 'parts',
+      },
+    }
+
+    const [updated] = mergeTransferProgress([upload], {
+      transferId: upload.id,
+      direction: 'upload',
+      state: 'completed',
+      bytesTransferred: 128,
+      totalBytes: null,
+    })
+
+    expect(updated?.splitProgress).toEqual(upload.splitProgress)
+  })
 })

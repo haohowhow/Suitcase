@@ -1,6 +1,7 @@
 import type {
   IntegrityStatus,
   RecoveryKind,
+  SplitProgress,
   TransferDirection,
   TransferState,
 } from './backend'
@@ -46,6 +47,7 @@ export interface TransferItem {
   readonly finishedAt: number | null
   readonly speedSamples: readonly TransferSpeedSample[]
   readonly integrityStatus?: IntegrityStatus
+  readonly splitProgress?: SplitProgress
 }
 
 export interface TransferSpeedSample {

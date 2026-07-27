@@ -80,6 +80,28 @@ function percentage(item: TransferItem) {
   return item.state === 'completed' ? 100 : 0
 }
 
+function splitProgressLabel(item: TransferItem, detail = false) {
+  const progress = item.splitProgress
+  if (!progress) return null
+  if (progress.phase === 'finalizing') {
+    return detail
+      ? `分卷 ${progress.totalParts} / ${progress.totalParts} · 正在完成`
+      : `分卷 ${progress.totalParts}/${progress.totalParts} · 正在完成`
+  }
+  if (item.state === 'paused' || item.state === 'failed') {
+    return detail
+      ? `已完成 ${progress.completedParts} / ${progress.totalParts} 个分卷`
+      : `已完成 ${progress.completedParts}/${progress.totalParts} 卷`
+  }
+  const current = progress.currentPart ?? Math.min(
+    progress.completedParts + 1,
+    progress.totalParts,
+  )
+  return detail
+    ? `当前分卷 ${current} / ${progress.totalParts}`
+    : `第 ${current}/${progress.totalParts} 卷`
+}
+
 function formatDate(timestamp: number | null) {
   if (timestamp === null || !Number.isFinite(timestamp)) return '—'
   return DATE_FORMATTER.format(new Date(timestamp))
@@ -321,6 +343,7 @@ export function TransferPanel({
                 <strong title={item.name}>{item.name}</strong>
                 <div className="transfer-item__meta">
                   <span>{stateLabels[item.state]}</span>
+                  {splitProgressLabel(item) ? <span>{splitProgressLabel(item)}</span> : null}
                   <span>{formatBytes(item.totalBytes ?? item.bytesTransferred)}</span>
                 </div>
                 {active || item.state === 'paused' ? (
@@ -411,6 +434,9 @@ export function TransferPanel({
             <div><span>开始时间</span><strong>{formatDate(selected.startedAt)}</strong></div>
             <div><span>完成时间</span><strong>{formatDate(selected.finishedAt)}</strong></div>
             <div><span>文件大小</span><strong>{formatBytes(selected.totalBytes ?? selected.bytesTransferred)}</strong></div>
+            {splitProgressLabel(selected, true) ? (
+              <div><span>分卷进度</span><strong>{splitProgressLabel(selected, true)}</strong></div>
+            ) : null}
             <div>
               <span>完整性校验</span>
               <strong>

@@ -6,10 +6,21 @@ if (import.meta.env.DEV) {
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { FloatingTransferWindow } from './features/transfers/FloatingTransferWindow'
 import './styles.css'
+
+const isFloatingWindow = new URLSearchParams(window.location.search).get('view') === 'transfer-float'
+if (isFloatingWindow) {
+  document.documentElement.classList.add('floating-window-root')
+  document.body.classList.add('floating-window-body')
+}
+
+const rootComponent = isFloatingWindow
+  ? <FloatingTransferWindow />
+  : <App />
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {rootComponent}
   </StrictMode>,
 )
