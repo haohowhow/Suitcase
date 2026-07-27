@@ -8,7 +8,7 @@
 - `src/transfer/`、`src/folder_download.rs`：流式上传/下载、单文件 Range 续传、通用二进制分卷续传、持久化恢复检查点、递归目录清单、进度事件、取消、下载临时内容清理。
 - `src/transfer/manager.rs`、`src/transfer/limiter.rs`：可动态升降的上传 / 下载闸门、排队取消，以及覆盖普通、分卷、文件夹、Vault 和恢复任务的共享 KiB/s token bucket。
 - `src/transfer/integrity.rs`：最终发布前的流式 MD5 校验；缺少远端 hash 时记录不可校验，hash 不一致不发布最终文件。
-- `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认和 Windows 任务栏 overlay。
+- `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认、Windows 任务栏 overlay，以及置顶传输悬浮窗的位置恢复、原生右键菜单和主窗口唤起。
 - `src/commands.rs`、`src/vault_commands.rs`：暴露给 WebView 的窄接口；Vault 命令只接收注册 ID 和短期不透明句柄。
 - `src/crypto/`、`src/vault_core/`：官方 `koofr/vault` 加密引擎边界、Vault 解锁会话、不透明路径句柄和自动锁定。
 - `src/credential_manager.rs`：用户选了保存密码的话，把应用专用密码写到 Windows 凭据管理器里。密码不会出现在普通配置中。
@@ -40,7 +40,7 @@
 ## Tauri 命令
 
 `connect_koofr`、`restore_saved_login`、`disconnect_koofr`、`koofr_session`、
-`get_settings`、`update_settings`、`update_download_settings`、`update_logging_settings`、`update_transfer_settings`、`update_work_directory`、`clear_metadata_cache`、`clear_logs`、`select_work_directory`、`forget_saved_login`、`update_appearance_settings`、`update_general_settings`、`update_transfer_advanced_settings`、`update_download_behavior_settings`、`update_bandwidth_settings`、`update_notification_settings`、`update_link_defaults`、`update_security_settings`、`update_history_policy`、`app_version_info`、`select_upload_file`、
+`get_settings`、`update_settings`、`update_download_settings`、`update_logging_settings`、`update_transfer_settings`、`update_work_directory`、`clear_metadata_cache`、`clear_logs`、`select_work_directory`、`forget_saved_login`、`update_appearance_settings`、`update_general_settings`、`update_transfer_advanced_settings`、`update_download_behavior_settings`、`update_bandwidth_settings`、`update_notification_settings`、`update_link_defaults`、`update_security_settings`、`update_history_policy`、`app_version_info`、`show_floating_context_menu`、`select_upload_file`、
 `select_download_location`、`select_download_folder`、`select_download_directory`、
 `prepare_download_location`、`prepare_download_folder`、`list_mounts`、
 `list_files`、`list_recent`、`list_shared`、`list_trash`、`restore_trash`、
@@ -55,7 +55,7 @@ Vault：`list_vaults`、`unlock_vault`、`lock_vault`、`list_vault_files`、
 `create_vault`、`remove_vault`、`export_vault_rclone_config`、
 `import_vault_rclone_config`。
 
-传输通过 `koofr://transfer-progress` 事件上报运行、暂停、完成、取消或失败状态。事件里不包含本地或远程文件名。TypeScript 封装在 `src/services/koofr.ts`。
+传输通过 `koofr://transfer-progress` 事件上报运行、暂停、完成、取消或失败状态；分卷任务额外携带已确认卷数、当前卷、总卷数和 `parts` / `finalizing` 阶段。事件里不包含本地或远程文件名。主窗口另向 `transfer-float` 发送只含方向、任务数和汇总百分比的 `koofr://floating-transfer-state`。TypeScript 封装在 `src/services/koofr.ts`。
 
 Koofr 官方 Go 客户端暴露了 `FilesGetRange`，所以下载能做真实的字节级续传。但公开上传协议和 rclone 的 Koofr 后端只有整文件 `FilesPut`，没有针对单个普通文件的分块上传会话或已确认偏移。普通上传会持久化中断任务并提供"重新上传"，不会把整文件重传标成字节续传。用户明确选了"可续传大文件"时，后端建一个独立远端文件夹，把原文件切成自定义大小的 `part-*.bin`，只从最后一个已确认完整的分卷继续。完成后写入通用恢复命令、分卷和整文件 SHA-256 和开放 JSON 清单。分卷可以直接用系统自带的 `copy /b` 或 `cat` 拼接，不需要本客户端。
 

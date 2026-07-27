@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::AppError;
 
 use super::{
-    TransferDirection,
+    SplitProgress, SplitProgressPhase, TransferDirection,
     checkpoint::{RecoveryKind, ResumableTransfer, TransferCheckpoint},
 };
 
@@ -28,6 +28,7 @@ pub(super) async fn snapshot(
                 recovery_kind: RecoveryKind::ByteResume,
                 bytes_transferred,
                 total_bytes: checkpoint.expected_size,
+                split_progress: None,
             })
         }
         TransferCheckpoint::VaultDownload(checkpoint) => {
@@ -50,6 +51,7 @@ pub(super) async fn snapshot(
                 recovery_kind: RecoveryKind::ByteResume,
                 bytes_transferred,
                 total_bytes,
+                split_progress: None,
             })
         }
         TransferCheckpoint::VaultUpload(checkpoint) => Ok(ResumableTransfer {
@@ -59,19 +61,29 @@ pub(super) async fn snapshot(
             recovery_kind: RecoveryKind::Restart,
             bytes_transferred: 0,
             total_bytes: checkpoint.expected_size,
+            split_progress: None,
         }),
-        TransferCheckpoint::SplitUpload(checkpoint) => Ok(ResumableTransfer {
-            transfer_id: checkpoint.transfer_id,
-            name: file_name(&checkpoint.local_path)?,
-            direction: TransferDirection::Upload,
-            recovery_kind: RecoveryKind::ChunkResume,
-            bytes_transferred: checkpoint
-                .completed_chunks
-                .iter()
-                .map(|part| part.size)
-                .sum(),
-            total_bytes: checkpoint.expected_size,
-        }),
+        TransferCheckpoint::SplitUpload(checkpoint) => {
+            let split_progress = SplitProgress::new(
+                checkpoint.expected_size,
+                checkpoint.chunk_size,
+                checkpoint.completed_chunks.len(),
+                SplitProgressPhase::Parts,
+            )?;
+            Ok(ResumableTransfer {
+                transfer_id: checkpoint.transfer_id,
+                name: file_name(&checkpoint.local_path)?,
+                direction: TransferDirection::Upload,
+                recovery_kind: RecoveryKind::ChunkResume,
+                bytes_transferred: checkpoint
+                    .completed_chunks
+                    .iter()
+                    .map(|part| part.size)
+                    .sum(),
+                total_bytes: checkpoint.expected_size,
+                split_progress: Some(split_progress),
+            })
+        }
         TransferCheckpoint::Upload(checkpoint) => Ok(ResumableTransfer {
             transfer_id: checkpoint.transfer_id,
             name: file_name(&checkpoint.local_path)?,
@@ -79,6 +91,7 @@ pub(super) async fn snapshot(
             recovery_kind: RecoveryKind::Restart,
             bytes_transferred: 0,
             total_bytes: checkpoint.expected_size,
+            split_progress: None,
         }),
     }
 }

@@ -93,6 +93,8 @@ interface SettingsPanelProps {
     notifyOnComplete: boolean
     notifySound: boolean
     trayBadge: boolean
+    floatingWindowEnabled: boolean
+    floatingWindowPrompted: boolean
   }) => void
   readonly onLinkDefaultsChange?: (next: {
     kind: LinkDefaultKind
@@ -348,12 +350,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
     notifyOnComplete: boolean
     notifySound: boolean
     trayBadge: boolean
+    floatingWindowEnabled: boolean
+    floatingWindowPrompted: boolean
   }>) => {
     if (!onNotificationChange) return
     onNotificationChange({
       notifyOnComplete: patch.notifyOnComplete ?? settings.notifyOnComplete,
       notifySound: patch.notifySound ?? settings.notifySound,
       trayBadge: patch.trayBadge ?? settings.trayBadge,
+      floatingWindowEnabled:
+        patch.floatingWindowEnabled ?? settings.floatingWindowEnabled,
+      floatingWindowPrompted:
+        patch.floatingWindowPrompted ?? settings.floatingWindowPrompted,
     })
   }
 
@@ -1264,6 +1272,16 @@ export function SettingsPanel(props: SettingsPanelProps) {
               checked={settings.trayBadge}
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({ trayBadge: next })}
+            />
+            <SwitchRow
+              label="显示传输悬浮窗"
+              hint="置顶显示上传、下载或暂停状态；单击可打开传输面板"
+              checked={settings.floatingWindowEnabled}
+              disabled={busy || !onNotificationChange}
+              onChange={(next) => updateNotifications({
+                floatingWindowEnabled: next,
+                floatingWindowPrompted: true,
+              })}
             />
           </section>
         ) : null}

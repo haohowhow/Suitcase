@@ -145,6 +145,7 @@ async fn run_download(
             retry_attempt: retries_completed,
             bytes_transferred: progress.load(Ordering::Relaxed),
             total_bytes: Some(checkpoint.expected_size),
+            split_progress: None,
             policy: retry_policy,
         })
         .await

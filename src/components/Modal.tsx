@@ -9,6 +9,9 @@ interface ModalProps {
   readonly onClose: () => void
   readonly onAction?: () => void
   readonly actionDisabled?: boolean
+  readonly secondaryActionLabel?: string
+  readonly onSecondaryAction?: () => void
+  readonly secondaryActionDisabled?: boolean
   readonly wide?: boolean
   readonly extraWide?: boolean
 }
@@ -20,6 +23,9 @@ export function Modal({
   onClose,
   onAction,
   actionDisabled = false,
+  secondaryActionLabel,
+  onSecondaryAction,
+  secondaryActionDisabled = false,
   wide = false,
   extraWide = false,
 }: ModalProps) {
@@ -68,9 +74,30 @@ export function Modal({
         </button>
         <h2 id="modal-title">{title}</h2>
         <div className="modal__content">{children}</div>
-        <button className="primary-button modal__action" type="button" disabled={actionDisabled} onClick={onAction ?? onClose}>
-          {actionLabel}
-        </button>
+        {secondaryActionLabel ? (
+          <div className="modal__actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={secondaryActionDisabled}
+              onClick={onSecondaryAction ?? onClose}
+            >
+              {secondaryActionLabel}
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={actionDisabled}
+              onClick={onAction ?? onClose}
+            >
+              {actionLabel}
+            </button>
+          </div>
+        ) : (
+          <button className="primary-button modal__action" type="button" disabled={actionDisabled} onClick={onAction ?? onClose}>
+            {actionLabel}
+          </button>
+        )}
       </section>
     </dialog>
   )

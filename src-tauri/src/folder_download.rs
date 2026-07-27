@@ -179,6 +179,7 @@ pub async fn download_folder(
             retry_attempt: retries_completed,
             bytes_transferred: progress.load(Ordering::Relaxed),
             total_bytes: None,
+            split_progress: None,
             policy: context.retry_policy,
         })
         .await

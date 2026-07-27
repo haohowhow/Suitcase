@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
   isPermissionGranted,
   requestPermission,
@@ -33,8 +34,11 @@ import type {
   VideoStreamInfo,
 } from '../types/backend'
 import type { SplitUploadSettings } from '../types/files'
+import type { FloatingTransferSnapshot } from '../features/transfers/floatingTransfer'
 
 const TRANSFER_EVENT = 'koofr://transfer-progress'
+const FLOATING_TRANSFER_EVENT = 'koofr://floating-transfer-state'
+const FLOATING_WINDOW_DISABLED_EVENT = 'koofr://floating-window-disabled'
 
 export function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
@@ -258,11 +262,15 @@ export const koofr = {
     notifyOnComplete: boolean,
     notifySound: boolean,
     trayBadge: boolean,
+    floatingWindowEnabled: boolean,
+    floatingWindowPrompted: boolean,
   ) {
     return invoke<AppSettings>('update_notification_settings', {
       notifyOnComplete,
       notifySound,
       trayBadge,
+      floatingWindowEnabled,
+      floatingWindowPrompted,
     })
   },
 
@@ -617,5 +625,30 @@ export const koofr = {
 
   onTransferProgress(listener: (progress: TransferProgress) => void): Promise<UnlistenFn> {
     return listen<TransferProgress>(TRANSFER_EVENT, (event) => listener(event.payload))
+  },
+
+  publishFloatingTransferSnapshot(snapshot: FloatingTransferSnapshot) {
+    return emitTo('transfer-float', FLOATING_TRANSFER_EVENT, snapshot)
+  },
+
+  onFloatingTransferSnapshot(
+    listener: (snapshot: FloatingTransferSnapshot) => void,
+  ): Promise<UnlistenFn> {
+    return listen<FloatingTransferSnapshot>(
+      FLOATING_TRANSFER_EVENT,
+      (event) => listener(event.payload),
+    )
+  },
+
+  onFloatingWindowDisabled(listener: () => void): Promise<UnlistenFn> {
+    return listen(FLOATING_WINDOW_DISABLED_EVENT, listener)
+  },
+
+  startFloatingWindowDrag() {
+    return getCurrentWindow().startDragging()
+  },
+
+  showFloatingContextMenu() {
+    return invoke<void>('show_floating_context_menu')
   },
 }

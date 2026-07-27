@@ -106,7 +106,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   overflow: hidden;
 }
 
-.app-shell[data-theme="koofr"] {
+:is(.app-shell, .floating-transfer-shell)[data-theme="koofr"] {
   --accent: #66c451;
   --accent-dark: #50a93f;
   --accent-contrast: #142a17;
@@ -114,7 +114,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --accent-soft-strong: #e3f5de;
 }
 
-.app-shell[data-theme="ocean"] {
+:is(.app-shell, .floating-transfer-shell)[data-theme="ocean"] {
   --accent: #3f7fea;
   --accent-dark: #2d68cf;
   --accent-contrast: #ffffff;
@@ -122,7 +122,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --accent-soft-strong: #dfeaff;
 }
 
-.app-shell[data-theme="iris"] {
+:is(.app-shell, .floating-transfer-shell)[data-theme="iris"] {
   --accent: #7659d9;
   --accent-dark: #6243c4;
   --accent-contrast: #ffffff;
@@ -130,7 +130,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --accent-soft-strong: #e8e1ff;
 }
 
-.app-shell[data-theme="coral"] {
+:is(.app-shell, .floating-transfer-shell)[data-theme="coral"] {
   --accent: #f05d58;
   --accent-dark: #d94a45;
   --accent-contrast: #ffffff;
@@ -138,13 +138,182 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --accent-soft-strong: #ffe3e1;
 }
 
-.app-shell[data-theme="berry"] {
+:is(.app-shell, .floating-transfer-shell)[data-theme="berry"] {
   --accent: #c24f7d;
   --accent-dark: #a93a68;
   --accent-contrast: #ffffff;
   --accent-soft: #fff0f6;
   --accent-soft-strong: #f9dfeb;
 }
+
+html.floating-window-root,
+html.floating-window-root body,
+html.floating-window-root #root {
+  background: transparent;
+}
+
+.floating-window-body {
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.floating-window-body #root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.floating-transfer-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--material-floating) 96%, var(--surface));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .82);
+  color: var(--text);
+  cursor: grab;
+  isolation: isolate;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.floating-transfer-shell:active { cursor: grabbing; }
+
+.floating-transfer-progress {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  transition: transform var(--motion-standard) var(--motion-spring),
+    background-color var(--motion-micro) ease-out;
+  will-change: transform;
+}
+
+.floating-transfer-shell--completed .floating-transfer-progress {
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+}
+
+.floating-transfer-progress--unknown {
+  opacity: 0;
+}
+
+.floating-transfer-shell--paused {
+  background: color-mix(in srgb, var(--status-warning) 7%, var(--surface));
+}
+
+.floating-transfer-shell--idle {
+  background: var(--surface-raised);
+}
+
+.floating-transfer-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 7px 13px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  transition: background-color var(--motion-micro) ease-out;
+  pointer-events: none;
+}
+
+.floating-transfer-shell:hover .floating-transfer-content {
+  background: color-mix(in srgb, var(--surface) 28%, transparent);
+}
+
+.floating-transfer-shell:active .floating-transfer-content {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.floating-transfer-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--accent-dark);
+  transition: transform var(--motion-micro) ease-out,
+    color var(--motion-micro) ease-out;
+}
+
+.floating-transfer-shell:active .floating-transfer-icon { transform: scale(.97); }
+.floating-transfer-icon svg { width: 16px; height: 16px; stroke-width: 2.1; }
+.floating-transfer-shell--paused .floating-transfer-icon {
+  border-color: color-mix(in srgb, var(--status-warning) 22%, transparent);
+  color: var(--status-warning);
+}
+.floating-transfer-shell--idle .floating-transfer-icon {
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.floating-transfer-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  line-height: 1.15;
+}
+
+.floating-transfer-copy strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-transfer-copy small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-transfer-value {
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  color: var(--accent-dark);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+
+.floating-transfer-shell--paused .floating-transfer-value {
+  border-color: color-mix(in srgb, var(--status-warning) 22%, transparent);
+  color: var(--status-warning);
+}
+
+.floating-window-prompt {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.floating-window-prompt p { margin: 0; }
 
 .auth-layout {
   height: calc(100vh - 42px);
@@ -1150,6 +1319,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .modal__content p { margin: 0; }
 .modal__close { position: absolute; right: 14px; top: 14px; }
 .modal__action { margin-top: 24px; width: 100%; }
+.modal__actions {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.modal__actions > button { width: 100%; }
 .modal-field { display: grid; gap: 8px; color: #363b42; font-size: 12px; font-weight: 620; }
 .modal-field input { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #ccd1d6; border-radius: 7px; outline: 0; color: var(--text); }
 .modal-field input:focus { border-color: color-mix(in srgb, var(--accent) 68%, #aab0b7); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -1784,7 +1960,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .new-menu,
   .modal,
   .toast,
-  .transfer-panel {
+  .transfer-panel,
+  .floating-transfer-shell {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -1792,7 +1969,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .workspace__topbar,
   .new-menu,
   .modal,
-  .transfer-panel { background: var(--surface); }
+  .transfer-panel,
+  .floating-transfer-shell { background: var(--surface); }
   .sidebar { background: var(--surface-subtle); }
   .toast { background: #272b31; }
   .modal-backdrop,
@@ -1814,7 +1992,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .workspace__topbar,
   .new-menu,
   .modal,
-  .transfer-panel {
+  .transfer-panel,
+  .floating-transfer-shell {
     background: var(--surface);
     border-color: var(--border-strong);
   }

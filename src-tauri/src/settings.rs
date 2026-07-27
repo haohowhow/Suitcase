@@ -112,6 +112,8 @@ pub struct NotificationSettings {
     pub notify_on_complete: bool,
     pub notify_sound: bool,
     pub tray_badge: bool,
+    pub floating_window_enabled: bool,
+    pub floating_window_prompted: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -212,6 +214,14 @@ struct StoredSettings {
     notify_sound: bool,
     #[serde(default = "default_tray_badge")]
     tray_badge: bool,
+    #[serde(default)]
+    floating_window_enabled: bool,
+    #[serde(default)]
+    floating_window_prompted: bool,
+    #[serde(default)]
+    floating_window_x: Option<i32>,
+    #[serde(default)]
+    floating_window_y: Option<i32>,
     #[serde(default)]
     link_default_kind: LinkDefaultKind,
     #[serde(default)]
@@ -314,6 +324,10 @@ impl Default for StoredSettings {
             notify_on_complete: default_notify_on_complete(),
             notify_sound: false,
             tray_badge: default_tray_badge(),
+            floating_window_enabled: false,
+            floating_window_prompted: false,
+            floating_window_x: None,
+            floating_window_y: None,
             link_default_kind: LinkDefaultKind::default(),
             link_default_expire_days: 0,
             link_default_require_password: false,
@@ -505,7 +519,14 @@ impl SettingsStore {
             notify_on_complete: state.notify_on_complete,
             notify_sound: state.notify_sound,
             tray_badge: state.tray_badge,
+            floating_window_enabled: state.floating_window_enabled,
+            floating_window_prompted: state.floating_window_prompted,
         }
+    }
+
+    pub async fn floating_window_position(&self) -> Option<(i32, i32)> {
+        let state = self.state.read().await;
+        state.floating_window_x.zip(state.floating_window_y)
     }
 
     pub async fn link_defaults(&self) -> LinkDefaults {
@@ -722,12 +743,34 @@ impl SettingsStore {
         notify_on_complete: bool,
         notify_sound: bool,
         tray_badge: bool,
+        floating_window_enabled: bool,
+        floating_window_prompted: bool,
     ) -> Result<(), AppError> {
         {
             let mut state = self.state.write().await;
             state.notify_on_complete = notify_on_complete;
             state.notify_sound = notify_sound;
             state.tray_badge = tray_badge;
+            state.floating_window_enabled = floating_window_enabled;
+            state.floating_window_prompted = floating_window_prompted;
+        }
+        self.persist().await
+    }
+
+    pub async fn update_floating_window_position(&self, x: i32, y: i32) -> Result<(), AppError> {
+        {
+            let mut state = self.state.write().await;
+            state.floating_window_x = Some(x);
+            state.floating_window_y = Some(y);
+        }
+        self.persist().await
+    }
+
+    pub async fn disable_floating_window(&self) -> Result<(), AppError> {
+        {
+            let mut state = self.state.write().await;
+            state.floating_window_enabled = false;
+            state.floating_window_prompted = true;
         }
         self.persist().await
     }
@@ -1021,7 +1064,7 @@ mod tests {
             .await
             .expect("save bandwidth");
         store
-            .update_notifications(false, true, false)
+            .update_notifications(false, true, false, true, true)
             .await
             .expect("save notifications");
         store
@@ -1048,6 +1091,15 @@ mod tests {
         assert!(!notifications.notify_on_complete);
         assert!(notifications.notify_sound);
         assert!(!notifications.tray_badge);
+        assert!(notifications.floating_window_enabled);
+        assert!(notifications.floating_window_prompted);
+        reloaded
+            .disable_floating_window()
+            .await
+            .expect("disable floating window");
+        let notifications = reloaded.notifications().await;
+        assert!(!notifications.floating_window_enabled);
+        assert!(notifications.floating_window_prompted);
         let links = reloaded.link_defaults().await;
         assert_eq!(links.kind, LinkDefaultKind::Upload);
         assert_eq!(links.expire_days, 30);

@@ -26,6 +26,50 @@ pub enum TransferState {
     Failed,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitProgressPhase {
+    Parts,
+    Finalizing,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitProgress {
+    pub completed_parts: u32,
+    pub current_part: Option<u32>,
+    pub total_parts: u32,
+    pub phase: SplitProgressPhase,
+}
+
+impl SplitProgress {
+    pub fn new(
+        total_bytes: u64,
+        part_bytes: u64,
+        completed_parts: usize,
+        phase: SplitProgressPhase,
+    ) -> Result<Self, AppError> {
+        if total_bytes == 0 || part_bytes == 0 {
+            return Err(AppError::InvalidInput("split progress"));
+        }
+        let total_parts = u32::try_from(total_bytes.div_ceil(part_bytes))
+            .map_err(|_| AppError::InvalidInput("split part count"))?;
+        let completed_parts = u32::try_from(completed_parts)
+            .map_err(|_| AppError::InvalidInput("split part count"))?
+            .min(total_parts);
+        let current_part = match phase {
+            SplitProgressPhase::Parts if completed_parts < total_parts => Some(completed_parts + 1),
+            _ => Some(total_parts),
+        };
+        Ok(Self {
+            completed_parts,
+            current_part,
+            total_parts,
+            phase,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum IntegrityStatus {
@@ -84,6 +128,8 @@ pub struct TransferProgress {
     pub state: TransferState,
     pub bytes_transferred: u64,
     pub total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_progress: Option<SplitProgress>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,6 +149,26 @@ pub fn emit_progress(
     bytes_transferred: u64,
     total_bytes: Option<u64>,
 ) {
+    emit_progress_with_split(
+        app,
+        transfer_id,
+        direction,
+        state,
+        bytes_transferred,
+        total_bytes,
+        None,
+    );
+}
+
+pub fn emit_progress_with_split(
+    app: &AppHandle,
+    transfer_id: &str,
+    direction: TransferDirection,
+    state: TransferState,
+    bytes_transferred: u64,
+    total_bytes: Option<u64>,
+    split_progress: Option<SplitProgress>,
+) {
     app.state::<AppState>().download_history.record_progress(
         transfer_id,
         state,
@@ -117,6 +183,7 @@ pub fn emit_progress(
             state,
             bytes_transferred,
             total_bytes,
+            split_progress,
         },
     );
 }
@@ -201,6 +268,7 @@ pub struct NetworkRetryRequest<'a> {
     pub retry_attempt: u32,
     pub bytes_transferred: u64,
     pub total_bytes: Option<u64>,
+    pub split_progress: Option<SplitProgress>,
     pub policy: NetworkRetryPolicy,
 }
 
@@ -213,6 +281,7 @@ pub async fn wait_for_network_retry(request: NetworkRetryRequest<'_>) -> Result<
         retry_attempt,
         bytes_transferred,
         total_bytes,
+        split_progress,
         policy,
     } = request;
     let delay_seconds = policy.interval_seconds();
@@ -235,13 +304,14 @@ pub async fn wait_for_network_retry(request: NetworkRetryRequest<'_>) -> Result<
         Some(transfer_id),
         fields,
     );
-    emit_progress(
+    emit_progress_with_split(
         app,
         transfer_id,
         direction,
         TransferState::Retrying,
         bytes_transferred,
         total_bytes,
+        split_progress,
     );
     tokio::select! {
         () = tokio::time::sleep(std::time::Duration::from_secs(u64::from(delay_seconds))) => Ok(()),
@@ -251,7 +321,10 @@ pub async fn wait_for_network_retry(request: NetworkRetryRequest<'_>) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{NetworkRetryPolicy, normalize_interruption, should_retry_network};
+    use super::{
+        NetworkRetryPolicy, SplitProgress, SplitProgressPhase, normalize_interruption,
+        should_retry_network,
+    };
     use crate::error::AppError;
 
     #[test]
@@ -312,5 +385,31 @@ mod tests {
             NetworkRetryPolicy::new(true, None, 5),
             u32::MAX
         ));
+    }
+
+    #[test]
+    fn split_progress_reports_one_based_parts_and_finalization() {
+        let first =
+            SplitProgress::new(10, 4, 0, SplitProgressPhase::Parts).expect("first split progress");
+        assert_eq!(first.current_part, Some(1));
+        assert_eq!(first.completed_parts, 0);
+        assert_eq!(first.total_parts, 3);
+
+        let last =
+            SplitProgress::new(10, 4, 2, SplitProgressPhase::Parts).expect("last split progress");
+        assert_eq!(last.current_part, Some(3));
+
+        let finalizing = SplitProgress::new(10, 4, 3, SplitProgressPhase::Finalizing)
+            .expect("finalizing split progress");
+        assert_eq!(finalizing.completed_parts, 3);
+        assert_eq!(finalizing.current_part, Some(3));
+    }
+
+    #[test]
+    fn split_progress_handles_exact_part_boundaries() {
+        let progress =
+            SplitProgress::new(8, 4, 1, SplitProgressPhase::Parts).expect("split progress");
+        assert_eq!(progress.total_parts, 2);
+        assert_eq!(progress.current_part, Some(2));
     }
 }

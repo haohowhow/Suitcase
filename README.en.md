@@ -67,6 +67,8 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
 
 - **Transfers**
   - Live transfer panel with progress, cancel and pause.
+  - Split uploads show the current part, total parts, confirmed parts, and final manifest stage in both the list and detail view.
+  - Optional always-on-top transfer window aggregates concurrent upload/download progress plus paused and idle states. Left-drag anywhere to move it; its native right-click menu can open the app, close the floating window, or quit. It only receives task counts and summary progress.
   - **Single-file download**: HTTP Range + on-disk checkpoint for true byte-level resume.
   - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header — reassemble with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.
@@ -85,6 +87,7 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
 - **Settings**
   - All settings load at startup. The UI can switch immediately between Simplified Chinese, English, and the Windows UI language; compact density and reduced motion apply live.
   - Launch at login, close/minimize to tray, active-transfer quit confirmation, native completion notifications, and taskbar activity overlays are supported.
+  - The first version with the transfer floating window asks once before enabling it. It can be toggled later under Notifications, and its dragged position is restored within the available displays.
   - Upload/download concurrency and global/per-task KiB/s limits apply live. “Full speed while idle” means five continuous minutes without Windows keyboard or mouse input.
   - Download conflicts can ask, skip, or add a stable numeric suffix and never overwrite. Optional Koofr MD5 verification, failed-part retention, and open-folder-on-complete are supported.
   - Public-link defaults include type, expiration, and a server-generated random password. The password appears only in the creation response and is never persisted.

@@ -45,6 +45,8 @@ const SETTINGS: AppSettings = {
   notifyOnComplete: true,
   notifySound: false,
   trayBadge: true,
+  floatingWindowEnabled: false,
+  floatingWindowPrompted: false,
   linkDefaultKind: 'download',
   linkDefaultExpireDays: 0,
   linkDefaultRequirePassword: false,
@@ -232,6 +234,23 @@ describe('SettingsPanel new sections', () => {
       downloadConcurrency: 8,
       defaultSplitPartMib: 64,
       autoSplitThresholdMib: 512,
+    })
+  })
+
+  it('enables the floating transfer window and marks the prompt handled', async () => {
+    const user = userEvent.setup()
+    const onNotificationChange = vi.fn()
+    renderSettings({ onNotificationChange })
+    await user.click(screen.getByRole('tab', { name: '通知' }))
+
+    await user.click(screen.getByRole('switch', { name: '显示传输悬浮窗' }))
+
+    expect(onNotificationChange).toHaveBeenCalledWith({
+      notifyOnComplete: true,
+      notifySound: false,
+      trayBadge: true,
+      floatingWindowEnabled: true,
+      floatingWindowPrompted: true,
     })
   })
 

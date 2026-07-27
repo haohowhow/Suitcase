@@ -5,7 +5,9 @@ use tokio::sync::RwLock;
 
 use crate::error::AppError;
 
-use super::{TransferDirection, checkpoint_snapshot::snapshot, split_package::SplitPart};
+use super::{
+    SplitProgress, TransferDirection, checkpoint_snapshot::snapshot, split_package::SplitPart,
+};
 
 const CHECKPOINT_VERSION: u8 = 2;
 const MAX_CHECKPOINTS: usize = 128;
@@ -160,6 +162,8 @@ pub struct ResumableTransfer {
     pub recovery_kind: RecoveryKind,
     pub bytes_transferred: u64,
     pub total_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_progress: Option<SplitProgress>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -113,6 +113,12 @@ async fn reports_only_committed_chunks_for_resumable_uploads() {
     assert_eq!(snapshots[0].recovery_kind, RecoveryKind::ChunkResume);
     assert_eq!(snapshots[0].bytes_transferred, 128);
     assert_eq!(snapshots[0].total_bytes, 256);
+    let split_progress = snapshots[0]
+        .split_progress
+        .expect("split progress should be restored");
+    assert_eq!(split_progress.completed_parts, 2);
+    assert_eq!(split_progress.current_part, Some(3));
+    assert_eq!(split_progress.total_parts, 4);
 
     std::fs::remove_dir_all(directory).expect("remove chunk test directory");
 }

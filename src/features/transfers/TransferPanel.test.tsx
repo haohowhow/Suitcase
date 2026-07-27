@@ -214,6 +214,99 @@ describe('TransferPanel', () => {
     expect(onResume).toHaveBeenCalledWith('transfer-4')
   })
 
+  it('shows split progress in both the list and selected detail', () => {
+    render(
+      <TransferPanel
+        visible
+        items={[transferItem({
+          id: 'split-running',
+          name: 'archive.parts',
+          direction: 'upload',
+          recoveryKind: 'chunk_resume',
+          bytesTransferred: 160,
+          totalBytes: 640,
+          splitProgress: {
+            completedParts: 2,
+            currentPart: 3,
+            totalParts: 10,
+            phase: 'parts',
+          },
+        })]}
+        onClose={vi.fn()}
+        onCancel={vi.fn()}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDiscard={vi.fn()}
+        onOpenFile={vi.fn()}
+        onOpenFolder={vi.fn()}
+        onClearFinished={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('第 3/10 卷')).toBeTruthy()
+    expect(screen.getByText('分卷进度')).toBeTruthy()
+    expect(screen.getByText('当前分卷 3 / 10')).toBeTruthy()
+  })
+
+  it('distinguishes paused split parts from finalization', () => {
+    const { rerender } = render(
+      <TransferPanel
+        visible
+        items={[transferItem({
+          state: 'paused',
+          direction: 'upload',
+          recoveryKind: 'chunk_resume',
+          splitProgress: {
+            completedParts: 2,
+            currentPart: 3,
+            totalParts: 10,
+            phase: 'parts',
+          },
+        })]}
+        onClose={vi.fn()}
+        onCancel={vi.fn()}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDiscard={vi.fn()}
+        onOpenFile={vi.fn()}
+        onOpenFolder={vi.fn()}
+        onClearFinished={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('已完成 2/10 卷')).toBeTruthy()
+    expect(screen.getByText('已完成 2 / 10 个分卷')).toBeTruthy()
+
+    rerender(
+      <TransferPanel
+        visible
+        items={[transferItem({
+          direction: 'upload',
+          recoveryKind: 'chunk_resume',
+          bytesTransferred: 640,
+          totalBytes: 640,
+          splitProgress: {
+            completedParts: 10,
+            currentPart: 10,
+            totalParts: 10,
+            phase: 'finalizing',
+          },
+        })]}
+        onClose={vi.fn()}
+        onCancel={vi.fn()}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onDiscard={vi.fn()}
+        onOpenFile={vi.fn()}
+        onOpenFolder={vi.fn()}
+        onClearFinished={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('分卷 10/10 · 正在完成')).toBeTruthy()
+    expect(screen.getByText('分卷 10 / 10 · 正在完成')).toBeTruthy()
+  })
+
   it('keeps pause and cancel available while waiting to retry', () => {
     render(
       <TransferPanel

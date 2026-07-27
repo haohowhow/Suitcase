@@ -214,6 +214,7 @@ pub fn run() {
             commands::app_version_info,
             commands::open_external_page,
             desktop::set_taskbar_badge,
+            desktop::show_floating_context_menu,
             transfer_commands::list_resumable_transfers,
             transfer_commands::list_download_history,
             transfer_commands::clear_finished_download_history,
