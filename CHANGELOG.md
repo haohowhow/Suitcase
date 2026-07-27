@@ -2,6 +2,18 @@
 
 格式按 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按 [SemVer](https://semver.org/spec/v2.0.0.html)。
 
+## [2.2.1] - 2026-07-27
+
+### Fixed
+- 悬浮窗左键单击现在打开主应用面板，不再只能拖拽或右键菜单打开；拖拽需鼠标移动 4px 以上才触发
+- 外观设置中「界面密度」与「减少动效」之间增加间距和分隔线，避免视觉过于紧凑
+
+### Changed
+- 外观设置新增「显示传输悬浮窗」开关，通知设置中的原开关也保留
+
+### Security
+- 新增 `open_main_window_from_floating` 命令有窗口标签校验，非悬浮窗窗口无法调用
+
 ## [2.2.0] - 2026-07-27
 
 ### Added
