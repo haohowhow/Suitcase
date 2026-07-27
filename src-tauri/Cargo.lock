@@ -2333,7 +2333,7 @@ dependencies = [
 
 [[package]]
 name = "koofr-gui"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "data-encoding",
  "futures-util",
