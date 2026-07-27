@@ -491,7 +491,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
               </select>
             </div>
 
-            <div className="settings-switch-row settings-switch-row--standalone">
+            <div className="settings-switch-row">
               <span>
                 <strong>减少动效</strong>
                 <small>关闭平滑过渡与非必要动画</small>
@@ -508,6 +508,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <span aria-hidden="true" />
               </button>
             </div>
+
+            <SwitchRow
+              label="显示传输悬浮窗"
+              hint="置顶显示上传、下载或暂停状态；单击可打开传输面板"
+              checked={settings.floatingWindowEnabled}
+              disabled={busy || !onNotificationChange}
+              onChange={(next) => updateNotifications({
+                floatingWindowEnabled: next,
+                floatingWindowPrompted: true,
+              })}
+            />
           </section>
         ) : null}
 
