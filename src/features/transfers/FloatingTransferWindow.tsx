@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ArrowDownToLine,
   ArrowUpDown,
@@ -126,6 +126,37 @@ export function FloatingTransferWindow() {
         ? (english ? 'Paused' : '暂停')
         : null
 
+  const handleMouseDown = useCallback(
+    (event: ReactMouseEvent) => {
+      if (event.button !== 0) return
+      const startX = event.clientX
+      const startY = event.clientY
+      let dragging = false
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        if (dragging) return
+        if (
+          Math.abs(moveEvent.clientX - startX) > 4 ||
+          Math.abs(moveEvent.clientY - startY) > 4
+        ) {
+          dragging = true
+          window.removeEventListener('mousemove', handleMouseMove)
+          window.removeEventListener('mouseup', handleMouseUp)
+          void koofr.startFloatingWindowDrag()
+        }
+      }
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+        if (!dragging) {
+          void koofr.openMainWindowFromFloating()
+        }
+      }
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    },
+    [],
+  )
+
   return (
     <div
       className={`floating-transfer-shell floating-transfer-shell--${completed ? 'completed' : snapshot.mode}`}
@@ -133,12 +164,8 @@ export function FloatingTransferWindow() {
       data-reduce-motion={snapshot.reduceMotion ? 'true' : 'false'}
       role="status"
       aria-live="polite"
-      title={english ? 'Left-drag to move · Right-click for options' : '左键拖动 · 右键打开菜单'}
-      onMouseDown={(event) => {
-        if (event.button !== 0) return
-        event.preventDefault()
-        void koofr.startFloatingWindowDrag()
-      }}
+      title={english ? 'Click to open · Right-click for options' : '单击打开面板 · 右键打开菜单'}
+      onMouseDown={handleMouseDown}
       onContextMenu={(event) => {
         event.preventDefault()
         void koofr.showFloatingContextMenu()

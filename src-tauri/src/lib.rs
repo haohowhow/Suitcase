@@ -215,6 +215,7 @@ pub fn run() {
             commands::open_external_page,
             desktop::set_taskbar_badge,
             desktop::show_floating_context_menu,
+            desktop::open_main_window_from_floating,
             transfer_commands::list_resumable_transfers,
             transfer_commands::list_download_history,
             transfer_commands::clear_finished_download_history,

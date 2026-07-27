@@ -651,4 +651,8 @@ export const koofr = {
   showFloatingContextMenu() {
     return invoke<void>('show_floating_context_menu')
   },
+
+  openMainWindowFromFloating() {
+    return invoke<void>('open_main_window_from_floating')
+  },
 }

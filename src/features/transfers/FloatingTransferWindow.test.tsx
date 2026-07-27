@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   listener: undefined as ((snapshot: FloatingTransferSnapshot) => void) | undefined,
   startFloatingWindowDrag: vi.fn(async () => {}),
   showFloatingContextMenu: vi.fn(async () => {}),
+  openMainWindowFromFloating: vi.fn(async () => {}),
 }))
 
 vi.mock('../../services/koofr', () => ({
@@ -19,6 +20,7 @@ vi.mock('../../services/koofr', () => ({
     }),
     startFloatingWindowDrag: mocks.startFloatingWindowDrag,
     showFloatingContextMenu: mocks.showFloatingContextMenu,
+    openMainWindowFromFloating: mocks.openMainWindowFromFloating,
   },
 }))
 
@@ -40,13 +42,14 @@ describe('FloatingTransferWindow', () => {
     mocks.listener = undefined
     mocks.startFloatingWindowDrag.mockClear()
     mocks.showFloatingContextMenu.mockClear()
+    mocks.openMainWindowFromFloating.mockClear()
   })
 
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('renders aggregate progress, drags from the full surface, and opens the context menu', async () => {
+  it('renders aggregate progress, opens on click, drags on move, and opens the context menu', async () => {
     render(<FloatingTransferWindow />)
     await act(async () => {})
     act(() => mocks.listener?.(ACTIVE))
@@ -60,12 +63,24 @@ describe('FloatingTransferWindow', () => {
     const shell = document.querySelector('.floating-transfer-shell')
     expect(shell).toBeInstanceOf(HTMLElement)
     if (!(shell instanceof HTMLElement)) return
-    fireEvent.mouseDown(shell, { button: 0 })
-    expect(mocks.startFloatingWindowDrag).toHaveBeenCalledOnce()
+
+    // Click without movement → opens main window
+    fireEvent.mouseDown(shell, { button: 0, clientX: 100, clientY: 100 })
+    fireEvent.mouseUp(shell, { button: 0, clientX: 100, clientY: 100 })
+    expect(mocks.openMainWindowFromFloating).toHaveBeenCalledOnce()
+    expect(mocks.startFloatingWindowDrag).not.toHaveBeenCalled()
+
+    // Right-click → context menu
     fireEvent.mouseDown(shell, { button: 2 })
-    expect(mocks.startFloatingWindowDrag).toHaveBeenCalledOnce()
+    expect(mocks.startFloatingWindowDrag).not.toHaveBeenCalled()
     fireEvent.contextMenu(shell)
     expect(mocks.showFloatingContextMenu).toHaveBeenCalledOnce()
+
+    // Drag beyond threshold → starts window drag
+    fireEvent.mouseDown(shell, { button: 0, clientX: 100, clientY: 100 })
+    fireEvent.mouseMove(shell, { button: 0, clientX: 110, clientY: 100 })
+    expect(mocks.startFloatingWindowDrag).toHaveBeenCalledOnce()
+
     expect(document.querySelector('.floating-transfer-drag')).toBeNull()
   })
 

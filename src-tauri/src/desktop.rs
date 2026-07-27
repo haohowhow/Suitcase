@@ -219,6 +219,17 @@ pub fn show_floating_context_menu(window: WebviewWindow) -> Result<(), crate::er
         .map_err(|_| crate::error::AppError::LocalData.into())
 }
 
+#[tauri::command]
+pub fn open_main_window_from_floating(
+    window: WebviewWindow,
+) -> Result<(), crate::error::CommandError> {
+    if window.label() != FLOATING_WINDOW_LABEL {
+        return Err(crate::error::AppError::Forbidden.into());
+    }
+    show_main_window(window.app_handle());
+    Ok(())
+}
+
 pub fn update_language(app: &AppHandle, language: InterfaceLanguage) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
