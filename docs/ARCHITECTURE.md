@@ -129,8 +129,9 @@ src-tauri/src/
 ├── split_commands.rs           分卷上传命令
 ├── transfer_commands.rs        传输列表/恢复/丢弃命令
 ├── vault_commands.rs           Vault 注册、原生 Safe Key 与文件命令
-├── stream_commands.rs          媒体流式预览命令
-├── stream_session.rs           流会话管理 + URI scheme handler 工具
+├── stream_commands.rs          通用文件预览、文本读取与 Vault 内存解密
+├── stream_session.rs           预览会话 + URI scheme handler 工具
+├── preview_decode.rs           TIFF 与静态 LibRaw 内存解码
 ├── credential_manager.rs       Windows 凭据封装
 ├── settings.rs                 settings.json 读写
 ├── work_directory.rs           工作目录定位与启动期迁移
@@ -176,6 +177,15 @@ src-tauri/src/
 - 每个 Vault 独立锁定，默认 60 分钟无 Vault 操作后自动清除会话。退出、重新登录或切换账户会立即清空全部解锁状态。正在执行的传输持有完成当前传输所需的临时密钥引用。
 - 加密上传流式生成新 nonce 的 rclone 密文；Koofr 只支持整文件 `FilesPut`，所以恢复语义是从头安全重传。加密下载持久化的只有密文远端路径和本地密文临时文件，使用 HTTP Range 字节续传；完整密文通过逐块认证后写入独立明文临时文件，再以不覆盖方式发布。
 - 创建使用 v2 内容 validator，仍可读取旧版 EME 文件名 validator。导入 / 导出仅接受单个指向 `koofr:` 的 crypt 配置；导出文件用 `create_new` 防覆盖，且其 `password` / `password2` 是 rclone 可恢复混淆值，必须当作敏感凭据。
+
+### 文件预览
+
+- `FilePreviewModal` 统一承载视频、音频、图片、PDF 和纯文本。支持格式由共享分类器决定；“我的文件”、最近、已共享和 Vault 可预览，回收站不进入预览流程。Office、OpenDocument、PSD、AI 和电子书只保留下载。
+- 普通媒体和 PDF 会话保存校验后的 mount / path / size / MIME，继续通过 `koofr-stream` 以最多 2 MiB 的 Range 分块读取。PDF.js 使用自定义 `PDFDataRangeTransport`，不会为了翻一页先完整下载普通 PDF。
+- 文本只读取前 5 MiB并以 `<pre>` 纯文本呈现，不解析 HTML、Markdown、脚本或宏；后端支持自动检测以及 UTF-8、UTF-16、GB18030、Big5 手动选择。SVG 经 DOMPurify SVG profile 后再次移除外部 URL，再作为 Blob 图片显示。
+- TIFF 在 Rust 内存转为 PNG；HEIC / HEIF 由本地 CSP worker 转换；RAW 由源码内固定的 LibRaw 0.21.1 静态库串行解码，优先最大内嵌预览，缺失时使用半尺寸预览质量解码。普通完整解码输入不超过 100 MiB，RAW 输出不超过 80 MP。
+- Vault 只接受当前解锁会话签发的不透明 entry handle。Rust 重新解析密文路径，将单个不超过 50 MiB 的明文解密到 `Zeroizing<Vec<u8>>`，不写明文临时文件、缓存或历史；每次读取都会刷新 Vault 活动。关闭、锁定、自动锁定、账户切换、退出、30 分钟预览闲置或 LRU 淘汰都会移除并清零。
+- 最多保留 32 个预览会话。日志只含随机 session ID、种类、字节数、解码器和稳定终态，不含文件名、路径、内容、Safe Key 或响应正文。
 
 ### 路径与操作校验
 
@@ -397,11 +407,11 @@ pub enum AppError {
 
 Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create_vault_folder`, `rename_vault_entry`, `relocate_vault_entry`, `delete_vault_entries`, `upload_vault_file`, `download_vault_file`, `create_vault`, `remove_vault`, `export_vault_rclone_config`, `import_vault_rclone_config`
 
-流式预览：`prepare_video_stream`, `close_video_stream`
+文件预览：`prepare_file_preview`, `prepare_vault_preview`, `read_preview_text`, `close_file_preview`
 
 **自定义 URI scheme**（Rust → WebView）：
 
-- `koofr-stream://`（Windows: `http://koofr-stream.localhost/{sessionId}`）：媒体流式代理。Rust handler 查 `StreamSessionManager` 获取 mount/path/size/content-type，向 Koofr 发 HTTP Range 请求（附加认证头），读取 ≤2 MB 分块后以 206 + `Content-Range` 响应 WebView 的 `<video>`/`<audio>` 请求。令牌不暴露给 WebView。
+- `koofr-stream://`（Windows: `http://koofr-stream.localhost/{sessionId}`）：通用预览 Range 代理。Rust handler 从 `StreamSessionManager` 读取校验后的远端源或 Vault 内存源，返回 ≤2 MiB 的 `206 + Content-Range`。CORS 只允许 Tauri 生产 origin 与固定 `127.0.0.1:1420` / `localhost:1420` 开发 origin；令牌、密文路径和 Safe Key 不暴露给 WebView。
 
 **Tauri 事件**（Rust → 前端）：
 

@@ -12,7 +12,7 @@ const EXECUTABLE_EXTENSIONS: ReadonlySet<string> = new Set([
 ])
 const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   'mp4', 'm4v', 'mov', 'avi', 'wmv', 'flv', 'mkv', 'webm', 'mpeg', 'mpg', 'mpe',
-  'mts', 'm2ts', 'ts', '3gp', '3g2', 'vob', 'ogv', 'rm', 'rmvb', 'asf', 'f4v',
+  'mts', 'm2ts', '3gp', '3g2', 'vob', 'ogv', 'rm', 'rmvb', 'asf', 'f4v',
 ])
 const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
   'mp3', 'wav', 'flac', 'aac', 'm4a', 'm4b', 'ogg', 'oga', 'opus', 'wma',
@@ -20,10 +20,12 @@ const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
 ])
 const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   'png', 'jpg', 'jpeg', 'jfif', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'ico',
-  'svg', 'heic', 'heif', 'avif', 'raw', 'cr2', 'nef', 'arw', 'dng', 'orf', 'raf', 'psd', 'ai',
+  'svg', 'heic', 'heif', 'avif', 'raw', 'cr2', 'cr3', 'nef', 'nrw', 'arw', 'srf',
+  'sr2', 'raf', 'orf', 'rw2', 'dng', 'pef', '3fr', 'erf', 'mef', 'mos', 'mrw',
+  'x3f', 'psd', 'ai',
 ])
 const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
-  'js', 'jsx', 'mjs', 'cjs', 'tsx', 'json', 'jsonc', 'json5',
+  'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'json', 'jsonc', 'json5',
   'html', 'htm', 'xhtml', 'xml', 'xsl', 'xslt', 'css', 'scss', 'sass', 'less', 'styl',
   'py', 'pyw', 'ipynb', 'rb', 'php', 'go', 'rs', 'toml',
   'java', 'kt', 'kts', 'scala', 'groovy', 'gradle',

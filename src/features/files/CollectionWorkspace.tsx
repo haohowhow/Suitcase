@@ -2,6 +2,7 @@ import {
   ArrowDownToLine,
   Check,
   Clock3,
+  Eye,
   FileText,
   FolderOpen,
   LayoutList,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
+import { isPreviewableFile } from '../../preview'
 import type { LocatedFile, RemoteFile, TrashItem } from '../../types/backend'
 import type { CollectionView } from './useKoofrCollections'
 import { fileKind, formatBytes, formatModified, isDirectory } from './filePresentation'
@@ -32,6 +34,7 @@ interface CollectionWorkspaceProps {
   onThemeOpen: () => void
   onOpenLocation: (file: LocatedFile) => void
   onDownload: (file: LocatedFile) => void
+  onPreview: (file: LocatedFile) => void
   onRestore: (items: TrashItem[]) => void
   onRestoreAll: () => void
   onEmptyTrash: () => void
@@ -119,6 +122,7 @@ export function CollectionWorkspace({
   onThemeOpen,
   onOpenLocation,
   onDownload,
+  onPreview,
   onRestore,
   onRestoreAll,
   onEmptyTrash,
@@ -182,6 +186,9 @@ export function CollectionWorkspace({
   }
 
   const singleFile = selectedFiles.length === 1 ? selectedFiles[0] : null
+  const previewableFile = singleFile && isPreviewableFile(singleFile)
+    ? singleFile
+    : null
   const canOpenLocation = singleFile
     && (isDirectory(singleFile) || singleFile.path !== '/' || singleFile.shareDirection === null)
   const itemCount = isTrash ? trash.length : files.length
@@ -246,6 +253,9 @@ export function CollectionWorkspace({
           <button type="button" disabled={!singleFile} onClick={() => singleFile && onDownload(singleFile)}>
             <ArrowDownToLine size={18} />下载
           </button>
+          <button type="button" disabled={!previewableFile} onClick={() => previewableFile && onPreview(previewableFile)}>
+            <Eye size={18} />预览
+          </button>
           <button type="button" disabled={!canOpenLocation} onClick={() => singleFile && onOpenLocation(singleFile)}>
             <FolderOpen size={18} />打开位置
           </button>
@@ -272,22 +282,34 @@ export function CollectionWorkspace({
           const id = locatedId(file)
           const selected = selectedIds.has(id)
           const directory = isDirectory(file)
+          const previewable = isPreviewableFile(file)
           const direction = file.shareDirection === 'received' ? '共享给我' : file.shareDirection === 'outgoing' ? '我已共享' : null
           return (
             <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" key={id}>
               <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" onClick={() => toggleSelection(id)} aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}>
                 {selected ? <Check size={13} /> : null}
               </button>
-              <button className="file-name file-name--button" type="button" onClick={() => directory ? onOpenLocation(file) : toggleSelection(id)} onDoubleClick={() => directory ? onOpenLocation(file) : onDownload(file)}>
+              <button className="file-name file-name--button" type="button" onClick={() => directory ? onOpenLocation(file) : toggleSelection(id)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
                 <FileTypeIcon kind={fileKind(file)} />
                 <strong>{file.name}</strong>
               </button>
               <span className="collection-location">{direction ? <em>{direction}</em> : null}{locationLabel(file)}</span>
               <span>{formatModified(file.modified)}</span>
               <span>{directory ? '—' : formatBytes(file.size)}</span>
-              <button className="row-action" type="button" aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`} onClick={() => directory ? onOpenLocation(file) : onDownload(file)}>
-                {directory ? <FolderOpen size={18} /> : <ArrowDownToLine size={18} />}
-              </button>
+              {previewable ? (
+                <div className="row-actions">
+                  <button className="row-action" type="button" aria-label={`预览 ${file.name}`} onClick={() => onPreview(file)}>
+                    <Eye size={17} />
+                  </button>
+                  <button className="row-action" type="button" aria-label={`下载 ${file.name}`} onClick={() => onDownload(file)}>
+                    <ArrowDownToLine size={17} />
+                  </button>
+                </div>
+              ) : (
+                <button className="row-action" type="button" aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`} onClick={() => directory ? onOpenLocation(file) : onDownload(file)}>
+                  {directory ? <FolderOpen size={18} /> : <ArrowDownToLine size={18} />}
+                </button>
+              )}
             </div>
           )
         }) : visibleTrash.map((item) => {

@@ -12,7 +12,7 @@ const defaultCallbacks = {
   onThemeOpen: vi.fn(),
   onUpload: vi.fn(),
   onDownload: vi.fn(),
-  onPlay: vi.fn(),
+  onPreview: vi.fn(),
   onShare: vi.fn(),
   onRename: vi.fn(),
   onMove: vi.fn(),
@@ -145,5 +145,48 @@ describe('FileWorkspace', () => {
 
     // Then
     expect(onUpload).toHaveBeenCalledWith('split')
+  })
+
+  it('previews supported files on double click and keeps download for unsupported files', async () => {
+    const user = userEvent.setup()
+    const previewable: RemoteFile = {
+      name: 'report.pdf',
+      entryType: 'file',
+      modified: 0,
+      size: 100,
+      contentType: 'application/pdf',
+      hash: '',
+      path: '/report.pdf',
+    }
+    const unsupported: RemoteFile = {
+      ...previewable,
+      name: 'report.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      path: '/report.docx',
+    }
+    const onPreview = vi.fn()
+    const onDownload = vi.fn()
+    render(
+      <FileWorkspace
+        mounts={[]}
+        activeMountId="mount-1"
+        path="/"
+        files={[previewable, unsupported]}
+        loading={false}
+        error=""
+        lastSyncedAt={null}
+        {...defaultCallbacks}
+        onPreview={onPreview}
+        onDownload={onDownload}
+      />,
+    )
+
+    await user.dblClick(screen.getByRole('button', { name: 'report.pdf' }))
+    await user.dblClick(screen.getByRole('button', { name: 'report.docx' }))
+
+    expect(onPreview).toHaveBeenCalledWith(previewable)
+    expect(onDownload).toHaveBeenCalledWith(unsupported)
+    expect(screen.getByRole('button', { name: '预览 report.pdf' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: '下载 report.pdf' })).not.toBeNull()
   })
 })

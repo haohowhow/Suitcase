@@ -8,7 +8,7 @@ import { LoginPage } from './features/auth/LoginPage'
 import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
-import { MediaPreviewModal } from './features/files/MediaPreviewModal'
+import { FilePreviewModal } from './features/files/FilePreviewModal'
 import { MoveDestinationDialog } from './features/files/MoveDestinationDialog'
 import { isDirectory } from './features/files/filePresentation'
 import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
@@ -50,7 +50,8 @@ import type {
   TransferResult,
   TrashItem,
   UiDensity,
-  VideoStreamInfo,
+  FilePreviewInfo,
+  VaultEntry,
 } from './types/backend'
 import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
 import type { VaultTransferSpec } from './types/vault'
@@ -67,6 +68,12 @@ interface PendingSplitUpload {
   readonly selection: LocalFileSelection
   readonly mountId: string
   readonly path: string
+}
+
+interface FilePreviewState {
+  readonly fileName: string
+  readonly previewInfo: FilePreviewInfo
+  readonly onDownload: () => void
 }
 
 function App() {
@@ -94,7 +101,7 @@ function App() {
   const [downloadDirectory, setDownloadDirectory] = useState('')
   const [downloadBusy, setDownloadBusy] = useState(false)
   const [downloadError, setDownloadError] = useState('')
-  const [mediaPreview, setMediaPreview] = useState<{ file: RemoteFile; streamInfo: VideoStreamInfo } | null>(null)
+  const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null)
   const workspace = useKoofrWorkspace(authState === 'signedIn')
   const collections = useKoofrCollections(authState === 'signedIn', activeItem)
   const workspaceLocation = useRef({ activeMountId: '', path: '/' })
@@ -771,6 +778,7 @@ function App() {
     try {
       await koofr.disconnect()
       setModalKind(null)
+      setFilePreview(null)
       setLoginError('')
       setTransfers([])
       setAuthState('signedOut')
@@ -1023,22 +1031,45 @@ function App() {
     setModalKind('download')
   }
 
-  const handlePlay = async (file: RemoteFile) => {
-    const mountId = workspace.activeMountId
+  const openFilePreview = async (
+    file: RemoteFile,
+    mountId: string,
+    onDownload: () => void,
+  ) => {
     if (!mountId) return
     try {
-      const streamInfo = await koofr.prepareVideoStream(mountId, file.path)
-      setMediaPreview({ file, streamInfo })
+      const previewInfo = await koofr.prepareFilePreview(mountId, file.path)
+      setFilePreview({ fileName: file.name, previewInfo, onDownload })
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法播放此文件，请检查网络后重试。'))
+      setNotice(commandErrorMessage(error, '无法预览此文件，请下载后打开。'))
     }
   }
 
-  const closeMediaPreview = () => {
-    if (mediaPreview) {
-      koofr.closeVideoStream(mediaPreview.streamInfo.sessionId).catch(() => {})
+  const openVaultFilePreview = async (
+    repoId: string,
+    entry: VaultEntry,
+    onDownload: () => void,
+  ) => {
+    try {
+      const previewInfo = await koofr.prepareVaultPreview(repoId, entry.id)
+      setFilePreview({ fileName: entry.name, previewInfo, onDownload })
+    } catch (error) {
+      setNotice(commandErrorMessage(error, '无法预览此加密文件，请下载后打开。'))
     }
-    setMediaPreview(null)
+  }
+
+  const closeFilePreview = () => {
+    if (filePreview) {
+      koofr.closeFilePreview(filePreview.previewInfo.sessionId).catch(() => {})
+    }
+    setFilePreview(null)
+  }
+
+  const downloadPreviewedFile = () => {
+    if (!filePreview) return
+    const download = filePreview.onDownload
+    closeFilePreview()
+    download()
   }
 
   const handleDownload = async (file: RemoteFile, mountId = workspace.activeMountId) => {
@@ -1413,6 +1444,11 @@ function App() {
               onThemeOpen={() => setModalKind('theme')}
               onOpenLocation={openLocatedFile}
               onDownload={(file) => void handleDownload(file, file.mountId)}
+              onPreview={(file) => void openFilePreview(
+                file,
+                file.mountId,
+                () => void handleDownload(file, file.mountId),
+              )}
               onRestore={(items) => void restoreTrash(items)}
               onRestoreAll={() => void restoreAllTrash()}
               onEmptyTrash={openEmptyTrash}
@@ -1433,7 +1469,11 @@ function App() {
               onThemeOpen={() => setModalKind('theme')}
               onUpload={(mode) => void handleUpload(mode)}
               onDownload={(file) => void handleDownload(file)}
-              onPlay={(file) => void handlePlay(file)}
+              onPreview={(file) => void openFilePreview(
+                file,
+                workspace.activeMountId,
+                () => void handleDownload(file),
+              )}
               onShare={openShare}
               onRename={openRename}
               onMove={openMove}
@@ -1595,6 +1635,9 @@ function App() {
           onClose={() => setModalKind(null)}
           onNotice={showNotice}
           onTransferStarted={startVaultTransfer}
+          onPreview={(repoId, entry, onDownload) => {
+            void openVaultFilePreview(repoId, entry, onDownload)
+          }}
         />
       ) : null}
 
@@ -1689,11 +1732,12 @@ function App() {
         </Modal>
       ) : null}
 
-      {mediaPreview ? (
-        <MediaPreviewModal
-          streamInfo={mediaPreview.streamInfo}
-          fileName={mediaPreview.file.name}
-          onClose={closeMediaPreview}
+      {filePreview ? (
+        <FilePreviewModal
+          previewInfo={filePreview.previewInfo}
+          fileName={filePreview.fileName}
+          onClose={closeFilePreview}
+          onDownload={downloadPreviewedFile}
         />
       ) : null}
     </div>

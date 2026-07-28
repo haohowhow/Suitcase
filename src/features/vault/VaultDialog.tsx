@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Copy,
   Download,
+  Eye,
   File,
   FileKey2,
   Folder,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../../components/Modal'
+import { isPreviewableFile } from '../../preview'
 import { commandErrorMessage, isCommandErrorCode, koofr } from '../../services/koofr'
 import type { VaultDirectory, VaultEntry, VaultSummary } from '../../types/backend'
 import type { VaultTransferSpec } from '../../types/vault'
@@ -27,6 +29,7 @@ interface VaultDialogProps {
   readonly onClose: () => void
   readonly onNotice: (message: string) => void
   readonly onTransferStarted: (transfer: VaultTransferSpec) => void
+  readonly onPreview: (repoId: string, entry: VaultEntry, onDownload: () => void) => void
 }
 
 interface Relocation {
@@ -64,6 +67,7 @@ export function VaultDialog({
   onClose,
   onNotice,
   onTransferStarted,
+  onPreview,
 }: VaultDialogProps) {
   const [vaults, setVaults] = useState<VaultSummary[]>([])
   const [directory, setDirectory] = useState<VaultDirectory | null>(null)
@@ -187,6 +191,9 @@ export function VaultDialog({
 
   const selected = directory?.entries.filter((entry) => selectedIds.has(entry.id)) ?? []
   const singleSelected = selected.length === 1 ? selected[0] : null
+  const previewableSelected = singleSelected && isPreviewableFile(singleSelected)
+    ? singleSelected
+    : null
 
   const createFolder = () => run(async () => {
     if (!directory || !folderName.trim()) return
@@ -416,6 +423,13 @@ export function VaultDialog({
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected || singleSelected.entryType !== 'file'} onClick={() => singleSelected && void downloadEntry(singleSelected)}>
                     <Download size={15} />解密下载
                   </button>
+                  <button className="secondary-button" type="button" disabled={busy || !previewableSelected} onClick={() => {
+                    if (directory && previewableSelected) {
+                      onPreview(directory.repoId, previewableSelected, () => void downloadEntry(previewableSelected))
+                    }
+                  }}>
+                    <Eye size={15} />预览
+                  </button>
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected} onClick={() => {
                     if (singleSelected) {
                       setRenameName(singleSelected.name)
@@ -465,6 +479,7 @@ export function VaultDialog({
               ) : null}
               {directory.entries.map((entry) => {
                 const selected = selectedIds.has(entry.id)
+                const previewable = isPreviewableFile(entry)
                 return (
                   <button
                     className={`vault-file-row${selected ? ' vault-file-row--selected' : ''}`}
@@ -485,7 +500,11 @@ export function VaultDialog({
                     }}
                     onDoubleClick={() => {
                       if (entry.entryType === 'dir') void openDirectory(directory.repoId, entry.id)
-                      else void downloadEntry(entry)
+                      else if (previewable) {
+                        onPreview(directory.repoId, entry, () => void downloadEntry(entry))
+                      } else {
+                        void downloadEntry(entry)
+                      }
                     }}
                   >
                     {entry.entryType === 'dir' ? <Folder size={22} /> : <File size={22} />}

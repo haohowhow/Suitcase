@@ -2,6 +2,21 @@
 
 格式按 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按 [SemVer](https://semver.org/spec/v2.0.0.html)。
 
+## [Unreleased]
+
+## [2.2.2] - 2026-07-28
+
+### Added
+- Added unified local previews for PDFs, text, images, SVG, media, and supported RAW formats across file lists, recent files, shared files, and Vault.
+- Bundled PDF.js assets, HEIC support, and static LibRaw resources for offline desktop builds.
+
+### Fixed
+- PDF preview Range requests now use 2 MiB chunks instead of PDF.js's 64 KiB default, preventing large PDFs from stalling after page-count discovery.
+- PDF CMaps, standard fonts, CSP-safe image decoders, and React StrictMode lifecycle handling are now included and stable in release WebView2 builds.
+
+### Security
+- Preview decoding remains local; text/HTML is rendered as plain text and SVG content is sanitized before display.
+
 ## [2.2.1] - 2026-07-27
 
 ### Fixed

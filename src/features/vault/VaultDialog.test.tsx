@@ -50,6 +50,7 @@ describe('VaultDialog', () => {
         onClose={vi.fn()}
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
+        onPreview={vi.fn()}
       />,
     )
 
@@ -68,6 +69,7 @@ describe('VaultDialog', () => {
         onClose={vi.fn()}
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
+        onPreview={vi.fn()}
       />,
     )
 
@@ -78,5 +80,42 @@ describe('VaultDialog', () => {
       expect(mocks.listVaultFiles).toHaveBeenCalledWith(lockedVault.id, 'root')
     })
     expect(screen.getByText('此加密文件夹为空')).not.toBeNull()
+  })
+
+  it('previews a supported file through its opaque entry handle', async () => {
+    const user = userEvent.setup()
+    const entry = {
+      id: 'entry-opaque-id',
+      name: 'secret.pdf',
+      entryType: 'file',
+      modified: 0,
+      size: 1024,
+      contentType: 'application/pdf',
+    } as const
+    mocks.listVaultFiles.mockResolvedValue({
+      repoId: lockedVault.id,
+      repoName: lockedVault.name,
+      directoryId: 'root',
+      breadcrumbs: [{ id: 'root', name: lockedVault.name }],
+      entries: [entry],
+    })
+    const onPreview = vi.fn()
+    render(
+      <VaultDialog
+        mountId="mount-1"
+        parentPath="/"
+        onClose={vi.fn()}
+        onNotice={vi.fn()}
+        onTransferStarted={vi.fn()}
+        onPreview={onPreview}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /解锁/ }))
+    const row = (await screen.findByText('secret.pdf')).closest('button')
+    expect(row).not.toBeNull()
+    if (row) await user.dblClick(row)
+
+    expect(onPreview).toHaveBeenCalledWith(lockedVault.id, entry, expect.any(Function))
   })
 })

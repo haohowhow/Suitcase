@@ -14,6 +14,7 @@ mod local_access;
 mod local_open;
 mod logging;
 mod metadata_cache;
+mod preview_decode;
 mod settings;
 mod split_commands;
 mod stream_commands;
@@ -31,7 +32,7 @@ use local_access::LocalAccessManager;
 use logging::{AppLogger, LogConfig};
 use metadata_cache::MetadataCache;
 use settings::{SettingsDefaults, SettingsStore};
-use stream_session::{cap_range, parse_range_header, parse_session_id_from_path};
+use stream_session::{PreviewSource, cap_range, parse_range_header, parse_session_id_from_path};
 use tauri::Manager;
 use transfer::{TransferCheckpointStore, TransferManager};
 use vault_core::VaultManager;
@@ -114,7 +115,12 @@ pub fn run() {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
                 loop {
                     interval.tick().await;
-                    vault_auto_lock.lock_expired().await;
+                    let expired = vault_auto_lock.lock_expired().await;
+                    if let Some(sessions) = stream_session::STREAM_SESSIONS.get() {
+                        for repo_id in expired {
+                            sessions.close_vault(&repo_id);
+                        }
+                    }
                 }
             });
             let advanced = tauri::async_runtime::block_on(settings.transfer_advanced());
@@ -235,8 +241,10 @@ pub fn run() {
             vault_commands::remove_vault,
             vault_commands::export_vault_rclone_config,
             vault_commands::import_vault_rclone_config,
-            stream_commands::prepare_video_stream,
-            stream_commands::close_video_stream,
+            stream_commands::prepare_file_preview,
+            stream_commands::prepare_vault_preview,
+            stream_commands::read_preview_text,
+            stream_commands::close_file_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Koofr GUI");
@@ -246,6 +254,23 @@ async fn handle_stream_request(
     app_handle: &tauri::AppHandle,
     request: &tauri::http::Request<Vec<u8>>,
 ) -> tauri::http::Response<Vec<u8>> {
+    if request
+        .headers()
+        .get("origin")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|origin| !is_allowed_stream_origin(origin))
+    {
+        return error_response(tauri::http::StatusCode::FORBIDDEN, "origin not allowed");
+    }
+    if request.method() == tauri::http::Method::OPTIONS {
+        return cors_response(tauri::http::StatusCode::NO_CONTENT, Vec::new(), request);
+    }
+    if request.method() != tauri::http::Method::GET {
+        return error_response(
+            tauri::http::StatusCode::METHOD_NOT_ALLOWED,
+            "method not allowed",
+        );
+    }
     let path = request.uri().path();
     let Some(session_id) = parse_session_id_from_path(path) else {
         return error_response(tauri::http::StatusCode::FORBIDDEN, "invalid session");
@@ -255,6 +280,13 @@ async fn handle_stream_request(
     let Some(session) = sessions.get_session(session_id) else {
         return error_response(tauri::http::StatusCode::FORBIDDEN, "session not found");
     };
+    if let Some(repo_id) = session.vault_repo_id.as_deref() {
+        let state = app_handle.state::<AppState>();
+        if state.vault.touch_preview(repo_id).await.is_err() {
+            sessions.close_vault(repo_id);
+            return error_response(tauri::http::StatusCode::FORBIDDEN, "vault locked");
+        }
+    }
 
     let range_header = request.headers().get("range").and_then(|v| v.to_str().ok());
 
@@ -271,37 +303,49 @@ async fn handle_stream_request(
         }
     };
 
-    let state = app_handle.state::<AppState>();
-    let koofr_response = match state
-        .api
-        .download_response_from(&session.mount_id, &session.remote_path, start)
-        .await
-    {
-        Ok(resp) => resp,
-        Err(error::AppError::NotAuthenticated) => {
-            return error_response(tauri::http::StatusCode::FORBIDDEN, "not authenticated");
-        }
-        Err(error::AppError::NotFound) => {
-            return error_response(tauri::http::StatusCode::NOT_FOUND, "not found");
-        }
-        Err(_) => {
-            return error_response(tauri::http::StatusCode::BAD_GATEWAY, "remote error");
-        }
-    };
-
-    let is_partial = koofr_response.status() == tauri::http::StatusCode::PARTIAL_CONTENT;
-    let skip = if is_partial { 0 } else { start as usize };
     let needed = (end - start + 1) as usize;
-
-    let body = match read_stream_bytes(koofr_response, skip, needed).await {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return error_response(tauri::http::StatusCode::BAD_GATEWAY, "stream error");
+    let body = match &session.source {
+        PreviewSource::Memory { bytes } => bytes[start as usize..=end as usize].to_vec(),
+        PreviewSource::Remote {
+            mount_id,
+            remote_path,
+        } => {
+            let state = app_handle.state::<AppState>();
+            let koofr_response = match state
+                .api
+                .download_response_from(mount_id, remote_path, start)
+                .await
+            {
+                Ok(response) => response,
+                Err(error::AppError::NotAuthenticated) => {
+                    return error_response(tauri::http::StatusCode::FORBIDDEN, "not authenticated");
+                }
+                Err(error::AppError::NotFound) => {
+                    return error_response(tauri::http::StatusCode::NOT_FOUND, "not found");
+                }
+                Err(_) => {
+                    return error_response(tauri::http::StatusCode::BAD_GATEWAY, "remote error");
+                }
+            };
+            let is_partial = koofr_response.status() == tauri::http::StatusCode::PARTIAL_CONTENT;
+            let skip = if is_partial { 0 } else { start as usize };
+            match read_stream_bytes(koofr_response, skip, needed).await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return error_response(tauri::http::StatusCode::BAD_GATEWAY, "stream error");
+                }
+            }
         }
     };
+    if body.is_empty() {
+        return error_response(
+            tauri::http::StatusCode::BAD_GATEWAY,
+            "empty preview response",
+        );
+    }
 
     let actual_end = start + body.len() as u64 - 1;
-    tauri::http::Response::builder()
+    let response = tauri::http::Response::builder()
         .status(tauri::http::StatusCode::PARTIAL_CONTENT)
         .header("Content-Type", &session.content_type)
         .header("Content-Length", body.len().to_string())
@@ -317,7 +361,8 @@ async fn handle_stream_request(
                 tauri::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "response build error",
             )
-        })
+        });
+    with_cors(response, request)
 }
 
 async fn read_stream_bytes(
@@ -370,4 +415,97 @@ fn error_response(
                 .body(Vec::new())
                 .unwrap()
         })
+}
+
+fn cors_response(
+    status: tauri::http::StatusCode,
+    body: Vec<u8>,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let response = tauri::http::Response::builder()
+        .status(status)
+        .header("Cache-Control", "no-store")
+        .body(body)
+        .unwrap_or_else(|_| error_response(tauri::http::StatusCode::INTERNAL_SERVER_ERROR, ""));
+    with_cors(response, request)
+}
+
+fn with_cors(
+    mut response: tauri::http::Response<Vec<u8>>,
+    request: &tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let allowed_origin = request
+        .headers()
+        .get("origin")
+        .and_then(|value| value.to_str().ok())
+        .filter(|origin| is_allowed_stream_origin(origin));
+    if let Some(origin) = allowed_origin
+        && let Ok(value) = tauri::http::HeaderValue::from_str(origin)
+    {
+        response
+            .headers_mut()
+            .insert("Access-Control-Allow-Origin", value);
+        response.headers_mut().insert(
+            "Access-Control-Allow-Headers",
+            tauri::http::HeaderValue::from_static("Range"),
+        );
+        response.headers_mut().insert(
+            "Access-Control-Allow-Methods",
+            tauri::http::HeaderValue::from_static("GET, OPTIONS"),
+        );
+        response.headers_mut().insert(
+            "Access-Control-Expose-Headers",
+            tauri::http::HeaderValue::from_static("Accept-Ranges, Content-Length, Content-Range"),
+        );
+        response
+            .headers_mut()
+            .insert("Vary", tauri::http::HeaderValue::from_static("Origin"));
+    }
+    response
+}
+
+fn is_allowed_stream_origin(origin: &str) -> bool {
+    matches!(
+        origin,
+        "http://tauri.localhost"
+            | "https://tauri.localhost"
+            | "http://127.0.0.1:1420"
+            | "http://localhost:1420"
+    )
+}
+
+#[cfg(test)]
+mod stream_origin_tests {
+    use super::{error_response, is_allowed_stream_origin, with_cors};
+
+    #[test]
+    fn stream_origin_allowlist_is_exact() {
+        assert!(is_allowed_stream_origin("http://tauri.localhost"));
+        assert!(is_allowed_stream_origin("http://127.0.0.1:1420"));
+        assert!(!is_allowed_stream_origin("https://example.com"));
+        assert!(!is_allowed_stream_origin("http://localhost:1420.evil.test"));
+    }
+
+    #[test]
+    fn stream_cors_exposes_range_headers_only_to_an_allowed_origin() {
+        let request = tauri::http::Request::builder()
+            .header("Origin", "http://tauri.localhost")
+            .body(Vec::new())
+            .unwrap();
+        let response = with_cors(error_response(tauri::http::StatusCode::OK, ""), &request);
+        assert_eq!(
+            response
+                .headers()
+                .get("Access-Control-Allow-Origin")
+                .and_then(|value| value.to_str().ok()),
+            Some("http://tauri.localhost")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("Access-Control-Expose-Headers")
+                .and_then(|value| value.to_str().ok()),
+            Some("Accept-Ranges, Content-Length, Content-Range")
+        );
+    }
 }

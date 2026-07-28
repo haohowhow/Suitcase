@@ -1,7 +1,7 @@
 {
   "name": "koofr-gui",
   "private": true,
-  "version": "2.2.1",
+  "version": "2.2.2",
   "type": "module",
   "engines": {
     "node": "^22.12.0 || ^24.0.0",
@@ -28,7 +28,10 @@
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "dompurify": "3.4.12",
+    "heic-to": "1.5.2",
     "lucide-react": "1.24.0",
+    "pdfjs-dist": "6.1.200",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

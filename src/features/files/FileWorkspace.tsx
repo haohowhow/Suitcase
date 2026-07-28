@@ -4,13 +4,13 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Eye,
   FileText,
   Folder,
   FolderInput,
   LayoutList,
   Palette,
   Pencil,
-  Play,
   RefreshCw,
   Search,
   Share2,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
+import { isPreviewableFile } from '../../preview'
 import type { KoofrMount, RemoteFile } from '../../types/backend'
 import type { UploadMode } from '../../types/files'
 import { UploadModeMenu } from './UploadModeMenu'
@@ -44,7 +45,7 @@ interface FileWorkspaceProps {
   onThemeOpen: () => void
   onUpload: (mode: UploadMode) => void
   onDownload: (file: RemoteFile) => void
-  onPlay: (file: RemoteFile) => void
+  onPreview: (file: RemoteFile) => void
   onShare: (file: RemoteFile) => void
   onRename: (file: RemoteFile) => void
   onMove: (files: RemoteFile[]) => void
@@ -79,7 +80,7 @@ export function FileWorkspace({
   onThemeOpen,
   onUpload,
   onDownload,
-  onPlay,
+  onPreview,
   onShare,
   onRename,
   onMove,
@@ -154,6 +155,9 @@ export function FileWorkspace({
   }
 
   const singleSelection = selectedFiles.length === 1 ? selectedFiles[0] : null
+  const previewableSelection = singleSelection && isPreviewableFile(singleSelection)
+    ? singleSelection
+    : null
   const downloadableSelection = singleSelection
   const crumbs = pathCrumbs(path)
   const syncedText = lastSyncedAt
@@ -235,6 +239,9 @@ export function FileWorkspace({
           <button type="button" disabled={!downloadableSelection} onClick={() => downloadableSelection && onDownload(downloadableSelection)}>
             <ArrowDownToLine size={18} />下载
           </button>
+          <button type="button" disabled={!previewableSelection} onClick={() => previewableSelection && onPreview(previewableSelection)}>
+            <Eye size={18} />预览
+          </button>
           <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onShare(singleSelection)}>
             <Share2 size={17} />分享
           </button>
@@ -282,7 +289,7 @@ export function FileWorkspace({
           const kind = fileKind(file)
           const selected = selectedIds.has(file.path)
           const directory = isDirectory(file)
-          const playable = kind === 'video' || kind === 'audio'
+          const previewable = isPreviewableFile(file)
           return (
             <div className={`file-row${selected ? ' file-row--selected' : ''}`} role="row" key={file.path}>
               <button
@@ -296,7 +303,7 @@ export function FileWorkspace({
               <button
                 className="file-name file-name--button"
                 type="button"
-                onDoubleClick={() => directory ? onNavigate(file.path) : playable ? onPlay(file) : onDownload(file)}
+                onDoubleClick={() => directory ? onNavigate(file.path) : previewable ? onPreview(file) : onDownload(file)}
                 onClick={() => directory ? onNavigate(file.path) : toggleSelection(file.path)}
               >
                 <FileTypeIcon kind={kind} />
@@ -305,10 +312,10 @@ export function FileWorkspace({
               <span>我</span>
               <span>{formatModified(file.modified)}</span>
               <span>{directory ? '-' : formatBytes(file.size)}</span>
-              {playable ? (
+              {previewable ? (
                 <div className="row-actions">
-                  <button className="row-action" type="button" aria-label={`播放 ${file.name}`} onClick={() => onPlay(file)}>
-                    <Play size={17} />
+                  <button className="row-action" type="button" aria-label={`预览 ${file.name}`} onClick={() => onPreview(file)}>
+                    <Eye size={17} />
                   </button>
                   <button className="row-action" type="button" aria-label={`下载 ${file.name}`} onClick={() => onDownload(file)}>
                     <ArrowDownToLine size={17} />
