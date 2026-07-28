@@ -65,6 +65,9 @@ pub async fn lock_vault(
         .lock(&repo_id)
         .await
         .map_err(CommandError::from)?;
+    if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
+        sessions.close_vault(&repo_id);
+    }
     Ok(state.vault.summaries().await)
 }
 

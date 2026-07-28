@@ -10,6 +10,7 @@
 - `src/transfer/integrity.rs`：最终发布前的流式 MD5 校验；缺少远端 hash 时记录不可校验，hash 不一致不发布最终文件。
 - `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认、Windows 任务栏 overlay，以及置顶传输悬浮窗的位置恢复、原生右键菜单和主窗口唤起。
 - `src/commands.rs`、`src/vault_commands.rs`：暴露给 WebView 的窄接口；Vault 命令只接收注册 ID 和短期不透明句柄。
+- `src/stream_commands.rs`、`src/stream_session.rs`、`src/preview_decode.rs`：通用文件预览会话、受限 Range 代理、文本编码和 TIFF / RAW 内存解码。
 - `src/crypto/`、`src/vault_core/`：官方 `koofr/vault` 加密引擎边界、Vault 解锁会话、不透明路径句柄和自动锁定。
 - `src/credential_manager.rs`：用户选了保存密码的话，把应用专用密码写到 Windows 凭据管理器里。密码不会出现在普通配置中。
 - `src/settings.rs`、`src/metadata_cache.rs`：保存非敏感设置，为挂载点、目录、最近文件、共享和回收站提供按账户隔离的 TTL 缓存。
@@ -28,6 +29,7 @@
 - 发给前端的错误只包含稳定错误码和安全消息，不包含令牌、本地路径、远程路径或服务端响应正文。
 - 诊断日志同样不记录令牌、邮箱、文件名或路径；传输失败只记录 transfer ID、错误类别、HTTP 状态或 I/O 类别等脱敏字段。
 - Vault Safe Key 只由 Windows 原生凭据窗口交给 Rust，不经过 IPC。前端只见解密显示元数据和 UUID 句柄；密文路径、validator 和 rclone 配置留在后端。默认 60 分钟无操作自动锁定，账户切换和退出会立即清空解锁状态。
+- Vault 预览先用不透明句柄重新解析目标，明文只保存在 `Zeroizing` 内存且不超过 50 MiB；锁定、自动锁定、关闭预览、换账户或退出立即清除。普通完整图片 / RAW 解码不超过 100 MiB，RAW 输出限制 80 MP 并串行执行。
 
 会话令牌只在内存里待着。用户勾了"保存密码"，应用专用密码由 Windows Credential Manager 保护，下次启动时由 Rust 后端读出来重新认证。OAuth、公版应用注册和令牌刷新等后续认证里程碑确认后再做。
 
@@ -54,6 +56,9 @@ Vault：`list_vaults`、`unlock_vault`、`lock_vault`、`list_vault_files`、
 `delete_vault_entries`、`upload_vault_file`、`download_vault_file`、
 `create_vault`、`remove_vault`、`export_vault_rclone_config`、
 `import_vault_rclone_config`。
+
+预览：`prepare_file_preview`、`prepare_vault_preview`、`read_preview_text`、
+`close_file_preview`。
 
 传输通过 `koofr://transfer-progress` 事件上报运行、暂停、完成、取消或失败状态；分卷任务额外携带已确认卷数、当前卷、总卷数和 `parts` / `finalizing` 阶段。事件里不包含本地或远程文件名。主窗口另向 `transfer-float` 发送只含方向、任务数和汇总百分比的 `koofr://floating-transfer-state`。TypeScript 封装在 `src/services/koofr.ts`。
 

@@ -27,6 +27,13 @@ Koofr-GUI 基于 Tauri v2 + React + TypeScript + Rust，需要以下东西：
 
 完整安装方式以 [Tauri Windows 前置要求](https://v2.tauri.app/start/prerequisites/) 为准。
 
+文件预览会把 `src-tauri/third_party/libraw-0.21.1/` 中固定的官方 LibRaw
+源码静态编进 Rust 后端，因此 Visual Studio 的 C++ 编译器是必需项，第一次
+Rust 构建会比纯 Rust 依赖多一段原生编译时间。PDF.js worker、CMaps、标准字体、
+CSP-safe 图像解码回退与 HEIC WASM 均从锁定的 npm 依赖离线打包；构建和安装包
+运行时不从 CDN 获取代码。
+第三方版本和许可证见 [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)。
+
 装完重启 PowerShell 检查：
 
 ```powershell

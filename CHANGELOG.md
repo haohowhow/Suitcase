@@ -2,6 +2,26 @@
 
 格式按 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按 [SemVer](https://semver.org/spec/v2.0.0.html)。
 
+## [Unreleased]
+
+### Added
+- 将视频 / 音频播放器扩展为统一文件预览器，覆盖“我的文件”、最近文件、已共享和 Vault；支持 PDF 分页缩放、文本编码切换与截断提示、常用图片、SVG 净化、TIFF / HEIC / RAW 本地解码，以及图片缩放、适应窗口和旋转
+- 支持格式双击改为预览，行尾及单选工具栏同时保留“预览”和“下载”；回收站与 Office、OpenDocument、PSD、AI、电子书仍保持下载后查看
+- 固定并随源码分发 LibRaw 0.21.1，以 CDDL-1.0 选项静态构建；PDF.js、DOMPurify 和 HEIC 解码器全部锁定并离线打包
+
+### Changed
+- `prepare_video_stream` / `close_video_stream` 迁移为通用 `prepare_file_preview`、`prepare_vault_preview`、`read_preview_text`、`close_file_preview`；`koofr-stream` 继续承载受限 Range 请求
+- 预览会话改为 30 分钟无访问过期、最多 32 个并按 LRU 淘汰；普通完整解码上限 100 MiB，文本最多读取 5 MiB，Vault 单文件明文上限 50 MiB
+- `.ts` 默认作为 TypeScript 纯文本预览；仅服务端明确返回 `video/*` MIME 时按 MPEG-TS 播放
+
+### Fixed
+- 修复 PDF 文档已读取总页数后因缺少本地 CMaps、标准字体或 CSP-safe 图像解码资源而无法渲染第一页的问题；React StrictMode 与父组件重渲染也不再把正常取消误报为解析失败
+
+### Security
+- Vault 预览只通过不透明句柄解析，明文只驻留 `Zeroizing` 内存，不创建明文临时文件；关闭、锁定、自动锁定、账户切换和退出立即移除会话
+- SVG 禁止脚本、事件、`foreignObject` 与外部 URL；文本 / HTML / Markdown 只按纯文本显示。预览日志不记录文件名、路径或内容
+- 自定义 scheme CORS 仅允许 Tauri 生产 origin 和固定开发 origin；CSP 只增加本地 stream、Blob 图片与本地 worker 所需范围
+
 ## [2.2.0] - 2026-07-27
 
 ### Added

@@ -183,9 +183,21 @@ impl VaultManager {
         Ok(())
     }
 
-    pub async fn lock_expired(&self) {
+    pub async fn lock_expired(&self) -> Vec<String> {
+        let mut state = self.state.write().await;
+        let expired = expired_repo_ids(&state, self.auto_lock_after);
+        prune_expired(&mut state, self.auto_lock_after);
+        expired
+    }
+
+    pub async fn touch_preview(&self, repo_id: &str) -> Result<(), AppError> {
+        validate_repo_id(repo_id)?;
         let mut state = self.state.write().await;
         prune_expired(&mut state, self.auto_lock_after);
+        let repo = state.repos.get_mut(repo_id).ok_or(AppError::NotFound)?;
+        let unlocked = repo.unlocked.as_mut().ok_or(AppError::VaultLocked)?;
+        unlocked.last_activity = Instant::now();
+        Ok(())
     }
 
     pub async fn list_directory(
@@ -463,6 +475,20 @@ fn prune_expired(state: &mut VaultState, after: Duration) {
             repo.unlocked = None;
         }
     }
+}
+
+fn expired_repo_ids(state: &VaultState, after: Duration) -> Vec<String> {
+    let now = Instant::now();
+    state
+        .repos
+        .iter()
+        .filter(|(_, repo)| {
+            repo.unlocked
+                .as_ref()
+                .is_some_and(|unlocked| now.duration_since(unlocked.last_activity) >= after)
+        })
+        .map(|(id, _)| id.clone())
+        .collect()
 }
 
 fn summaries(state: &VaultState, after: Duration) -> Vec<VaultSummary> {

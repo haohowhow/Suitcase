@@ -269,9 +269,24 @@ export interface VaultDirectory {
   readonly entries: VaultEntry[]
 }
 
-export interface VideoStreamInfo {
-  sessionId: string
-  fileSize: number
-  contentType: string
-  mediaType: 'video' | 'audio'
+export type FilePreviewKind = 'video' | 'audio' | 'image' | 'pdf' | 'text'
+
+export interface FilePreviewInfo {
+  readonly sessionId: string
+  readonly fileSize: number
+  readonly contentType: string
+  readonly kind: FilePreviewKind
+  readonly decoder: 'native' | 'pdfjs' | 'text' | 'heic' | 'svg'
+  readonly limits: {
+    readonly maxBytes: number | null
+    readonly textBytes: number | null
+    readonly maxPixels: number | null
+  }
+}
+
+export interface PreviewTextResult {
+  readonly text: string
+  readonly encoding: string
+  readonly truncated: boolean
+  readonly hadDecodeErrors: boolean
 }

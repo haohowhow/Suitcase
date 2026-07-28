@@ -120,6 +120,9 @@ pub async fn connect_koofr(
     state.transfers.cancel_all();
     state.local_access.clear();
     state.vault.reset().await;
+    if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
+        sessions.close_all();
+    }
     let app_password = Zeroizing::new(app_password);
     let session = state
         .api
@@ -207,6 +210,9 @@ pub async fn restore_saved_login(state: State<'_, AppState>) -> CommandResult<Lo
         .await
         .map_err(CommandError::from)?;
     state.vault.reset().await;
+    if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
+        sessions.close_all();
+    }
     let (mode, _) = state.settings.cache_policy().await;
     let _ = state
         .cache

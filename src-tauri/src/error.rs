@@ -19,6 +19,12 @@ pub enum AppError {
     Conflict,
     #[error("the requested item was not found")]
     NotFound,
+    #[error("the file format cannot be previewed")]
+    PreviewUnsupported,
+    #[error("the file is too large to preview")]
+    PreviewTooLarge,
+    #[error("the file preview could not be decoded")]
+    PreviewDecode,
     #[error("the operation is not permitted")]
     Forbidden,
     #[error("the transfer was cancelled")]
@@ -90,6 +96,9 @@ impl AppError {
             Self::InvalidInput(_) => "invalid_input",
             Self::Conflict => "conflict",
             Self::NotFound => "not_found",
+            Self::PreviewUnsupported => "preview_unsupported",
+            Self::PreviewTooLarge => "preview_too_large",
+            Self::PreviewDecode => "preview_decode_error",
             Self::Forbidden => "forbidden",
             Self::Cancelled => "cancelled",
             Self::TransferPaused => "transfer_paused",
@@ -193,6 +202,16 @@ impl From<AppError> for CommandError {
                 Self::new("conflict", "目标已存在或操作正在进行。")
             }
             AppError::NotFound => Self::new("not_found", "指定的文件、文件夹或挂载点不存在。"),
+            AppError::PreviewUnsupported => Self::new(
+                "preview_unsupported",
+                "暂不支持直接预览此文件格式，请下载后打开。",
+            ),
+            AppError::PreviewTooLarge => {
+                Self::new("preview_too_large", "文件超过直接预览上限，请下载后打开。")
+            }
+            AppError::PreviewDecode => {
+                Self::new("preview_decode_error", "无法解析此文件，请下载后打开。")
+            }
             AppError::Forbidden => Self::new("forbidden", "当前账户没有执行此操作的权限。"),
             AppError::Cancelled => Self::new("cancelled", "传输已取消。"),
             AppError::TransferPaused => {

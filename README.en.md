@@ -45,7 +45,7 @@ Built with Tauri v2 + React + TypeScript + Rust. Aims to feel like a native file
 
 [Koofr](https://koofr.eu) is a European cloud storage provider that aggregates Google Drive, OneDrive, Dropbox and other third-party accounts under one login. Its web UI is not always smooth from mainland China, and there is no official Windows desktop client.
 
-Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with resumable large-file transfers that does not stuff tokens into a WebView. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, in-app streaming preview for video and audio, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
+Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with resumable large-file transfers that does not stuff tokens into a WebView. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, local in-app preview for common files, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
 
 ## Screenshots
 
@@ -73,9 +73,10 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
   - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header — reassemble with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.
 
-- **In-app streaming preview**
-  - Click the play button or double-click a video / audio file to stream it inside the app without waiting for a full download.
-  - A custom `koofr-stream` URI scheme handled in Rust proxies HTTP Range requests, so Koofr tokens never reach the WebView. Stream sessions expire after 30 minutes and are torn down as soon as the player closes.
+- **Local in-app preview**
+  - Preview PDFs, plain text and code, common and RAW images, video, and audio from My files, Recent, Shared, and Vault. Trash has no preview. Double-click opens supported files in the preview; unsupported formats keep the existing download action.
+  - PDFs are paged over Range requests; text is limited to the first 5 MiB and supports UTF-8, UTF-16, GB18030, and Big5. SVG is sanitized, while TIFF, HEIC, and RAW use offline bundled decoders. Office, OpenDocument, PSD, AI, and ebook formats still require download.
+  - The Rust-handled `koofr-stream` scheme keeps Koofr tokens out of the WebView. Full decoding is capped at 100 MiB for normal files. Vault plaintext stays in zeroized Rust memory, is capped at 50 MiB, and is removed on close, lock, account change, or session expiry.
 
 - **Koofr Vault (end-to-end encryption)**
   - Create, import, export, unlock, lock, and unregister Vaults; browse decrypted metadata and create, rename, move, copy, or delete encrypted entries.

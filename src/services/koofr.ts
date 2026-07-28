@@ -31,7 +31,8 @@ import type {
   DownloadHistoryItem,
   VaultDirectory,
   VaultSummary,
-  VideoStreamInfo,
+  FilePreviewInfo,
+  PreviewTextResult,
 } from '../types/backend'
 import type { SplitUploadSettings } from '../types/files'
 import type { FloatingTransferSnapshot } from '../features/transfers/floatingTransfer'
@@ -611,15 +612,23 @@ export const koofr = {
     return invoke<void>('open_downloaded_folder', { transferId })
   },
 
-  prepareVideoStream(mountId: string, remotePath: string) {
-    return invoke<VideoStreamInfo>('prepare_video_stream', { mountId, remotePath })
+  prepareFilePreview(mountId: string, remotePath: string) {
+    return invoke<FilePreviewInfo>('prepare_file_preview', { mountId, remotePath })
   },
 
-  closeVideoStream(sessionId: string) {
-    return invoke<void>('close_video_stream', { sessionId })
+  prepareVaultPreview(repoId: string, entryId: string) {
+    return invoke<FilePreviewInfo>('prepare_vault_preview', { repoId, entryId })
   },
 
-  videoStreamUrl(sessionId: string) {
+  readPreviewText(sessionId: string, encoding?: string) {
+    return invoke<PreviewTextResult>('read_preview_text', { sessionId, encoding })
+  },
+
+  closeFilePreview(sessionId: string) {
+    return invoke<void>('close_file_preview', { sessionId })
+  },
+
+  filePreviewUrl(sessionId: string) {
     return `http://koofr-stream.localhost/${sessionId}`
   },
 

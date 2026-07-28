@@ -2,7 +2,7 @@
 
 - `components/`：应用外壳和可复用 UI 组件。
 - `features/auth/`：登录表单、客户端校验、安全提示。
-- `features/files/`：Koofr 挂载点、目录状态、文件展示和操作。
+- `features/files/`：Koofr 挂载点、目录状态、文件展示、操作和统一文件预览器。
 - `features/links/`：下载链接和接收文件链接的查询、创建、撤销界面。
 - `features/places/`：已连接存储的提供方识别和官方管理入口。
 - `features/transfers/`：上传/下载传输队列界面。
@@ -11,6 +11,8 @@
 - `types/`：前端领域类型。
 
 账户连接、启动会话检查和退出登录已通过 `services/koofr.ts` 接到 Rust 后端。应用专用密码每次提交完成后从表单状态清掉；只有用户勾了"保存密码"，Rust 后端才会把它写入 Windows 凭据管理器。文件工作区读取真实挂载点和目录，已经接入了本地文件选择、上传、下载、新建、重命名和删除。最近文件、已共享、回收站列表和恢复/清空操作也通过类型化后端命令读取真实账户数据。
+
+`features/files/FilePreviewModal.tsx` 统一显示 PDF、纯文本 / 代码、图片、视频和音频。普通文件、最近文件和共享文件传入 `mountId + path`，Vault 传入现有不透明 entry handle；回收站没有预览入口。PDF.js、DOMPurify 和 HEIC worker 都由 Vite 离线打包，文本只以纯文本呈现。Office、OpenDocument、PSD、AI 与电子书不尝试解析。
 
 `features/vault/VaultDialog.tsx` 只提交 Vault 注册 ID 和后端签发的短期 UUID 句柄，并显示后端解密后的名称、类型、明文大小和时间。Safe Key 输入由 Windows 原生凭据窗口完成，不存在密码输入框，也不会进入 React 状态或 Tauri IPC。Vault 加密上传和可续传下载共用全局传输面板；上传的恢复语义是整文件重试，下载是密文字节 Range 续传。
 
