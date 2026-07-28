@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-28
+
+### Added
+- Unified local previews for PDFs, text, images, SVG, media, and supported RAW formats across file lists, recent files, shared files, and Vault.
+- Bundled PDF.js assets, HEIC support, and static LibRaw resources for offline desktop builds.
+
+### Fixed
+- PDF preview Range requests use 2 MiB chunks, preventing large PDFs from stalling after page-count discovery.
+
 ## [2.2.2] - 2026-07-28
 
 ### Added
