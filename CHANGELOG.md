@@ -4,7 +4,13 @@
 
 ## [Unreleased]
 
-## [2.3.0] - 2026-07-28
+## [2.3.1] - 2026-07-30
+
+### Added
+- 传输悬浮窗在暂停或空闲时可收为单图标圆角方块；活动时单击可暂停全部活动任务、暂停时单击可继续全部可恢复任务，双击打开应用。通知设置可分别关闭自动收起、单击切换和双击打开；窗口收展遵循减少动效偏好。
+- 将视频 / 音频播放器扩展为统一文件预览器，覆盖“我的文件”、最近文件、已共享和 Vault；支持 PDF 分页缩放、文本编码切换与截断提示、常用图片、SVG 净化、TIFF / HEIC / RAW 本地解码，以及图片缩放、适应窗口和旋转
+- 支持格式双击改为预览，行尾及单选工具栏同时保留“预览”和“下载”；回收站与 Office、OpenDocument、PSD、AI、电子书仍保持下载后查看
+- 固定并随源码分发 LibRaw 0.21.1，以 CDDL-1.0 选项静态构建；PDF.js、DOMPurify 和 HEIC 解码器全部锁定并离线打包
 
 ### Added
 - Unified local previews for PDFs, text, images, SVG, media, and supported RAW formats across file lists, recent files, shared files, and Vault.

@@ -174,33 +174,50 @@ html.floating-window-root #root {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 90%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--material-floating) 96%, var(--surface));
-  box-shadow: inset 0 1px rgba(255, 255, 255, .82);
+  background: color-mix(in srgb, var(--material-floating) 98%, var(--surface));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .96), inset 0 -1px rgba(25, 31, 39, .025);
   color: var(--text);
   cursor: grab;
   isolation: isolate;
   user-select: none;
   -webkit-user-select: none;
+  transition: border-radius 260ms cubic-bezier(.2, .8, .2, 1),
+    background-color 180ms ease-out;
+}
+
+.floating-transfer-shell::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  transition: opacity var(--motion-micro) ease-out;
 }
 
 .floating-transfer-shell:active { cursor: grabbing; }
 
 .floating-transfer-progress {
   position: absolute;
-  z-index: 0;
-  inset: 0;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
   width: 100%;
   transform-origin: left center;
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  background: var(--accent);
   transition: transform var(--motion-standard) var(--motion-spring),
     background-color var(--motion-micro) ease-out;
   will-change: transform;
 }
 
 .floating-transfer-shell--completed .floating-transfer-progress {
-  background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+  background: var(--accent);
 }
 
 .floating-transfer-progress--unknown {
@@ -208,7 +225,7 @@ html.floating-window-root #root {
 }
 
 .floating-transfer-shell--paused {
-  background: color-mix(in srgb, var(--status-warning) 7%, var(--surface));
+  background: color-mix(in srgb, var(--status-warning) 2%, var(--surface));
 }
 
 .floating-transfer-shell--idle {
@@ -217,63 +234,103 @@ html.floating-window-root #root {
 
 .floating-transfer-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   height: 100%;
   min-width: 0;
-  padding: 7px 13px;
+  padding: 7px 13px 9px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
   text-align: left;
   transition: background-color var(--motion-micro) ease-out;
   pointer-events: none;
+  will-change: opacity, transform;
 }
 
 .floating-transfer-shell:hover .floating-transfer-content {
-  background: color-mix(in srgb, var(--surface) 28%, transparent);
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
 }
 
 .floating-transfer-shell:active .floating-transfer-content {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .floating-transfer-icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--accent-dark);
   transition: transform var(--motion-micro) ease-out,
-    color var(--motion-micro) ease-out;
+    color var(--motion-micro) ease-out,
+    width 260ms cubic-bezier(.2, .8, .2, 1),
+    height 260ms cubic-bezier(.2, .8, .2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .floating-transfer-shell:active .floating-transfer-icon { transform: scale(.97); }
-.floating-transfer-icon svg { width: 16px; height: 16px; stroke-width: 2.1; }
+.floating-transfer-icon svg { width: 22px; height: 22px; stroke-width: 2; }
+.floating-transfer-icon__state,
+.floating-transfer-icon__action {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  transition: opacity 140ms ease-out, transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.floating-transfer-icon__action { opacity: 0; transform: scale(.82); }
+.floating-transfer-shell--active:hover .floating-transfer-icon__state,
+.floating-transfer-shell--paused:hover .floating-transfer-icon__state { opacity: 0; transform: scale(1.12); }
+.floating-transfer-shell--active:hover .floating-transfer-icon__action,
+.floating-transfer-shell--paused:hover .floating-transfer-icon__action { opacity: 1; transform: scale(1); }
 .floating-transfer-shell--paused .floating-transfer-icon {
-  border-color: color-mix(in srgb, var(--status-warning) 22%, transparent);
-  color: var(--status-warning);
+  color: #c58a2a;
 }
 .floating-transfer-shell--idle .floating-transfer-icon {
-  border-color: var(--border);
   color: var(--muted);
 }
+
+.floating-transfer-shell--compact {
+  border-radius: 16px;
+}
+.floating-transfer-shell--compact::after,
+.floating-transfer-shell--compact .floating-transfer-progress { opacity: 0; }
+.floating-transfer-shell--compact .floating-transfer-content {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+.floating-transfer-shell--compact .floating-transfer-icon {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.floating-transfer-shell--compact .floating-transfer-icon svg { width: 20px; height: 20px; }
+.floating-transfer-shell--compact .floating-transfer-copy,
+.floating-transfer-shell--compact .floating-transfer-value { display: none; }
+.floating-transfer-shell[data-reduce-motion="true"],
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__state,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__action { transition-duration: 120ms; }
 
 .floating-transfer-copy {
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .floating-transfer-copy strong {
   overflow: hidden;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -281,31 +338,30 @@ html.floating-window-root #root {
 
 .floating-transfer-copy small {
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .floating-transfer-value {
   flex: 0 0 auto;
-  min-width: 38px;
-  padding: 4px 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  color: var(--accent-dark);
-  font-size: 11px;
-  font-weight: 700;
+  min-width: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-align: center;
 }
 
 .floating-transfer-shell--paused .floating-transfer-value {
-  border-color: color-mix(in srgb, var(--status-warning) 22%, transparent);
-  color: var(--status-warning);
+  color: #a56d1d;
 }
 
 .floating-window-prompt {

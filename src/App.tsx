@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDownToLine } from 'lucide-react'
 import { AppSidebar } from './components/AppSidebar'
 import { Modal } from './components/Modal'
@@ -227,11 +227,20 @@ function App() {
       language: settings?.language ?? 'system',
       reduceMotion: settings?.reduceMotion ?? false,
       themeId,
+      compactEnabled: settings?.floatingWindowCompactEnabled ?? true,
+      clickToggleEnabled: settings?.floatingWindowClickToggleEnabled ?? true,
+      doubleClickOpenEnabled: settings?.floatingWindowDoubleClickOpenEnabled ?? true,
+      resumablePausedCount: transfers.filter(
+        (item) => item.state === 'paused' && item.recoveryKind !== null,
+      ).length,
     }).catch(() => {})
   }, [
     floatingCompletionVersion,
     settings?.language,
     settings?.reduceMotion,
+    settings?.floatingWindowCompactEnabled,
+    settings?.floatingWindowClickToggleEnabled,
+    settings?.floatingWindowDoubleClickOpenEnabled,
     themeId,
     transfers,
   ])
@@ -680,6 +689,9 @@ function App() {
     trayBadge: boolean
     floatingWindowEnabled: boolean
     floatingWindowPrompted: boolean
+    floatingWindowCompactEnabled: boolean
+    floatingWindowClickToggleEnabled: boolean
+    floatingWindowDoubleClickOpenEnabled: boolean
   }) => {
     void (async () => {
       if (
@@ -698,6 +710,9 @@ function App() {
             next.trayBadge,
             next.floatingWindowEnabled,
             next.floatingWindowPrompted,
+            next.floatingWindowCompactEnabled,
+            next.floatingWindowClickToggleEnabled,
+            next.floatingWindowDoubleClickOpenEnabled,
           ),
         '通知设置已保存',
         '无法保存通知设置。',
@@ -716,6 +731,9 @@ function App() {
         settings.trayBadge,
         enabled,
         true,
+        settings.floatingWindowCompactEnabled,
+        settings.floatingWindowClickToggleEnabled,
+        settings.floatingWindowDoubleClickOpenEnabled,
       )
       setSettings(next)
       setModalKind(null)
@@ -1140,7 +1158,7 @@ function App() {
     }
   }
 
-  const resumeTransfer = async (transferId: string) => {
+  const resumeTransfer = async (transferId: string, revealPanel = true) => {
     const resumedAt = Date.now()
     setTransfers((current) => current.map((item) => item.id === transferId
       ? {
@@ -1151,7 +1169,7 @@ function App() {
             : [{ recordedAt: resumedAt, bytesTransferred: item.bytesTransferred }],
         }
       : item))
-    setTransferVisible(true)
+    if (revealPanel) setTransferVisible(true)
     try {
       const result = await koofr.resumeTransfer(transferId)
       setTransfers((current) => current.map((item) => item.id === transferId
@@ -1176,6 +1194,52 @@ function App() {
       showNotice(commandErrorMessage(error, '无法继续这个传输任务。'))
     }
   }
+
+  const toggleFloatingTransfers = useCallback(() => {
+    const active = transfers.filter((item) => (
+      item.state === 'queued' || item.state === 'running' || item.state === 'retrying'
+    ))
+    if (active.length > 0) {
+      void Promise.allSettled(active.map((item) => koofr.pauseTransfer(item.id))).then((results) => {
+        if (results.some((result) => result.status === 'rejected')) {
+          setTransferVisible(true)
+          showNotice('部分传输无法暂停，请在传输面板中查看。')
+        }
+      })
+      return
+    }
+
+    const paused = transfers.filter((item) => item.state === 'paused')
+    const resumable = paused.filter((item) => item.recoveryKind !== null)
+    if (resumable.length === 0) {
+      if (paused.length > 0) {
+        setTransferVisible(true)
+        showNotice('这些暂停任务需要在传输面板中处理。')
+      }
+      return
+    }
+    for (const item of resumable) void resumeTransfer(item.id, false)
+    if (resumable.length !== paused.length) {
+      setTransferVisible(true)
+      showNotice('已继续可恢复任务；其余任务需要在传输面板中处理。')
+    }
+  }, [resumeTransfer, transfers])
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void koofr.onFloatingTransferAction((action) => {
+      if (!disposed && action === 'toggle') toggleFloatingTransfers()
+    }).then((stopListening) => {
+      if (disposed) stopListening()
+      else unlisten = stopListening
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [toggleFloatingTransfers])
 
   const discardResumableTransfer = async (transferId: string) => {
     try {

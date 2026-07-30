@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::{
-    App, AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -17,8 +17,11 @@ const FLOATING_MENU_CLOSE_ID: &str = "floating-close-window";
 const FLOATING_MENU_QUIT_ID: &str = "floating-quit-app";
 const FLOATING_WINDOW_WIDTH: f64 = 252.0;
 const FLOATING_WINDOW_HEIGHT: f64 = 64.0;
+const FLOATING_WINDOW_COMPACT_SIZE: f64 = 52.0;
 const FLOATING_WINDOW_MARGIN: i32 = 20;
 static FLOATING_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static FLOATING_RESIZE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static FLOATING_RESIZE_ACTIVE: AtomicU64 = AtomicU64::new(0);
 
 #[tauri::command]
 pub fn set_taskbar_badge(
@@ -230,6 +233,151 @@ pub fn open_main_window_from_floating(
     Ok(())
 }
 
+#[tauri::command]
+pub fn set_floating_window_compact(
+    window: WebviewWindow,
+    compact: bool,
+    reduce_motion: bool,
+) -> Result<(), crate::error::CommandError> {
+    if window.label() != FLOATING_WINDOW_LABEL {
+        return Err(crate::error::AppError::Forbidden.into());
+    }
+    let current_size = window
+        .inner_size()
+        .map_err(|_| crate::error::AppError::LocalData)?;
+    let current_position = window
+        .outer_position()
+        .map_err(|_| crate::error::AppError::LocalData)?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|_| crate::error::AppError::LocalData)?
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return Ok(());
+    };
+    let scale = monitor.scale_factor();
+    let logical_size = if compact {
+        FLOATING_WINDOW_COMPACT_SIZE
+    } else {
+        FLOATING_WINDOW_WIDTH
+    };
+    let logical_height = if compact {
+        FLOATING_WINDOW_COMPACT_SIZE
+    } else {
+        FLOATING_WINDOW_HEIGHT
+    };
+    let target_size = PhysicalSize::new(
+        (logical_size * scale).round() as u32,
+        (logical_height * scale).round() as u32,
+    );
+    if current_size == target_size {
+        return Ok(());
+    }
+    let target_position = floating_resize_target(
+        current_position,
+        current_size,
+        target_size,
+        *monitor.position(),
+        *monitor.size(),
+        (FLOATING_WINDOW_MARGIN as f64 * scale).round() as i32,
+    );
+    let generation = FLOATING_RESIZE_GENERATION
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1);
+    FLOATING_RESIZE_ACTIVE.store(generation, Ordering::Release);
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let duration_ms = if reduce_motion { 1.0 } else { 260.0 };
+        let started = std::time::Instant::now();
+        loop {
+            if FLOATING_RESIZE_GENERATION.load(Ordering::Acquire) != generation {
+                return;
+            }
+            let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+            let progress = (elapsed / duration_ms).clamp(0.0, 1.0);
+            // Critically damped response, normalized so the last frame is exact.
+            let response = 1.0 - (1.0 + 6.0 * progress) * (-6.0 * progress).exp();
+            let end_response = 1.0 - 7.0 * (-6.0_f64).exp();
+            let t = if reduce_motion {
+                1.0
+            } else {
+                response / end_response
+            };
+            let lerp = |from: i64, to: i64| (from as f64 + (to - from) as f64 * t).round() as i64;
+            let size = PhysicalSize::new(
+                lerp(i64::from(current_size.width), i64::from(target_size.width)) as u32,
+                lerp(
+                    i64::from(current_size.height),
+                    i64::from(target_size.height),
+                ) as u32,
+            );
+            let position = PhysicalPosition::new(
+                lerp(i64::from(current_position.x), i64::from(target_position.x)) as i32,
+                lerp(i64::from(current_position.y), i64::from(target_position.y)) as i32,
+            );
+            let _ = window.set_size(size);
+            let _ = window.set_position(position);
+            if progress >= 1.0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+        }
+        if FLOATING_RESIZE_GENERATION.load(Ordering::Acquire) == generation {
+            FLOATING_RESIZE_ACTIVE.store(0, Ordering::Release);
+            persist_floating_position(app, target_position);
+        }
+    });
+    Ok(())
+}
+
+fn floating_resize_target(
+    current_position: PhysicalPosition<i32>,
+    current_size: PhysicalSize<u32>,
+    target_size: PhysicalSize<u32>,
+    monitor_position: PhysicalPosition<i32>,
+    monitor_size: PhysicalSize<u32>,
+    margin: i32,
+) -> PhysicalPosition<i32> {
+    let monitor_right = monitor_position
+        .x
+        .saturating_add(i32::try_from(monitor_size.width).unwrap_or(i32::MAX));
+    let monitor_bottom = monitor_position
+        .y
+        .saturating_add(i32::try_from(monitor_size.height).unwrap_or(i32::MAX));
+    let current_right = current_position
+        .x
+        .saturating_add(i32::try_from(current_size.width).unwrap_or(i32::MAX));
+    let left_distance = current_position.x.saturating_sub(monitor_position.x);
+    let right_distance = monitor_right.saturating_sub(current_right);
+    let target_width = i32::try_from(target_size.width).unwrap_or(i32::MAX);
+    let target_height = i32::try_from(target_size.height).unwrap_or(i32::MAX);
+    let x = if right_distance < left_distance {
+        current_right.saturating_sub(target_width)
+    } else {
+        current_position.x
+    };
+    let y = current_position.y.saturating_add(
+        (i32::try_from(current_size.height)
+            .unwrap_or(i32::MAX)
+            .saturating_sub(target_height))
+            / 2,
+    );
+    PhysicalPosition::new(
+        x.clamp(
+            monitor_position.x.saturating_add(margin),
+            monitor_right
+                .saturating_sub(target_width)
+                .saturating_sub(margin),
+        ),
+        y.clamp(
+            monitor_position.y.saturating_add(margin),
+            monitor_bottom
+                .saturating_sub(target_height)
+                .saturating_sub(margin),
+        ),
+    )
+}
+
 pub fn update_language(app: &AppHandle, language: InterfaceLanguage) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
@@ -318,7 +466,9 @@ pub fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri:
     let app = window.app_handle();
     if window.label() == FLOATING_WINDOW_LABEL {
         match event {
-            tauri::WindowEvent::Moved(position) => {
+            tauri::WindowEvent::Moved(position)
+                if FLOATING_RESIZE_ACTIVE.load(Ordering::Acquire) == 0 =>
+            {
                 persist_floating_position(app.clone(), *position);
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -497,4 +647,37 @@ fn draw_glyph(rgba: &mut [u8], start_x: usize, start_y: usize, character: char) 
 #[cfg(not(windows))]
 fn system_ui_is_english() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_resize_keeps_the_nearest_right_edge_and_vertical_center() {
+        let target = floating_resize_target(
+            PhysicalPosition::new(1648, 100),
+            PhysicalSize::new(252, 64),
+            PhysicalSize::new(52, 52),
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(1920, 1080),
+            20,
+        );
+
+        assert_eq!(target, PhysicalPosition::new(1848, 106));
+    }
+
+    #[test]
+    fn compact_resize_clamps_to_the_visible_monitor_margin() {
+        let target = floating_resize_target(
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(252, 64),
+            PhysicalSize::new(52, 52),
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(1920, 1080),
+            20,
+        );
+
+        assert_eq!(target, PhysicalPosition::new(20, 20));
+    }
 }

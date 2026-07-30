@@ -40,6 +40,9 @@ import type { FloatingTransferSnapshot } from '../features/transfers/floatingTra
 const TRANSFER_EVENT = 'koofr://transfer-progress'
 const FLOATING_TRANSFER_EVENT = 'koofr://floating-transfer-state'
 const FLOATING_WINDOW_DISABLED_EVENT = 'koofr://floating-window-disabled'
+const FLOATING_TRANSFER_ACTION_EVENT = 'koofr://floating-transfer-action'
+
+export type FloatingTransferAction = 'toggle'
 
 export function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
@@ -265,6 +268,9 @@ export const koofr = {
     trayBadge: boolean,
     floatingWindowEnabled: boolean,
     floatingWindowPrompted: boolean,
+    floatingWindowCompactEnabled: boolean,
+    floatingWindowClickToggleEnabled: boolean,
+    floatingWindowDoubleClickOpenEnabled: boolean,
   ) {
     return invoke<AppSettings>('update_notification_settings', {
       notifyOnComplete,
@@ -272,6 +278,9 @@ export const koofr = {
       trayBadge,
       floatingWindowEnabled,
       floatingWindowPrompted,
+      floatingWindowCompactEnabled,
+      floatingWindowClickToggleEnabled,
+      floatingWindowDoubleClickOpenEnabled,
     })
   },
 
@@ -651,6 +660,23 @@ export const koofr = {
 
   onFloatingWindowDisabled(listener: () => void): Promise<UnlistenFn> {
     return listen(FLOATING_WINDOW_DISABLED_EVENT, listener)
+  },
+
+  emitFloatingTransferAction(action: FloatingTransferAction) {
+    return emitTo('main', FLOATING_TRANSFER_ACTION_EVENT, { action })
+  },
+
+  onFloatingTransferAction(
+    listener: (action: FloatingTransferAction) => void,
+  ): Promise<UnlistenFn> {
+    return listen<{ action: FloatingTransferAction }>(
+      FLOATING_TRANSFER_ACTION_EVENT,
+      (event) => listener(event.payload.action),
+    )
+  },
+
+  setFloatingWindowCompact(compact: boolean, reduceMotion: boolean) {
+    return invoke<void>('set_floating_window_compact', { compact, reduceMotion })
   },
 
   startFloatingWindowDrag() {

@@ -6,6 +6,7 @@ import {
   Check,
   Cloud,
   Pause,
+  Play,
 } from 'lucide-react'
 
 import { koofr } from '../../services/koofr'
@@ -23,6 +24,10 @@ const INITIAL_SNAPSHOT: FloatingTransferSnapshot = {
   language: 'system',
   reduceMotion: false,
   themeId: 'koofr',
+  compactEnabled: true,
+  clickToggleEnabled: true,
+  doubleClickOpenEnabled: true,
+  resumablePausedCount: 0,
 }
 
 function resolvedEnglish(language: FloatingTransferSnapshot['language']) {
@@ -37,10 +42,7 @@ function DirectionIcon({ direction }: { readonly direction: FloatingTransferDire
   return <ArrowUpDown aria-hidden="true" />
 }
 
-function activeStatus(
-  direction: FloatingTransferDirection,
-  english: boolean,
-) {
+function activeStatus(direction: FloatingTransferDirection, english: boolean) {
   if (direction === 'upload') return english ? 'Uploading' : '正在上传'
   if (direction === 'download') return english ? 'Downloading' : '正在下载'
   return english ? 'Transferring' : '正在传输'
@@ -52,6 +54,7 @@ export function FloatingTransferWindow() {
   const previousMode = useRef(snapshot.mode)
   const previousCompletionVersion = useRef(snapshot.completionVersion)
   const completionTimer = useRef<number | null>(null)
+  const clickTimer = useRef<number | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -84,15 +87,20 @@ export function FloatingTransferWindow() {
     return () => {
       disposed = true
       unlisten?.()
-      if (completionTimer.current !== null) {
-        window.clearTimeout(completionTimer.current)
-      }
+      if (completionTimer.current !== null) window.clearTimeout(completionTimer.current)
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current)
     }
   }, [])
 
   const english = resolvedEnglish(snapshot.language)
   const roundedPercent = snapshot.percent === null ? null : Math.round(snapshot.percent)
   const completed = showCompleted && snapshot.mode === 'idle'
+  const compact = snapshot.compactEnabled && !completed && snapshot.mode !== 'active'
+
+  useEffect(() => {
+    void koofr.setFloatingWindowCompact(compact, snapshot.reduceMotion).catch(() => {})
+  }, [compact, snapshot.reduceMotion])
+
   const progressWidth = completed
     ? 100
     : snapshot.mode === 'active' ? roundedPercent ?? 0 : 0
@@ -126,48 +134,72 @@ export function FloatingTransferWindow() {
         ? (english ? 'Paused' : '暂停')
         : null
 
-  const handleMouseDown = useCallback(
-    (event: ReactMouseEvent) => {
-      if (event.button !== 0) return
-      const startX = event.clientX
-      const startY = event.clientY
-      let dragging = false
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        if (dragging) return
-        if (
-          Math.abs(moveEvent.clientX - startX) > 4 ||
-          Math.abs(moveEvent.clientY - startY) > 4
-        ) {
-          dragging = true
-          window.removeEventListener('mousemove', handleMouseMove)
-          window.removeEventListener('mouseup', handleMouseUp)
-          void koofr.startFloatingWindowDrag()
-        }
-      }
-      const handleMouseUp = () => {
+  const clearPendingClick = useCallback(() => {
+    if (clickTimer.current === null) return false
+    window.clearTimeout(clickTimer.current)
+    clickTimer.current = null
+    return true
+  }, [])
+
+  const handleMouseDown = useCallback((event: ReactMouseEvent) => {
+    if (event.button !== 0) return
+    const startX = event.clientX
+    const startY = event.clientY
+    let dragging = false
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (dragging) return
+      if (Math.abs(moveEvent.clientX - startX) > 4 || Math.abs(moveEvent.clientY - startY) > 4) {
+        dragging = true
+        clearPendingClick()
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
-        if (!dragging) {
-          void koofr.openMainWindowFromFloating()
-        }
+        void koofr.startFloatingWindowDrag()
       }
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
-    },
-    [],
-  )
+    }
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+      if (dragging) return
+      if (clearPendingClick()) {
+        if (snapshot.doubleClickOpenEnabled) {
+          void koofr.openMainWindowFromFloating()
+        } else if (
+          snapshot.clickToggleEnabled
+          && (snapshot.mode === 'active' || snapshot.mode === 'paused')
+        ) {
+          void koofr.emitFloatingTransferAction('toggle')
+        }
+        return
+      }
+      if (!snapshot.clickToggleEnabled && !snapshot.doubleClickOpenEnabled) return
+      clickTimer.current = window.setTimeout(() => {
+        clickTimer.current = null
+        if (
+          snapshot.clickToggleEnabled
+          && (snapshot.mode === 'active' || snapshot.mode === 'paused')
+        ) {
+          void koofr.emitFloatingTransferAction('toggle')
+        }
+      }, 300)
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [clearPendingClick, snapshot.clickToggleEnabled, snapshot.doubleClickOpenEnabled, snapshot.mode])
 
   return (
     <div
-      className={`floating-transfer-shell floating-transfer-shell--${completed ? 'completed' : snapshot.mode}`}
+      className={`floating-transfer-shell floating-transfer-shell--${completed ? 'completed' : snapshot.mode}${compact ? ' floating-transfer-shell--compact' : ''}`}
       data-theme={snapshot.themeId}
       data-reduce-motion={snapshot.reduceMotion ? 'true' : 'false'}
-      role="status"
-      aria-live="polite"
-      title={english ? 'Click to open · Right-click for options' : '单击打开面板 · 右键打开菜单'}
+      role="button"
+      aria-label={status}
+      title={english
+        ? 'Click to pause or resume · Double-click to open · Right-click for options'
+        : '单击暂停或继续 · 双击打开应用 · 右键打开菜单'}
       onMouseDown={handleMouseDown}
       onContextMenu={(event) => {
         event.preventDefault()
+        clearPendingClick()
         void koofr.showFloatingContextMenu()
       }}
     >
@@ -179,9 +211,15 @@ export function FloatingTransferWindow() {
       <div className="floating-transfer-content">
         <span className="floating-transfer-icon">
           {completed ? <Check aria-hidden="true" /> : snapshot.mode === 'active' ? (
-            <DirectionIcon direction={snapshot.direction} />
+            <>
+              <span className="floating-transfer-icon__state"><DirectionIcon direction={snapshot.direction} /></span>
+              <Pause className="floating-transfer-icon__action" aria-hidden="true" />
+            </>
           ) : snapshot.mode === 'paused' ? (
-            <Pause aria-hidden="true" />
+            <>
+              <Pause className="floating-transfer-icon__state" aria-hidden="true" />
+              <Play className="floating-transfer-icon__action" aria-hidden="true" />
+            </>
           ) : (
             <Cloud aria-hidden="true" />
           )}
