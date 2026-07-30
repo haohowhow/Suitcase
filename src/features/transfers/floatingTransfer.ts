@@ -17,6 +17,10 @@ export interface FloatingTransferSnapshot extends FloatingTransferSummary {
   readonly language: InterfaceLanguage
   readonly reduceMotion: boolean
   readonly themeId: ThemeId
+  readonly compactEnabled: boolean
+  readonly clickToggleEnabled: boolean
+  readonly doubleClickOpenEnabled: boolean
+  readonly resumablePausedCount: number
 }
 
 export function shouldPromptForFloatingWindow(

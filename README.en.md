@@ -68,7 +68,7 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
 - **Transfers**
   - Live transfer panel with progress, cancel and pause.
   - Split uploads show the current part, total parts, confirmed parts, and final manifest stage in both the list and detail view.
-  - Optional always-on-top transfer window aggregates concurrent upload/download progress plus paused and idle states. Left-drag anywhere to move it; its native right-click menu can open the app, close the floating window, or quit. It only receives task counts and summary progress.
+  - Optional always-on-top transfer window aggregates concurrent upload/download progress and collapses to a single-icon square while paused or idle. Auto-collapse, click-to-pause/resume, and double-click-to-open can each be disabled. Left-drag and the native right-click menu remain available; it only receives redacted summary state.
   - **Single-file download**: HTTP Range + on-disk checkpoint for true byte-level resume.
   - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header — reassemble with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.

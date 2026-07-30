@@ -145,12 +145,12 @@ All spacing derives from a 4px base.
 
 ### Floating transfer window
 
-- **Structure**: fixed 252×64 Windows always-on-top window with a continuous 18px corner radius. The whole surface is the left-button drag target; there is no separate drag strip.
+- **Structure**: a 252×64 Windows always-on-top progress pill that contracts to a 52×52 rounded square while paused or idle. The whole surface is the left-button drag target; there is no separate drag strip. Visual reference: [`docs/assets/floating-transfer-prototype.png`](docs/assets/floating-transfer-prototype.png).
 - **States**: weighted upload/download/mixed progress, indeterminate total, paused, short completion acknowledgement, and idle.
 - **Context menu**: right-click opens the native Windows menu for opening Koofr GUI, closing the floating window, or safely quitting the application.
 - **Privacy**: receives only direction, task count, aggregate percentage, theme/language, and a completion counter; never a file name or path.
-- **Motion**: progress retargets from its current transform over `--motion-standard`; icons use restrained micro feedback. Reduced motion keeps the state change but removes spatial transition.
-- **Surface**: one compact structural material with a soft outline, rounded clipping, and solid accent progress fill; no decorative gradient, looping pulse, or nested glass.
+- **Motion**: window form retargets from its current presentation size with a critically damped response; icons use restrained micro feedback. Reduced motion keeps the state change but removes spatial transition.
+- **Surface**: one warm off-white structural material with a single neutral outline and restrained inset highlight. Icons are unframed, percentage is plain text, and active progress is a thin bottom-edge fill; no nested rounded rectangles, decorative gradient, looping pulse, or stacked glass.
 
 ### File type icon
 

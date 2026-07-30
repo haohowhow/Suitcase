@@ -8,7 +8,7 @@
 - `src/transfer/`、`src/folder_download.rs`：流式上传/下载、单文件 Range 续传、通用二进制分卷续传、持久化恢复检查点、递归目录清单、进度事件、取消、下载临时内容清理。
 - `src/transfer/manager.rs`、`src/transfer/limiter.rs`：可动态升降的上传 / 下载闸门、排队取消，以及覆盖普通、分卷、文件夹、Vault 和恢复任务的共享 KiB/s token bucket。
 - `src/transfer/integrity.rs`：最终发布前的流式 MD5 校验；缺少远端 hash 时记录不可校验，hash 不一致不发布最终文件。
-- `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认、Windows 任务栏 overlay，以及置顶传输悬浮窗的位置恢复、原生右键菜单和主窗口唤起。
+- `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认、Windows 任务栏 overlay，以及置顶传输悬浮窗的位置恢复、可中断收展、原生右键菜单和主窗口唤起。
 - `src/commands.rs`、`src/vault_commands.rs`：暴露给 WebView 的窄接口；Vault 命令只接收注册 ID 和短期不透明句柄。
 - `src/stream_commands.rs`、`src/stream_session.rs`、`src/preview_decode.rs`：通用文件预览会话、受限 Range 代理、文本编码和 TIFF / RAW 内存解码。
 - `src/crypto/`、`src/vault_core/`：官方 `koofr/vault` 加密引擎边界、Vault 解锁会话、不透明路径句柄和自动锁定。
@@ -42,7 +42,7 @@
 ## Tauri 命令
 
 `connect_koofr`、`restore_saved_login`、`disconnect_koofr`、`koofr_session`、
-`get_settings`、`update_settings`、`update_download_settings`、`update_logging_settings`、`update_transfer_settings`、`update_work_directory`、`clear_metadata_cache`、`clear_logs`、`select_work_directory`、`forget_saved_login`、`update_appearance_settings`、`update_general_settings`、`update_transfer_advanced_settings`、`update_download_behavior_settings`、`update_bandwidth_settings`、`update_notification_settings`、`update_link_defaults`、`update_security_settings`、`update_history_policy`、`app_version_info`、`show_floating_context_menu`、`select_upload_file`、
+`get_settings`、`update_settings`、`update_download_settings`、`update_logging_settings`、`update_transfer_settings`、`update_work_directory`、`clear_metadata_cache`、`clear_logs`、`select_work_directory`、`forget_saved_login`、`update_appearance_settings`、`update_general_settings`、`update_transfer_advanced_settings`、`update_download_behavior_settings`、`update_bandwidth_settings`、`update_notification_settings`、`update_link_defaults`、`update_security_settings`、`update_history_policy`、`app_version_info`、`show_floating_context_menu`、`set_floating_window_compact`、`select_upload_file`、
 `select_download_location`、`select_download_folder`、`select_download_directory`、
 `prepare_download_location`、`prepare_download_folder`、`list_mounts`、
 `list_files`、`list_recent`、`list_shared`、`list_trash`、`restore_trash`、

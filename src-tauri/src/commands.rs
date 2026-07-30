@@ -89,6 +89,9 @@ pub struct SettingsSnapshot {
     tray_badge: bool,
     floating_window_enabled: bool,
     floating_window_prompted: bool,
+    floating_window_compact_enabled: bool,
+    floating_window_click_toggle_enabled: bool,
+    floating_window_double_click_open_enabled: bool,
     // Link defaults
     link_default_kind: LinkDefaultKind,
     link_default_expire_days: u32,
@@ -460,6 +463,10 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
         tray_badge: notifications.tray_badge,
         floating_window_enabled: notifications.floating_window_enabled,
         floating_window_prompted: notifications.floating_window_prompted,
+        floating_window_compact_enabled: notifications.floating_window_compact_enabled,
+        floating_window_click_toggle_enabled: notifications.floating_window_click_toggle_enabled,
+        floating_window_double_click_open_enabled: notifications
+            .floating_window_double_click_open_enabled,
         link_default_kind: links.kind,
         link_default_expire_days: links.expire_days,
         link_default_require_password: links.require_password,
@@ -1146,6 +1153,7 @@ pub async fn update_bandwidth_settings(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_notification_settings(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1154,6 +1162,9 @@ pub async fn update_notification_settings(
     tray_badge: bool,
     floating_window_enabled: bool,
     floating_window_prompted: bool,
+    floating_window_compact_enabled: bool,
+    floating_window_click_toggle_enabled: bool,
+    floating_window_double_click_open_enabled: bool,
 ) -> CommandResult<SettingsSnapshot> {
     state
         .settings
@@ -1163,6 +1174,9 @@ pub async fn update_notification_settings(
             tray_badge,
             floating_window_enabled,
             floating_window_prompted,
+            floating_window_compact_enabled,
+            floating_window_click_toggle_enabled,
+            floating_window_double_click_open_enabled,
         )
         .await
         .map_err(CommandError::from)?;
@@ -1221,9 +1235,9 @@ pub async fn update_history_policy(
 pub fn app_version_info() -> AppVersionInfo {
     AppVersionInfo {
         version: env!("CARGO_PKG_VERSION"),
-        homepage_url: "https://github.com/koofr/Koofr-GUI",
-        releases_url: "https://github.com/koofr/Koofr-GUI/releases",
-        issues_url: "https://github.com/koofr/Koofr-GUI/issues",
+        homepage_url: "https://github.com/zenwinhow/Koofr-GUI",
+        releases_url: "https://github.com/zenwinhow/Koofr-GUI/releases",
+        issues_url: "https://github.com/zenwinhow/Koofr-GUI/issues",
         license: "MIT",
     }
 }
@@ -1239,9 +1253,9 @@ pub enum ExternalPage {
 #[tauri::command]
 pub fn open_external_page(page: ExternalPage) -> CommandResult<()> {
     let url = match page {
-        ExternalPage::Homepage => "https://github.com/koofr/Koofr-GUI",
-        ExternalPage::Releases => "https://github.com/koofr/Koofr-GUI/releases",
-        ExternalPage::Issues => "https://github.com/koofr/Koofr-GUI/issues",
+        ExternalPage::Homepage => "https://github.com/zenwinhow/Koofr-GUI",
+        ExternalPage::Releases => "https://github.com/zenwinhow/Koofr-GUI/releases",
+        ExternalPage::Issues => "https://github.com/zenwinhow/Koofr-GUI/issues",
     };
     local_open::open_url(url).map_err(CommandError::from)
 }

@@ -401,7 +401,7 @@ pub enum AppError {
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 
-传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `list_resumable_transfers`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`
+传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `list_resumable_transfers`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`
 
 分享链接：`list_public_links`, `create_public_link`, `delete_public_link`
 
@@ -416,7 +416,8 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 **Tauri 事件**（Rust → 前端）：
 
 - `koofr://transfer-progress`：传输进度 / 状态变化。
-- `koofr://floating-transfer-state`：主窗口 → `transfer-float` 的脱敏聚合状态；只含方向、任务数、百分比、外观偏好和完成计数。
+- `koofr://floating-transfer-state`：主窗口 → `transfer-float` 的脱敏聚合状态；只含方向、任务数、百分比、外观与交互偏好、可恢复暂停数和完成计数。
+- `koofr://floating-transfer-action`：`transfer-float` → 主窗口的脱敏批量暂停/继续意图；不含任务标识。
 - `koofr://floating-window-disabled`：原生右键菜单关闭悬浮窗后，同步主窗口中的通知设置开关。
 
 ## 本地数据布局

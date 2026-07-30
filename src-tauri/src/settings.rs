@@ -114,6 +114,9 @@ pub struct NotificationSettings {
     pub tray_badge: bool,
     pub floating_window_enabled: bool,
     pub floating_window_prompted: bool,
+    pub floating_window_compact_enabled: bool,
+    pub floating_window_click_toggle_enabled: bool,
+    pub floating_window_double_click_open_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -218,6 +221,12 @@ struct StoredSettings {
     floating_window_enabled: bool,
     #[serde(default)]
     floating_window_prompted: bool,
+    #[serde(default = "default_floating_window_compact_enabled")]
+    floating_window_compact_enabled: bool,
+    #[serde(default = "default_floating_window_click_toggle_enabled")]
+    floating_window_click_toggle_enabled: bool,
+    #[serde(default = "default_floating_window_double_click_open_enabled")]
+    floating_window_double_click_open_enabled: bool,
     #[serde(default)]
     floating_window_x: Option<i32>,
     #[serde(default)]
@@ -281,6 +290,15 @@ const fn default_notify_on_complete() -> bool {
 const fn default_tray_badge() -> bool {
     true
 }
+const fn default_floating_window_compact_enabled() -> bool {
+    true
+}
+const fn default_floating_window_click_toggle_enabled() -> bool {
+    true
+}
+const fn default_floating_window_double_click_open_enabled() -> bool {
+    true
+}
 const fn default_history_keep_days() -> u32 {
     30
 }
@@ -326,6 +344,10 @@ impl Default for StoredSettings {
             tray_badge: default_tray_badge(),
             floating_window_enabled: false,
             floating_window_prompted: false,
+            floating_window_compact_enabled: default_floating_window_compact_enabled(),
+            floating_window_click_toggle_enabled: default_floating_window_click_toggle_enabled(),
+            floating_window_double_click_open_enabled:
+                default_floating_window_double_click_open_enabled(),
             floating_window_x: None,
             floating_window_y: None,
             link_default_kind: LinkDefaultKind::default(),
@@ -521,6 +543,10 @@ impl SettingsStore {
             tray_badge: state.tray_badge,
             floating_window_enabled: state.floating_window_enabled,
             floating_window_prompted: state.floating_window_prompted,
+            floating_window_compact_enabled: state.floating_window_compact_enabled,
+            floating_window_click_toggle_enabled: state.floating_window_click_toggle_enabled,
+            floating_window_double_click_open_enabled: state
+                .floating_window_double_click_open_enabled,
         }
     }
 
@@ -738,6 +764,7 @@ impl SettingsStore {
         self.persist().await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_notifications(
         &self,
         notify_on_complete: bool,
@@ -745,6 +772,9 @@ impl SettingsStore {
         tray_badge: bool,
         floating_window_enabled: bool,
         floating_window_prompted: bool,
+        floating_window_compact_enabled: bool,
+        floating_window_click_toggle_enabled: bool,
+        floating_window_double_click_open_enabled: bool,
     ) -> Result<(), AppError> {
         {
             let mut state = self.state.write().await;
@@ -753,6 +783,10 @@ impl SettingsStore {
             state.tray_badge = tray_badge;
             state.floating_window_enabled = floating_window_enabled;
             state.floating_window_prompted = floating_window_prompted;
+            state.floating_window_compact_enabled = floating_window_compact_enabled;
+            state.floating_window_click_toggle_enabled = floating_window_click_toggle_enabled;
+            state.floating_window_double_click_open_enabled =
+                floating_window_double_click_open_enabled;
         }
         self.persist().await
     }
@@ -1064,7 +1098,7 @@ mod tests {
             .await
             .expect("save bandwidth");
         store
-            .update_notifications(false, true, false, true, true)
+            .update_notifications(false, true, false, true, true, false, false, false)
             .await
             .expect("save notifications");
         store
@@ -1093,6 +1127,9 @@ mod tests {
         assert!(!notifications.tray_badge);
         assert!(notifications.floating_window_enabled);
         assert!(notifications.floating_window_prompted);
+        assert!(!notifications.floating_window_compact_enabled);
+        assert!(!notifications.floating_window_click_toggle_enabled);
+        assert!(!notifications.floating_window_double_click_open_enabled);
         reloaded
             .disable_floating_window()
             .await

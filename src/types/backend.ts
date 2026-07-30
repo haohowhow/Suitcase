@@ -89,6 +89,9 @@ export interface AppSettings {
   readonly trayBadge: boolean
   readonly floatingWindowEnabled: boolean
   readonly floatingWindowPrompted: boolean
+  readonly floatingWindowCompactEnabled: boolean
+  readonly floatingWindowClickToggleEnabled: boolean
+  readonly floatingWindowDoubleClickOpenEnabled: boolean
   readonly linkDefaultKind: LinkDefaultKind
   readonly linkDefaultExpireDays: number
   readonly linkDefaultRequirePassword: boolean

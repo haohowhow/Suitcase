@@ -47,6 +47,9 @@ const SETTINGS: AppSettings = {
   trayBadge: true,
   floatingWindowEnabled: false,
   floatingWindowPrompted: false,
+  floatingWindowCompactEnabled: true,
+  floatingWindowClickToggleEnabled: true,
+  floatingWindowDoubleClickOpenEnabled: true,
   linkDefaultKind: 'download',
   linkDefaultExpireDays: 0,
   linkDefaultRequirePassword: false,
@@ -251,6 +254,9 @@ describe('SettingsPanel new sections', () => {
       trayBadge: true,
       floatingWindowEnabled: true,
       floatingWindowPrompted: true,
+      floatingWindowCompactEnabled: true,
+      floatingWindowClickToggleEnabled: true,
+      floatingWindowDoubleClickOpenEnabled: true,
     })
   })
 

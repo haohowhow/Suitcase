@@ -95,6 +95,9 @@ interface SettingsPanelProps {
     trayBadge: boolean
     floatingWindowEnabled: boolean
     floatingWindowPrompted: boolean
+    floatingWindowCompactEnabled: boolean
+    floatingWindowClickToggleEnabled: boolean
+    floatingWindowDoubleClickOpenEnabled: boolean
   }) => void
   readonly onLinkDefaultsChange?: (next: {
     kind: LinkDefaultKind
@@ -352,6 +355,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
     trayBadge: boolean
     floatingWindowEnabled: boolean
     floatingWindowPrompted: boolean
+    floatingWindowCompactEnabled: boolean
+    floatingWindowClickToggleEnabled: boolean
+    floatingWindowDoubleClickOpenEnabled: boolean
   }>) => {
     if (!onNotificationChange) return
     onNotificationChange({
@@ -362,6 +368,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
         patch.floatingWindowEnabled ?? settings.floatingWindowEnabled,
       floatingWindowPrompted:
         patch.floatingWindowPrompted ?? settings.floatingWindowPrompted,
+      floatingWindowCompactEnabled:
+        patch.floatingWindowCompactEnabled ?? settings.floatingWindowCompactEnabled,
+      floatingWindowClickToggleEnabled:
+        patch.floatingWindowClickToggleEnabled ?? settings.floatingWindowClickToggleEnabled,
+      floatingWindowDoubleClickOpenEnabled:
+        patch.floatingWindowDoubleClickOpenEnabled ?? settings.floatingWindowDoubleClickOpenEnabled,
     })
   }
 
@@ -519,6 +531,31 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 floatingWindowPrompted: true,
               })}
             />
+            {settings.floatingWindowEnabled ? (
+              <>
+                <SwitchRow
+                  label="空闲或暂停时收为图标"
+                  hint="任务完成提示结束后，悬浮窗收为单图标方块"
+                  checked={settings.floatingWindowCompactEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
+                />
+                <SwitchRow
+                  label="单击暂停或继续"
+                  hint="对所有可操作传输执行暂停或继续"
+                  checked={settings.floatingWindowClickToggleEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
+                />
+                <SwitchRow
+                  label="双击打开应用"
+                  hint="双击悬浮窗显示并聚焦 Koofr GUI"
+                  checked={settings.floatingWindowDoubleClickOpenEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
+                />
+              </>
+            ) : null}
           </section>
         ) : null}
 
@@ -1294,6 +1331,31 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 floatingWindowPrompted: true,
               })}
             />
+            {settings.floatingWindowEnabled ? (
+              <>
+                <SwitchRow
+                  label="空闲或暂停时收为图标"
+                  hint="任务完成提示结束后，悬浮窗收为单图标方块"
+                  checked={settings.floatingWindowCompactEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
+                />
+                <SwitchRow
+                  label="单击暂停或继续"
+                  hint="对所有可操作传输执行暂停或继续"
+                  checked={settings.floatingWindowClickToggleEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
+                />
+                <SwitchRow
+                  label="双击打开应用"
+                  hint="双击悬浮窗显示并聚焦 Koofr GUI"
+                  checked={settings.floatingWindowDoubleClickOpenEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
+                />
+              </>
+            ) : null}
           </section>
         ) : null}
 
