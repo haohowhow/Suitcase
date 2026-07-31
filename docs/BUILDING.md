@@ -58,7 +58,7 @@ Set-Location Koofr-GUI
 npm ci
 ```
 
-用 `npm ci` 而不是 `npm install` —— 它严格按照已提交的 `package-lock.json` 装前端和 Tauri CLI 依赖，不会改锁文件。Rust 依赖在首次开发 / 检查 / 构建时根据 `src-tauri/Cargo.lock` 自动下载。
+用 `npm ci` 而不是 `npm install`，它严格按照已提交的 `package-lock.json` 装前端和 Tauri CLI 依赖，不会改锁文件。Rust 依赖在首次开发 / 检查 / 构建时根据 `src-tauri/Cargo.lock` 自动下载。
 
 **永远不要提交** `node_modules/`、`dist/`、`src-tauri/gen/` 或 `src-tauri/target/`，这些都是能重新生成的。
 
@@ -248,7 +248,7 @@ taskkill /PID <PID> /F
 
 ### 清理时出现 `EPERM` 或"文件正在使用"
 
-关掉 Vite、Tauri、`koofr-gui.exe` 和可能正在扫描构建目录的工具（IDE 索引、杀毒软件），再跑清理。不要手动删不认识的系统目录 —— 项目脚本只会操作仓库内的白名单路径。
+关掉 Vite、Tauri、`koofr-gui.exe` 和可能正在扫描构建目录的工具（IDE 索引、杀毒软件），再跑清理。不要手动删不认识的系统目录，项目脚本只会操作仓库内的白名单路径。
 
 ### 首次编译 Rust 非常慢
 

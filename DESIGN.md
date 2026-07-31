@@ -1,5 +1,7 @@
 # Koofr-GUI Design System
 
+This document defines the design system and visual standards for Koofr-GUI. It serves as the canonical engineering contract for the user interface. Developers must follow these specifications to maintain a consistent, accessible, and high-performance desktop experience. Any updates to the visual styles or layout parameters must be recorded here and synchronized with the CSS variables in `src/styles.css`.
+
 ## 1. Atmosphere & Identity
 
 Koofr-GUI should feel like a calm Windows file manager: compact, dependable, and immediately legible during long file operations. Its signature is Koofr green used sparingly as an operational signal against cool neutral surfaces; downloads and destructive actions favor clarity over decoration.
@@ -39,6 +41,8 @@ Koofr-GUI should feel like a calm Windows file manager: compact, dependable, and
 | File/archive | `--file-archive`, `--file-archive-deep` | `#b0712b`, `#7d4b18` | Compressed archive glyph |
 | File/executable | `--file-executable`, `--file-executable-deep` | `#397b91`, `#245264` | Windows executable and script glyph |
 | File/generic | `--file-generic`, `--file-generic-deep` | `#74808d`, `#4d5864` | Unknown-file glyph |
+
+The complete list of file-type tokens is defined in `src/styles.css`. This includes additional families for slides, video, audio, code, text, font, ebook, disk, and database.
 
 ### Theme accents
 
@@ -94,7 +98,7 @@ All spacing derives from a 4px base.
 ### Grid
 
 - Desktop shell target: 1280×720 with a 980×640 minimum native window.
-- Transfer panel: 358px desktop rail, overlaying content at narrower desktop widths.
+- Transfer panel: 470px desktop rail, overlaying content at narrower desktop widths.
 - Modal widths: 430px standard and 660px wide, constrained to the viewport.
 - Responsive checkpoints: 1280px, 920px, and 650px; forms and setting choices collapse to one column at the compact breakpoint.
 
@@ -169,7 +173,7 @@ All spacing derives from a 4px base.
 | Emphasis | `400ms` | cubic-bezier(0.16, 1, 0.3, 1) | Rare onboarding emphasis |
 
 - Animate only transform and opacity for new motion.
-- Pointer-down immediately compresses ordinary controls to `0.97–0.985`; window controls use a color response so their hit geometry stays fixed.
+- Pointer-down immediately compresses ordinary controls to `0.97 to 0.985`; window controls use a color response so their hit geometry stays fixed.
 - Menus materialize from the invoking corner, while modal dialogs scale from their own center and pair with a dimmed, gently blurred backdrop.
 - Motion remains interruptible: opening panels never block close or navigation input while transitioning.
 - Every clickable control has hover, active, focus-visible, and disabled treatment.

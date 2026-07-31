@@ -1,8 +1,6 @@
 # Third-party notices
 
-Koofr-GUI is distributed with the following preview components. Versions are
-locked by `package-lock.json`, `Cargo.lock`, or the vendored source directory.
-The full license files shipped by each dependency remain authoritative.
+This document lists the third-party preview components distributed with Koofr-GUI, providing version, distribution, and licensing details for compliance. Versions are locked by `package-lock.json`, `Cargo.lock`, or the vendored source directory. The full license texts provided by each dependency remain the authoritative legal terms.
 
 | Component | Fixed version | Distribution | License used |
 | --- | --- | --- | --- |

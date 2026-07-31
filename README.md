@@ -43,9 +43,9 @@
 
 ## 简介
 
-[Koofr](https://koofr.eu) 是一家欧洲的云存储服务商，支持把 Google Drive、OneDrive、Dropbox 等第三方存储聚合到同一个账户。官方网页端在中国大陆网络下体验不够顺畅，也没有正式的 Windows 桌面客户端。
+[Koofr](https://koofr.eu) 是一家欧洲的云存储服务商，支持把 Google Drive、OneDrive、Dropbox 等第三方存储聚合到同一个账户。
 
-Koofr-GUI 尝试解决这个问题：一个体积小、原生感强、支持大文件续传、不用把令牌塞进 WebView 的桌面客户端。当前版本已实现普通 Koofr 文件管理、可续传传输、分享链接管理，常用文件本地直接预览，以及与 Koofr Vault / rclone crypt 互操作的端到端加密工作区。
+Koofr-GUI 是一个第三方的、Windows 优先的、侧重原生文件管理器体验的替代客户端，与 Koofr 官方无关联。官方提供了桌面客户端，而本项目旨在提供一种不同的、更贴近 Windows 原生文件管理器操作习惯的选择。当前版本已实现普通 Koofr 文件管理、可续传传输、分享链接管理，常用文件本地直接预览，以及与 Koofr Vault / rclone crypt 互操作的端到端加密工作区。
 
 ## 截图
 
@@ -101,16 +101,16 @@ Koofr-GUI 尝试解决这个问题：一个体积小、原生感强、支持大�
 
 ### 还没做
 
-- OAuth 登录和第三方存储的新增 / 移除 / 重授权。当前只能引导用户到 Koofr 官方账户页面管理，等 Koofr 提供公版桌面客户端注册信息和公开授权 API。
+- OAuth 登录和第三方存储的新增、移除与重授权。本项目目前使用应用专用密码进行登录，且未实现 OAuth 登录或第三方挂载管理。新增、移除或重新授权第三方存储需要通过 Koofr 官方网页端进行。
 - macOS / Linux 支持。
 
 > **为什么普通上传不能续传？** Koofr 公开上传接口只有整文件 `FilesPut`，不提供分块会话或服务端偏移确认，所以普通上传断了必须重传整个文件。分卷上传是明确选出来的互操作方案，详见 [ARCHITECTURE.md](docs/ARCHITECTURE.md#分卷上传设计)。
 
 ## 下载与安装
 
-推荐从 [Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases) 下载最新的 NSIS 安装包（`Koofr-GUI_x.y.z_x64-setup.exe`）。
+已发布的安装包（若可用）会列在 Releases 页面。推荐从 [Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases) 下载最新的 NSIS 安装包（例如 `Koofr-GUI_<version>_x64-setup.exe`）。
 
-> ⚠️ **未签名警告**：安装包目前不做代码签名。Windows SmartScreen 可能显示"未知发布者"警告。**请只从本仓库的 Releases 页面下载**，不要从第三方镜像获取。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
+> ⚠️ **未签名警告**：安装包目前不做代码签名。Windows SmartScreen 可能显示"未知发布者"警告。请只从本仓库的 Releases 页面下载，不要从第三方镜像获取。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
 
 首次运行需要 Microsoft Edge WebView2 Runtime。受支持的 Windows 10 / 11 通常自带；如果缺失，安装包会引导下载。
 
@@ -221,7 +221,7 @@ npm run build:installer      # 显式生成 NSIS 安装包
 工作目录；全量迁移不会把这个定位文件带走。迁移在下次启动、任何工作文件被打开前进行，
 支持跨磁盘复制并在成功切换后清理旧目录；目标必须为空，失败时保留可用副本并在下次启动重试。
 
-**凭据不在工作目录里**——Koofr 应用密码通过 Windows 凭据管理器保存，重装 /
+**凭据不在工作目录里**，Koofr 应用密码通过 Windows 凭据管理器保存，重装 /
 重构建应用后仍然存在，也不会随工作目录迁移。
 
 ## 路线图

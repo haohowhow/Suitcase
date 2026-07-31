@@ -1,6 +1,6 @@
 # Rust / Tauri 后端
 
-后端目前实现了普通 Koofr 文件管理的基本功能，算是第一个可测试的切片：
+后端实现了 Koofr 文件管理、传输控制、凭据管理、本地缓存与加密工作区等核心功能：
 
 - `src/file_ops/`：校验挂载点 ID、远程路径、远程名称和本地选择路径。
 - `src/koofr_api/`：认证、挂载点、目录列表、建文件夹、复制、移动、删除、内容请求和基础分享链接。
@@ -12,7 +12,7 @@
 - `src/commands.rs`、`src/vault_commands.rs`：暴露给 WebView 的窄接口；Vault 命令只接收注册 ID 和短期不透明句柄。
 - `src/stream_commands.rs`、`src/stream_session.rs`、`src/preview_decode.rs`：通用文件预览会话、受限 Range 代理、文本编码和 TIFF / RAW 内存解码。
 - `src/crypto/`、`src/vault_core/`：官方 `koofr/vault` 加密引擎边界、Vault 解锁会话、不透明路径句柄和自动锁定。
-- `src/credential_manager.rs`：用户选了保存密码的话，把应用专用密码写到 Windows 凭据管理器里。密码不会出现在普通配置中。
+- `src/credential_manager.rs`：用户选了保存密码的话，把应用专用密码写到 Windows 凭据管理器里（服务名为 `Koofr-GUI`，账号名为邮箱地址）。密码不会出现在普通配置中。
 - `src/settings.rs`、`src/metadata_cache.rs`：保存非敏感设置，为挂载点、目录、最近文件、共享和回收站提供按账户隔离的 TTL 缓存。
 - `src/work_directory.rs`：保存工作目录定位记录，在启动早期执行可恢复的全量目录迁移。
 - `src/logging.rs`：后台写入结构化 JSONL 诊断日志，支持级别过滤、大小轮转、保留期限和清理。
@@ -31,9 +31,9 @@
 - Vault Safe Key 只由 Windows 原生凭据窗口交给 Rust，不经过 IPC。前端只见解密显示元数据和 UUID 句柄；密文路径、validator 和 rclone 配置留在后端。默认 60 分钟无操作自动锁定，账户切换和退出会立即清空解锁状态。
 - Vault 预览先用不透明句柄重新解析目标，明文只保存在 `Zeroizing` 内存且不超过 50 MiB；锁定、自动锁定、关闭预览、换账户或退出立即清除。普通完整图片 / RAW 解码不超过 100 MiB，RAW 输出限制 80 MP 并串行执行。
 
-会话令牌只在内存里待着。用户勾了"保存密码"，应用专用密码由 Windows Credential Manager 保护，下次启动时由 Rust 后端读出来重新认证。OAuth、公版应用注册和令牌刷新等后续认证里程碑确认后再做。
+会话令牌只在内存里。用户勾了"保存密码"，应用专用密码由 Windows 凭据管理器（服务名为 `Koofr-GUI`，账号名为邮箱地址）保护，下次启动时由 Rust 后端读出来重新认证。当前认证仅限于使用应用专用密码进行直接会话初始化。
 
-文件元数据缓存默认只存在内存里。用户可以在设置里开启磁盘缓存，文件固定放在当前工作目录的 `cache/` 中——缓存里只有普通 Koofr 文件名和远程路径，不包含密码、令牌或文件内容。切换到"不缓存"、清缓存或者换账户，缓存条目自动删掉。
+文件元数据缓存默认只存在内存里。用户可以在设置里开启磁盘缓存，文件固定放在当前工作目录的 `cache/` 中，缓存里只有普通 Koofr 文件名和远程路径，不包含密码、令牌或文件内容。切换到"不缓存"、清缓存或者换账户，缓存条目自动删掉。
 
 工作目录默认是 Tauri 的 `app_local_data_dir`，也可切换到用户选择的空目录。变更先写入默认数据目录旁的 `net.koofr.desktop.gui.work-directory.json` 定位记录，下次启动会在设置、检查点、历史、缓存和日志初始化前完成迁移。全量迁移使用独立暂存目录和迁移标记，成功激活新目录后才清理旧数据；失败时保留可用副本并在后续启动重试。根目录、符号链接、非空目标和互相嵌套的新旧目录都会被拒绝。Windows 凭据管理器中的应用专用密码不属于工作目录。
 
@@ -41,24 +41,7 @@
 
 ## Tauri 命令
 
-`connect_koofr`、`restore_saved_login`、`disconnect_koofr`、`koofr_session`、
-`get_settings`、`update_settings`、`update_download_settings`、`update_logging_settings`、`update_transfer_settings`、`update_work_directory`、`clear_metadata_cache`、`clear_logs`、`select_work_directory`、`forget_saved_login`、`update_appearance_settings`、`update_general_settings`、`update_transfer_advanced_settings`、`update_download_behavior_settings`、`update_bandwidth_settings`、`update_notification_settings`、`update_link_defaults`、`update_security_settings`、`update_history_policy`、`app_version_info`、`show_floating_context_menu`、`set_floating_window_compact`、`select_upload_file`、
-`select_download_location`、`select_download_folder`、`select_download_directory`、
-`prepare_download_location`、`prepare_download_folder`、`list_mounts`、
-`list_files`、`list_recent`、`list_shared`、`list_trash`、`restore_trash`、
-`list_public_links`、`create_public_link`、`delete_public_link`、
-`empty_trash`、`create_folder`、`rename_entry`、`move_entry`、`copy_entry`、
-`delete_entry`、`upload_file`、`upload_split_file`、`download_file`、`download_folder`、`cancel_transfer`、
-`list_resumable_transfers`、`resume_transfer`、`discard_resumable_transfer`。
-
-Vault：`list_vaults`、`unlock_vault`、`lock_vault`、`list_vault_files`、
-`create_vault_folder`、`rename_vault_entry`、`relocate_vault_entry`、
-`delete_vault_entries`、`upload_vault_file`、`download_vault_file`、
-`create_vault`、`remove_vault`、`export_vault_rclone_config`、
-`import_vault_rclone_config`。
-
-预览：`prepare_file_preview`、`prepare_vault_preview`、`read_preview_text`、
-`close_file_preview`。
+后端注册的完整 Tauri 命令清单与自定义 URI scheme 规范，请参阅 [架构说明中的事件与命令目录](../docs/ARCHITECTURE.md#事件与命令目录)。
 
 传输通过 `koofr://transfer-progress` 事件上报运行、暂停、完成、取消或失败状态；分卷任务额外携带已确认卷数、当前卷、总卷数和 `parts` / `finalizing` 阶段。事件里不包含本地或远程文件名。主窗口另向 `transfer-float` 发送只含方向、任务数和汇总百分比的 `koofr://floating-transfer-state`。TypeScript 封装在 `src/services/koofr.ts`。
 

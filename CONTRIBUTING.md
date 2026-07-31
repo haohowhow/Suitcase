@@ -29,7 +29,7 @@
 在动手之前请确认：
 
 1. 读过 [README.md](README.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-2. 搜过 [已有 Issue](https://github.com/zenwinhow/Koofr-GUI/issues) —— 你想报的问题可能已经在讨论了。
+2. 搜过 [已有 Issue](https://github.com/zenwinhow/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
 3. 涉及安全漏洞的**不要**开公开 Issue，走 [SECURITY.md](SECURITY.md) 的私密渠道。
 
 ## 报告 Bug
@@ -77,7 +77,7 @@ npm run dev:desktop
 
 1. **Fork + 建分支**。分支名用简短描述性名字，例如 `fix/split-upload-retry` 或 `feat/vault-unlock`。
 2. **小步快跑**。一个 PR 只做一件事。多个逻辑独立的改动请拆成多个 PR。
-3. **保持锁文件干净**。不要随手升级依赖 —— 有需要请单独开 PR 说明理由。
+3. **保持锁文件干净**。不要随手升级依赖，有需要请单独开 PR 说明理由。
 4. **本地跑通所有检查**：
 
    ```powershell
@@ -87,7 +87,7 @@ npm run dev:desktop
    这条命令依次跑 ESLint、Vitest、TypeScript + Vite 构建、`cargo fmt --check`、Clippy（警告当错误）、Rust 单元测试。必须**全绿**。
 
 5. **写测试**。新增功能模块或修 Bug 时，尽量加对应的 `.test.ts` / `.test.tsx` 或 Rust `#[cfg(test)]`。
-6. **更新文档**。改了用户可见的行为要更新 README；改了架构 / 安全约定要更新 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [CLAUDE.md](CLAUDE.md)。
+6. **更新文档**。改了用户可见的行为要更新 README；改了架构或安全约定要更新 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 7. **更新 CHANGELOG.md**。在 `## [Unreleased]` 段落下加一条，遵守 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 格式。如果没有 `Unreleased` 段落，就新建一个。
 8. **提 PR 到 `main`**。标题一行描述做了什么。描述里说明：
    - 动机 / 关联 Issue
@@ -172,8 +172,8 @@ Closes #42
 | 改动 | 需要更新 |
 | --- | --- |
 | 用户可见的功能变化 | `README.md` + `README.en.md` + `CHANGELOG.md` |
-| 新增 Tauri 命令 | `src-tauri/README.md` + `CLAUDE.md`（命令索引）|
-| 架构、数据流、安全边界变化 | `docs/ARCHITECTURE.md` + `CLAUDE.md` |
+| 新增 Tauri 命令 | `src-tauri/README.md` |
+| 架构、数据流、安全边界变化 | `docs/ARCHITECTURE.md` |
 | 构建流程变化 | `docs/BUILDING.md` |
 | 发布流程变化 | `docs/RELEASING.md` |
 | 设计 token / UI 约定变化 | `DESIGN.md` |
@@ -198,14 +198,14 @@ Closes #42
 
 Thanks for your interest in improving Koofr-GUI. Short version of the rules:
 
-1. **Search issues first**, don't file duplicates.
+1. **Search issues first**; do not file duplicates.
 2. **Security bugs go through [SECURITY.md](SECURITY.md), never public issues.**
 3. **Fork → branch → PR to `main`.** One logical change per PR.
-4. **`npm run check` must pass** before requesting review — it runs lint, Vitest, TypeScript + Vite build, `cargo fmt --check`, Clippy (warnings as errors), and Rust unit tests.
+4. **`npm run check` must pass** before requesting review; it runs lint, Vitest, TypeScript + Vite build, `cargo fmt --check`, Clippy (warnings as errors), and Rust unit tests.
 5. **Every new Tauri command must validate** mount IDs, remote paths (reject `.`, `..`, NUL, oversize), local paths (absolute, existing, non-symlink), and operation scope on the Rust side.
-6. **Error messages returned to the frontend must not leak paths, tokens, or response bodies** — use `AppError` and stable error codes.
+6. **Error messages returned to the frontend must not leak paths, tokens, or response bodies**; use `AppError` and stable error codes.
 7. **Update docs** (README / ARCHITECTURE / CHANGELOG) for user-visible or architectural changes.
-8. **No auto dep bumps** in feature PRs — open a separate PR for dependency updates.
+8. **No auto dep bumps** in feature PRs; open a separate PR for dependency updates.
 9. **License**: contributions are released under [MIT](LICENSE). By opening a PR you certify you have the right to license your work under MIT.
 
 Full rules above (in Chinese).

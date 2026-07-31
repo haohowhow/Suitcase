@@ -16,8 +16,8 @@
 
 | 版本 | 是否支持 |
 | --- | --- |
-| 1.3.x | ✅ |
-| < 1.3.0 | ❌ 请升级到最新版 |
+| 最新稳定版 | ✅ |
+| 其他历史版本 | ❌ 请升级到最新版 |
 
 发布包**未做代码签名**。请只从 [官方 Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases) 下载。
 
@@ -117,12 +117,12 @@ Koofr-GUI 的信任模型：
 
 ## English version
 
-**Do not open public issues for security vulnerabilities.** Use one of the private channels:
+**Don't open public issues for security vulnerabilities.** Use one of the private channels:
 
 - **GitHub Security Advisory (preferred)**: <https://github.com/zenwinhow/Koofr-GUI/security/advisories/new>
 - **Email**: [zenwinhow@users.noreply.github.com](mailto:zenwinhow@users.noreply.github.com)
 
-Supported: 1.3.x only. Older versions must upgrade to receive fixes.
+Supported: latest stable release only. Older versions must upgrade to receive fixes.
 
 Response targets (best-effort, hobby-maintained project):
 

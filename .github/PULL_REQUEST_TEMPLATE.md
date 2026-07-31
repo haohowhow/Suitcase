@@ -36,8 +36,8 @@ Closes #
 
 - [ ] `npm run check` 全部通过 / all green
 - [ ] 新增或修改的行为有测试覆盖 / new or changed behavior is test-covered
-- [ ] 相关文档已同步更新（README / ARCHITECTURE / CLAUDE.md / 命令索引）
-      / docs updated (README / ARCHITECTURE / CLAUDE.md / command index)
+- [ ] 相关文档已同步更新（README / ARCHITECTURE / 命令索引）
+      / docs updated (README / ARCHITECTURE / command index)
 - [ ] `CHANGELOG.md` 已加条目到 `## [Unreleased]` / `CHANGELOG.md` updated under `## [Unreleased]`
 - [ ] Rust 侧对新增命令做了路径 / 标识符 / 操作范围校验（如适用）
       / Rust-side validation added for any new command (paths / IDs / scope)

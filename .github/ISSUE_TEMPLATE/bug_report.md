@@ -25,7 +25,7 @@ assignees: ''
 ## 实际结果 / Actual result
 
 <!-- 应用做了什么？错误码 / 错误消息（不要贴含路径或令牌的日志）
-     What did the app do? Error code / message (do NOT paste logs containing paths or tokens) -->
+     What did the app do? Error code / message (don't paste logs containing paths or tokens) -->
 
 ## 期望结果 / Expected result
 

@@ -9,7 +9,7 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 - [数据流](#数据流)
 - [核心模块](#核心模块)
   - [前端 `src/`](#前端-src)
-  - [Rust 后端 `src-tauri/src/`](#rust-后端-src-tauri-src)
+  - [Rust 后端 `src-tauri/src/`](#rust-后端-src-taurisrc)
 - [关键设计](#关键设计)
   - [认证与会话](#认证与会话)
   - [路径与操作校验](#路径与操作校验)
@@ -60,11 +60,11 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
               └───────────────────┘
 ```
 
-技术栈见 [CLAUDE.md](../CLAUDE.md#技术栈)。
+技术栈基于 Tauri v2, React 19, TypeScript 与 Rust。
 
 ## 进程与线程模型
 
-- **单进程**：一个 `koofr-gui.exe`，包含 Tauri 主进程 + WebView2 子进程（由 WebView2 Runtime 管理）。
+- **多进程**：包含一个 Tauri 主进程（Rust）以及由 WebView2 Runtime 管理的多个 WebView2 子进程（渲染、GPU、网络等）。
 - **主线程**：Tauri 事件循环、UI 事件调度。
 - **WebView 窗口**：`main` 持有完整应用状态；可选的 `transfer-float` 是固定大小、置顶且跳过任务栏的轻量状态窗口，只接收脱敏聚合传输快照。
 - **tokio runtime**：`rt-multi-thread`，异步 HTTP、异步磁盘 IO、传输任务、进度事件发射都在这里跑。
@@ -162,10 +162,10 @@ src-tauri/src/
 ### 认证与会话
 
 - `connect_koofr(email, password, remember)` 把邮箱和 Koofr **应用专用密码**（不是主账户密码）POST 到 `https://app.koofr.net/token`。
-- 成功后 Rust 内存保留 access token + refresh token。**永远不发到前端**。
-- `remember=true` 时，密码通过 `keyring-core` + `windows-native-keyring-store` 写入 Windows 凭据管理器，作用域是当前用户。
+- 成功后 Rust 内存保留单会话令牌（session token）。**永远不发到前端**。
+- `remember=true` 时，密码通过 `keyring-core` + `windows-native-keyring-store` 写入 Windows 凭据管理器，服务名为 `Koofr-GUI`，账号名为邮箱地址。
 - 下次启动时 `restore_saved_login()` 从凭据管理器读回密码，重新走一次 `/token`。
-- `disconnect_koofr()` 主动断开：取消所有传输、清 refresh token 缓冲区（`zeroize`）、清 LocalAccessManager 里未消费的授权。
+- `disconnect_koofr()` 主动断开：取消所有传输、清会话令牌缓冲区（`zeroize`）、清 LocalAccessManager 里未消费的授权。
 - 进程退出时同样 zeroize。
 
 ### Koofr Vault
@@ -344,8 +344,8 @@ src-tauri/src/
 
 ### 凭据存储
 
-- **会话 access / refresh token**：只在 Rust 进程内存，`zeroize` 清理。
-- **应用专用密码**（用户勾了"记住我"时）：Windows Credential Manager，键格式 `KoofrGUI:<email>`，作用域当前 Windows 用户。
+- **会话令牌**：只在 Rust 进程内存，`zeroize` 清理。
+- **应用专用密码**（用户勾了"记住我"时）：Windows 凭据管理器，服务名为 `Koofr-GUI`，账号名为邮箱地址。
 - **服务端返回的错误响应正文**：读一次拿到错误码后立刻丢弃，不写日志。
 
 失败或用户勾"忘记我"时，从 Credential Manager 里删除对应记录。
@@ -397,11 +397,11 @@ pub enum AppError {
 
 文件浏览：`list_mounts`, `list_files`, `list_recent`, `list_shared`, `list_trash`
 
-文件操作：`create_folder`, `rename_entry`, `move_entry`, `copy_entry`, `delete_entry`, `restore_trash`, `empty_trash`
+文件操作：`create_folder`, `rename_entry`, `move_entry`, `copy_entry`, `delete_entry`, `restore_trash`, `empty_trash`, `open_downloaded_file`, `open_downloaded_folder`, `open_external_page`
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 
-传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `list_resumable_transfers`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`
+传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `pause_transfer`, `list_resumable_transfers`, `list_download_history`, `clear_finished_download_history`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`, `open_main_window_from_floating`, `set_taskbar_badge`
 
 分享链接：`list_public_links`, `create_public_link`, `delete_public_link`
 
@@ -436,7 +436,7 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 
 **Windows 凭据管理器**（不在上面目录里）：
 
-- `KoofrGUI:<email>` → 用户勾"记住我"时保存的应用专用密码。
+- 服务名 `Koofr-GUI`，账号名 `<email>`：用户勾"记住我"时保存的应用专用密码。
 
 **下载临时文件**（在用户配置的下载目录下）：
 

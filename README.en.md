@@ -43,9 +43,9 @@ Built with Tauri v2 + React + TypeScript + Rust. Aims to feel like a native file
 
 ## Overview
 
-[Koofr](https://koofr.eu) is a European cloud storage provider that aggregates Google Drive, OneDrive, Dropbox and other third-party accounts under one login. Its web UI is not always smooth from mainland China, and there is no official Windows desktop client.
+[Koofr](https://koofr.eu) is a European cloud storage provider that aggregates Google Drive, OneDrive, Dropbox and other third-party accounts under one login.
 
-Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with resumable large-file transfers that does not stuff tokens into a WebView. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, local in-app preview for common files, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
+Koofr-GUI is an unaffiliated, Windows-first, file-manager-oriented alternative client. While Koofr officially provides desktop apps, this project aims to offer a different experience that aligns closely with native Windows file manager habits. The current version covers the main Koofr file-management flows, resumable transfers, public-link management, local in-app preview for common files, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
 
 ## Screenshots
 
@@ -70,7 +70,7 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
   - Split uploads show the current part, total parts, confirmed parts, and final manifest stage in both the list and detail view.
   - Optional always-on-top transfer window aggregates concurrent upload/download progress and collapses to a single-icon square while paused or idle. Auto-collapse, click-to-pause/resume, and double-click-to-open can each be disabled. Left-drag and the native right-click menu remain available; it only receives redacted summary state.
   - **Single-file download**: HTTP Range + on-disk checkpoint for true byte-level resume.
-  - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header — reassemble with `copy /b` on Windows or `cat` on POSIX.
+  - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header; they can be reassembled with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.
 
 - **Local in-app preview**
@@ -97,20 +97,20 @@ Koofr-GUI aims to fill that gap: a small, native-feeling desktop client with res
   - Configurable application work directory, with an optional complete migration of settings, transfer state, download history, cache, and logs before the next start.
   - Metadata cache: memory / disk / off. Diagnostic log level, retention, rotation size, usage, and cleanup remain configurable.
   - Optional automatic retry for transfers that fail with `network_error`, with a configurable fixed interval and either a finite or unlimited retry count.
-  - Five themes (koofr / ocean / iris / coral / berry) — accent tokens only.
+  - Five themes (koofr / ocean / iris / coral / berry), covering accent tokens only.
 
 ### Not yet
 
-- OAuth sign-in and add/remove/re-authorize third-party mounts. Blocked on Koofr publishing desktop client registration info and a public authorization API. Today the app can list existing mounts and link out to the official Koofr account page.
+- OAuth sign-in and add/remove/re-authorize third-party mounts. This project currently uses app-specific passwords and does not implement OAuth or third-party mount management. Adding, removing, or re-authorizing third-party mounts must be done through the official Koofr web interface.
 - macOS / Linux support.
 
-> **Why can't regular uploads resume?** Koofr's public upload API only exposes whole-file `FilesPut` — no chunk sessions, no server-side confirmed offsets. So a broken regular upload has to restart from zero. Split upload is the deliberate interop escape hatch. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#split-upload-design) for details.
+> **Why can't regular uploads resume?** Koofr's public upload API only exposes whole-file `FilesPut`, with no chunk sessions or server-side confirmed offsets; a broken regular upload must restart from zero. Split upload is the deliberate interop escape hatch. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#分卷上传设计) for details.
 
 ## Download
 
-Grab the latest NSIS installer from the [Releases page](https://github.com/zenwinhow/Koofr-GUI/releases) (`Koofr-GUI_x.y.z_x64-setup.exe`).
+Published installers, when available, are listed on the Releases page. Grab the latest NSIS installer from the [Releases page](https://github.com/zenwinhow/Koofr-GUI/releases) (e.g., `Koofr-GUI_<version>_x64-setup.exe`).
 
-> ⚠️ **Unsigned binaries**: releases are not code-signed. Windows SmartScreen may warn about an "unknown publisher". **Only download from this repository's Releases page** — never third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification.
+> ⚠️ **Unsigned binaries**: releases are not code-signed. Windows SmartScreen may warn about an "unknown publisher". Only download from this repository's Releases page, and never from third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification.
 
 First launch needs Microsoft Edge WebView2 Runtime, which is usually pre-installed on supported Windows 10 / 11.
 
@@ -169,7 +169,7 @@ See [BUILDING.md](docs/BUILDING.md) for the full walk-through and troubleshootin
 | `npm run verify:quick` | Fast gate: lint + split-upload tests + frontend build |
 | `npm run check` | Full gate: lint + tests + build + Rust fmt + clippy + Rust tests |
 | `npm run clean` | Clean build artifacts, keep `node_modules/` |
-| `npm run clean:all` | Also wipe `node_modules/` — need `npm ci` afterwards |
+| `npm run clean:all` | Also wipe `node_modules/` (requires running `npm ci` afterwards) |
 
 ## Architecture & security boundary
 
@@ -196,10 +196,10 @@ See [BUILDING.md](docs/BUILDING.md) for the full walk-through and troubleshootin
 Rules that matter:
 
 - **Credentials never cross the Rust boundary.** Session tokens live in memory only; the optional app-password persistence uses the Windows Credential Manager.
-- **Safe Keys never cross the Rust boundary.** A native Windows credential prompt passes them directly to Rust, never through Tauri IPC, React state, logs, or checkpoints.
+- **Safe Keys never cross the Rust boundary.** A native Windows credential prompt passes them directly to Rust, rather than through Tauri IPC, React state, logs, or checkpoints.
 - **Paths are validated.** Remote paths reject `.`, `..`, NUL, and overlong names. Download parents must be absolute, existing, non-symlink directories.
 - **Never overwrite.** Single-file downloads land in a `.koofr-part-*` staging file. Same-directory name clashes get a stable suffix.
-- **Error messages leak nothing** — stable error code + safe message. No paths, tokens, or response bodies.
+- **Error messages leak nothing**; they return a stable error code and a safe message, with no paths, tokens, or response bodies.
 
 Full design and data flow in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -218,7 +218,7 @@ App data defaults to the current Windows user's local data directory (`identifie
 
 The default work directory is `%LOCALAPPDATA%\net.koofr.desktop.gui`. A small adjacent `%LOCALAPPDATA%\net.koofr.desktop.gui.work-directory.json` locator lets the application find a custom directory after restart; this locator is not moved with the work data. A complete migration runs before any work file is opened on the next start, supports cross-volume copies, and removes the old data only after activation succeeds. The destination must be empty; a failed migration keeps a usable copy and is retried on the next start.
 
-**Credentials are NOT in the work directory** — the Koofr app-specific password is stored in the Windows Credential Manager, survives reinstalls and rebuilds, and is not part of work-directory migration.
+**Credentials are NOT in the work directory**; the Koofr app-specific password is stored in the Windows Credential Manager, survives reinstalls and rebuilds, and is not part of work-directory migration.
 
 ## Roadmap
 
@@ -233,12 +233,12 @@ The default work directory is `%LOCALAPPDATA%\net.koofr.desktop.gui`. A small ad
 Issues and pull requests welcome. Before opening a PR:
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
-2. Run `npm run check` — lint, tests, Rust fmt and clippy must be green.
+2. Run `npm run check`, lint, tests, Rust fmt and clippy must be green.
 3. Any new Tauri command must validate paths, identifiers and operation scope on the Rust side.
 
 ## Security
 
-**Do not** file public issues for vulnerabilities. Use the private channel in [SECURITY.md](SECURITY.md).
+**Don't** file public issues for vulnerabilities. Use the private channel in [SECURITY.md](SECURITY.md).
 
 ## License
 
