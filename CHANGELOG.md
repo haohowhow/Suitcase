@@ -4,8 +4,13 @@
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-02
+
 ### Changed
 - 对项目整体文档（包括 README、构建与发布指南、安全策略、贡献指南及第三方声明等）进行全面整理与专业化修正，确保技术参数、安全边界与代码实现保持一致。
+- Rust 传输引擎支持 IPC 进度事件节流控制（80ms 最小间隔），在高速和多分块传输场景下大幅降低 IPC 消息推送频率与 CPU 开销。
+- 重构前端状态架构：提取 `useAppSettings` 和 `useTransferManager` 自定义 Hooks，解耦 `App.tsx` 逻辑。
+- 优化前端渲染性能：针对 `FileWorkspace`、`CollectionWorkspace`、`TransferPanel`、`SettingsPanel`、`AppSidebar`、`TitleBar`、`LoginPage` 增加 `React.memo` 记忆化保护，配合 `useCallback` 切断传输事件对无关 UI 的重渲染。
 
 ## [2.3.1] - 2026-07-30
 

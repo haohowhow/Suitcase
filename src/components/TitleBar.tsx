@@ -1,6 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Minus, Square, X } from 'lucide-react'
+import { memo } from 'react'
 import { BrandMark } from './BrandMark'
 
 function runWindowCommand(command: 'minimize' | 'toggleMaximize' | 'close') {
@@ -8,7 +9,7 @@ function runWindowCommand(command: 'minimize' | 'toggleMaximize' | 'close') {
   void getCurrentWindow()[command]()
 }
 
-export function TitleBar() {
+export const TitleBar = memo(function TitleBar() {
   return (
     <header className="titlebar" data-tauri-drag-region>
       <div className="titlebar__drag-region" data-tauri-drag-region>
@@ -27,4 +28,4 @@ export function TitleBar() {
       </div>
     </header>
   )
-}
+})

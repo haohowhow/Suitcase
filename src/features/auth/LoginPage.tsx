@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { memo, useEffect, useState, type FormEvent } from 'react'
 import {
   Cloud,
   Eye,
@@ -18,7 +18,7 @@ interface LoginPageProps {
   onThemeClick: () => void
 }
 
-export function LoginPage({ busy, error, initialEmail, onLogin, onThemeClick }: LoginPageProps) {
+export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, onLogin, onThemeClick }: LoginPageProps) {
   const [email, setEmail] = useState(initialEmail)
   const [appPassword, setAppPassword] = useState('')
   const [rememberPassword, setRememberPassword] = useState(Boolean(initialEmail))
@@ -168,4 +168,4 @@ export function LoginPage({ busy, error, initialEmail, onLogin, onThemeClick }: 
       </section>
     </main>
   )
-}
+})

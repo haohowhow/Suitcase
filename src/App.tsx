@@ -18,48 +18,31 @@ import { DownloadDestinationDialog } from './features/transfers/DownloadDestinat
 import { SplitUploadDialog } from './features/transfers/SplitUploadDialog'
 import { TransferPanel } from './features/transfers/TransferPanel'
 import { VaultDialog } from './features/vault/VaultDialog'
-import { countActiveDownloads, mergeTransferProgress } from './features/transfers/transferProgress'
-import {
-  shouldPromptForFloatingWindow,
-  summarizeFloatingTransfers,
-} from './features/transfers/floatingTransfer'
-import { beginDownload } from './features/transfers/beginDownload'
+import { countActiveDownloads } from './features/transfers/transferProgress'
+import { shouldPromptForFloatingWindow } from './features/transfers/floatingTransfer'
 import {
   commandErrorMessage,
-  ensureNotificationPermission,
-  isCommandErrorCode,
   isTauriRuntime,
   koofr,
-  showTransferNotification,
 } from './services/koofr'
 import { readStoredTheme, storeTheme, type ThemeId } from './theme'
+import { useAppSettings } from './hooks/useAppSettings'
+import { useTransferManager } from './hooks/useTransferManager'
 import { installRuntimeTranslations } from './i18n'
 import type {
-  AppSettings,
-  AppVersionInfo,
-  BandwidthMode,
-  CacheMode,
-  DownloadConflictStrategy,
-  InterfaceLanguage,
-  LinkDefaultKind,
-  LogLevel,
   LocatedFile,
   LocalFileSelection,
   RemoteFile,
-  TransferProgress,
-  TransferResult,
   TrashItem,
-  UiDensity,
   FilePreviewInfo,
   VaultEntry,
 } from './types/backend'
-import type { SplitUploadSettings, TransferItem, UploadMode } from './types/files'
-import type { VaultTransferSpec } from './types/vault'
+import type { SplitUploadSettings, UploadMode } from './types/files'
 
 type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
-interface PendingDownload {
+export interface PendingDownload {
   readonly file: RemoteFile
   readonly mountId: string
 }
@@ -85,27 +68,118 @@ function App() {
   const [modalInput, setModalInput] = useState('')
   const [pendingFiles, setPendingFiles] = useState<RemoteFile[]>([])
   const [operationBusy, setOperationBusy] = useState(false)
-  const [transferVisible, setTransferVisible] = useState(false)
-  const [transfers, setTransfers] = useState<TransferItem[]>([])
-  const [floatingCompletionVersion, setFloatingCompletionVersion] = useState(0)
   const [notice, setNotice] = useState('')
   const [themeId, setThemeId] = useState<ThemeId>(readStoredTheme)
-  const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const [settingsBusy, setSettingsBusy] = useState(false)
-  const [settingsError, setSettingsError] = useState('')
-  const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null)
-  const [downloadSettingsError, setDownloadSettingsError] = useState('')
+
+  const noticeTimeoutRef = useRef<number | null>(null)
+  const showNotice = useCallback((message: string) => {
+    setNotice(message)
+    if (noticeTimeoutRef.current !== null) {
+      window.clearTimeout(noticeTimeoutRef.current)
+    }
+    noticeTimeoutRef.current = window.setTimeout(() => {
+      setNotice('')
+      noticeTimeoutRef.current = null
+    }, 3200)
+  }, [])
+
+  const onEmailCleared = useCallback(() => setSavedEmail(''), [])
+  const {
+    settings,
+    setSettings,
+    settingsLoading,
+    settingsBusy,
+    settingsError,
+    setSettingsError,
+    downloadSettingsError,
+    versionInfo,
+    openSettings,
+    updateCacheSettings,
+    updateLoggingSettings,
+    updateTransferSettings,
+    browseWorkDirectory,
+    updateWorkDirectory,
+    updateDownloadSettings,
+    browseSettingsDownloadDirectory,
+    clearMetadataCache,
+    clearLogs,
+    forgetSavedLogin,
+    updateAppearance,
+    updateGeneral,
+    updateAdvancedTransfer,
+    updateDownloadBehavior,
+    updateBandwidth,
+    updateNotifications,
+    answerFloatingWindowPrompt,
+    updateLinkDefaults,
+    updateSecurity,
+    updateHistoryPolicy,
+  } = useAppSettings(showNotice, onEmailCleared)
+
   const [pendingDownload, setPendingDownload] = useState<PendingDownload | null>(null)
   const [pendingSplitUpload, setPendingSplitUpload] = useState<PendingSplitUpload | null>(null)
-  const [downloadDirectory, setDownloadDirectory] = useState('')
-  const [downloadBusy, setDownloadBusy] = useState(false)
-  const [downloadError, setDownloadError] = useState('')
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null)
   const workspace = useKoofrWorkspace(authState === 'signedIn')
   const collections = useKoofrCollections(authState === 'signedIn', activeItem)
   const workspaceLocation = useRef({ activeMountId: '', path: '/' })
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
+
+  const openDownloadDestination = useCallback((
+    file: RemoteFile,
+    mountId: string,
+  ) => {
+    setPendingDownload({ file, mountId })
+    setModalKind('download')
+  }, [])
+
+  const {
+    transfers,
+    setTransfers,
+    transferVisible,
+    setTransferVisible,
+    downloadBusy,
+    setDownloadBusy,
+    downloadError,
+    setDownloadError,
+    downloadDirectory,
+    startDownload,
+    handleDownload,
+    browseDownloadDirectory,
+    cancelTransfer,
+    pauseTransfer,
+    resumeTransfer,
+    discardResumableTransfer,
+    clearFinishedTransfers,
+    openDownloadedFile,
+    openDownloadedFolder,
+    startVaultTransfer,
+    startSelectedUpload,
+  } = useTransferManager(
+    authState,
+    settings,
+    themeId,
+    workspace.refresh,
+    showNotice,
+    openDownloadDestination,
+  )
+
+  const confirmDownload = useCallback(async (targetDirectory: string, askEveryTime: boolean) => {
+    if (!pendingDownload) return
+    setDownloadBusy(true)
+    setDownloadError('')
+    try {
+      if (!askEveryTime || settings?.askDownloadLocation !== askEveryTime) {
+        setSettings(await koofr.updateDownloadSettings(targetDirectory, askEveryTime))
+      }
+      await startDownload(pendingDownload.file, pendingDownload.mountId, targetDirectory)
+      setModalKind(null)
+      setPendingDownload(null)
+    } catch (error) {
+      setDownloadError(commandErrorMessage(error, '无法使用这个下载位置，请检查路径后重试。'))
+    } finally {
+      setDownloadBusy(false)
+    }
+  }, [pendingDownload, setDownloadBusy, setDownloadError, setSettings, settings?.askDownloadLocation, startDownload])
   const activeDownloadCount = countActiveDownloads(transfers)
   const activeTransferCount = transfers.filter((item) =>
     item.state === 'queued' || item.state === 'running' || item.state === 'retrying').length
@@ -171,81 +245,6 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (authState !== 'signedIn') return
-    let disposed = false
-    let unlisten: (() => void) | undefined
-
-    void koofr.onTransferProgress((progress: TransferProgress) => {
-      if (progress.state === 'completed') {
-        setFloatingCompletionVersion((current) => current + 1)
-      }
-      setTransfers((current) => {
-        const previous = current.find((item) => item.id === progress.transferId)
-        const merged = mergeTransferProgress(current, progress)
-        if (
-          settings?.notifyOnComplete
-          && previous
-          && previous.state !== 'completed'
-          && progress.state === 'completed'
-        ) {
-          showTransferNotification(previous.name, settings?.notifySound ?? false)
-        }
-        if (
-          settings?.openFolderAfterDownload
-          && previous?.direction === 'download'
-          && previous.state !== 'completed'
-          && progress.state === 'completed'
-        ) {
-          void koofr.openDownloadedFolder(progress.transferId).catch((error) => {
-            showNotice(commandErrorMessage(error, '下载已完成，但无法打开所在文件夹。'))
-          })
-        }
-        return merged
-      })
-    }).then((stopListening) => {
-      if (disposed) stopListening()
-      else unlisten = stopListening
-    })
-
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
-  }, [
-    authState,
-    settings?.notifyOnComplete,
-    settings?.notifySound,
-    settings?.openFolderAfterDownload,
-  ])
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return
-    const summary = summarizeFloatingTransfers(transfers)
-    void koofr.publishFloatingTransferSnapshot({
-      ...summary,
-      completionVersion: floatingCompletionVersion,
-      language: settings?.language ?? 'system',
-      reduceMotion: settings?.reduceMotion ?? false,
-      themeId,
-      compactEnabled: settings?.floatingWindowCompactEnabled ?? true,
-      clickToggleEnabled: settings?.floatingWindowClickToggleEnabled ?? true,
-      doubleClickOpenEnabled: settings?.floatingWindowDoubleClickOpenEnabled ?? true,
-      resumablePausedCount: transfers.filter(
-        (item) => item.state === 'paused' && item.recoveryKind !== null,
-      ).length,
-    }).catch(() => {})
-  }, [
-    floatingCompletionVersion,
-    settings?.language,
-    settings?.reduceMotion,
-    settings?.floatingWindowCompactEnabled,
-    settings?.floatingWindowClickToggleEnabled,
-    settings?.floatingWindowDoubleClickOpenEnabled,
-    themeId,
-    transfers,
-  ])
-
-  useEffect(() => {
     if (!isTauriRuntime()) return
     let disposed = false
     let unlisten: (() => void) | undefined
@@ -265,7 +264,7 @@ function App() {
       disposed = true
       unlisten?.()
     }
-  }, [])
+  }, [setSettings])
 
   useEffect(() => {
     if (shouldPromptForFloatingWindow(
@@ -277,72 +276,6 @@ function App() {
       setModalKind('floatingPrompt')
     }
   }, [authState, modalKind, settings])
-
-  useEffect(() => {
-    if (authState !== 'signedIn') return
-    let active = true
-    void Promise.all([koofr.listDownloadHistory(), koofr.listResumableTransfers()])
-      .then(([history, resumable]) => {
-        if (!active) return
-        setTransfers((current) => {
-          const existingIds = new Set(current.map((item) => item.id))
-          const cached = history
-            .filter((item) => !existingIds.has(item.transferId))
-            .map((item): TransferItem => ({
-              id: item.transferId,
-              name: item.name,
-              direction: 'download',
-              state: item.state,
-              bytesTransferred: item.bytesTransferred,
-              totalBytes: item.totalBytes,
-              localKind: item.localKind,
-              recoveryKind: item.recoveryKind,
-              remotePath: item.remotePath,
-              localPath: item.localPath,
-              startedAt: item.startedAt,
-              finishedAt: item.finishedAt,
-              speedSamples: item.speedSamples,
-              integrityStatus: item.integrityStatus,
-              splitProgress: undefined,
-            }))
-          const cachedById = new Map(cached.map((item) => [item.id, item]))
-          const restored = resumable
-            .filter((item) => !existingIds.has(item.transferId))
-            .map((item): TransferItem => ({
-              ...cachedById.get(item.transferId),
-              id: item.transferId,
-              name: cachedById.get(item.transferId)?.name ?? item.name,
-              direction: item.direction,
-              state: 'paused',
-              bytesTransferred: item.bytesTransferred,
-              totalBytes: item.totalBytes,
-              localKind: cachedById.get(item.transferId)?.localKind ?? 'file',
-              recoveryKind: item.recoveryKind,
-              remotePath: cachedById.get(item.transferId)?.remotePath ?? null,
-              localPath: cachedById.get(item.transferId)?.localPath ?? null,
-              startedAt: cachedById.get(item.transferId)?.startedAt ?? null,
-              finishedAt: cachedById.get(item.transferId)?.finishedAt ?? null,
-              speedSamples: cachedById.get(item.transferId)?.speedSamples ?? [],
-              splitProgress: item.splitProgress,
-            }))
-          const resumableIds = new Set(restored.map((item) => item.id))
-          return [
-            ...restored,
-            ...cached.filter((item) => !resumableIds.has(item.id)),
-            ...current,
-          ].sort((left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0))
-        })
-      })
-      .catch((error) => {
-        if (active) setNotice(commandErrorMessage(error, '无法读取中断的传输任务。'))
-      })
-    return () => { active = false }
-  }, [authState])
-
-  const showNotice = (message: string) => {
-    setNotice(message)
-    window.setTimeout(() => setNotice(''), 3200)
-  }
 
   useEffect(() => {
     if (authState !== 'signedIn') return
@@ -416,383 +349,7 @@ function App() {
     }
   }
 
-  const openSettings = async () => {
-    setModalKind('settings')
-    setSettingsLoading(true)
-    setSettingsError('')
-    setDownloadSettingsError('')
-    try {
-      const [next, version] = await Promise.all([
-        koofr.getSettings(),
-        koofr.appVersionInfo().catch(() => null),
-      ])
-      setSettings(next)
-      if (version) setVersionInfo(version)
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法读取本地设置。'))
-    } finally {
-      setSettingsLoading(false)
-    }
-  }
-
-  const updateCacheSettings = async (
-    cacheMode: CacheMode,
-    cacheTtlMinutes: number,
-  ) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.updateSettings(cacheMode, cacheTtlMinutes))
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法保存缓存设置。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const updateLoggingSettings = async (
-    logLevel: LogLevel,
-    logRetentionDays: number,
-    logMaxFileSizeMb: number,
-  ) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.updateLoggingSettings(
-        logLevel,
-        logRetentionDays,
-        logMaxFileSizeMb,
-      ))
-      showNotice('日志设置已保存')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法保存日志设置，请检查参数。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const updateTransferSettings = async (
-    autoRetryNetworkErrors: boolean,
-    networkRetryLimit: number | null,
-    networkRetryIntervalSeconds: number,
-  ) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.updateTransferSettings(
-        autoRetryNetworkErrors,
-        networkRetryLimit,
-        networkRetryIntervalSeconds,
-      ))
-      showNotice('传输设置已保存')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法保存传输设置。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const browseWorkDirectory = async () => {
-    setSettingsError('')
-    try {
-      return await koofr.selectWorkDirectory()
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法打开文件夹选择器。'))
-      return null
-    }
-  }
-
-  const updateWorkDirectory = async (workDirectory: string, moveExisting: boolean) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.updateWorkDirectory(workDirectory, moveExisting))
-      showNotice('工作目录更改已保存，将在下次启动时应用')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(
-        error,
-        '无法更改工作目录。请选择一个空的、独立的本地文件夹。',
-      ))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const updateDownloadSettings = async (
-    nextDownloadDirectory: string,
-    askDownloadLocation: boolean,
-  ) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    setDownloadSettingsError('')
-    try {
-      const nextSettings = await koofr.updateDownloadSettings(
-        nextDownloadDirectory,
-        askDownloadLocation,
-      )
-      setSettings(nextSettings)
-      showNotice('下载设置已保存')
-    } catch (error) {
-      setDownloadSettingsError(commandErrorMessage(error, '无法保存下载设置，请检查文件夹路径。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const browseSettingsDownloadDirectory = async () => {
-    setDownloadSettingsError('')
-    try {
-      return await koofr.selectDownloadDirectory()
-    } catch (error) {
-      setDownloadSettingsError(commandErrorMessage(error, '无法打开下载文件夹选择器。'))
-      return null
-    }
-  }
-
-  const clearMetadataCache = async () => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.clearMetadataCache())
-      showNotice('文件信息缓存已清除')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法清除文件信息缓存。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const clearLogs = async () => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await koofr.clearLogs())
-      showNotice('诊断日志已清除')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法清除诊断日志。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const forgetSavedLogin = async () => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      const next = await koofr.forgetSavedLogin()
-      setSettings(next)
-      setSavedEmail('')
-      showNotice('已从 Windows 凭据管理器删除登录信息')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法删除保存的登录信息。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const runSettingsMutation = async (
-    mutate: () => Promise<AppSettings>,
-    successMessage: string,
-    failureMessage: string,
-  ) => {
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      setSettings(await mutate())
-      showNotice(successMessage)
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, failureMessage))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const updateAppearance = (next: {
-    language: InterfaceLanguage
-    reduceMotion: boolean
-    density: UiDensity
-  }) =>
-    void runSettingsMutation(
-      () => koofr.updateAppearanceSettings(next.language, next.reduceMotion, next.density),
-      '外观设置已保存',
-      '无法保存外观设置。',
-    )
-
-  const updateGeneral = (next: {
-    launchAtLogin: boolean
-    closeToTray: boolean
-    minimizeToTray: boolean
-    confirmQuitWithTransfers: boolean
-  }) =>
-    void runSettingsMutation(
-      () =>
-        koofr.updateGeneralSettings(
-          next.launchAtLogin,
-          next.closeToTray,
-          next.minimizeToTray,
-          next.confirmQuitWithTransfers,
-        ),
-      '通用设置已保存',
-      '无法保存通用设置。',
-    )
-
-  const updateAdvancedTransfer = (next: {
-    uploadConcurrency: number
-    downloadConcurrency: number
-    defaultSplitPartMib: number
-    autoSplitThresholdMib: number
-  }) =>
-    void runSettingsMutation(
-      () =>
-        koofr.updateTransferAdvancedSettings(
-          next.uploadConcurrency,
-          next.downloadConcurrency,
-          next.defaultSplitPartMib,
-          next.autoSplitThresholdMib,
-        ),
-      '传输高级设置已保存',
-      '无法保存传输高级设置。',
-    )
-
-  const updateDownloadBehavior = (next: {
-    conflictStrategy: DownloadConflictStrategy
-    openFolderAfterDownload: boolean
-    verifyHashAfterDownload: boolean
-    keepFailedPartDays: number
-  }) =>
-    void runSettingsMutation(
-      () =>
-        koofr.updateDownloadBehaviorSettings(
-          next.conflictStrategy,
-          next.openFolderAfterDownload,
-          next.verifyHashAfterDownload,
-          next.keepFailedPartDays,
-        ),
-      '下载行为已保存',
-      '无法保存下载行为。',
-    )
-
-  const updateBandwidth = (next: {
-    globalKbps: number
-    perTaskKbps: number
-    mode: BandwidthMode
-  }) =>
-    void runSettingsMutation(
-      () => koofr.updateBandwidthSettings(next.globalKbps, next.perTaskKbps, next.mode),
-      '带宽设置已保存',
-      '无法保存带宽设置。',
-    )
-
-  const updateNotifications = (next: {
-    notifyOnComplete: boolean
-    notifySound: boolean
-    trayBadge: boolean
-    floatingWindowEnabled: boolean
-    floatingWindowPrompted: boolean
-    floatingWindowCompactEnabled: boolean
-    floatingWindowClickToggleEnabled: boolean
-    floatingWindowDoubleClickOpenEnabled: boolean
-  }) => {
-    void (async () => {
-      if (
-        next.notifyOnComplete
-        && !settings?.notifyOnComplete
-        && !(await ensureNotificationPermission())
-      ) {
-        setSettingsError('Windows 通知权限未获准，完成通知未开启。')
-        return
-      }
-      await runSettingsMutation(
-        () =>
-          koofr.updateNotificationSettings(
-            next.notifyOnComplete,
-            next.notifySound,
-            next.trayBadge,
-            next.floatingWindowEnabled,
-            next.floatingWindowPrompted,
-            next.floatingWindowCompactEnabled,
-            next.floatingWindowClickToggleEnabled,
-            next.floatingWindowDoubleClickOpenEnabled,
-          ),
-        '通知设置已保存',
-        '无法保存通知设置。',
-      )
-    })()
-  }
-
-  const answerFloatingWindowPrompt = async (enabled: boolean) => {
-    if (!settings) return
-    setSettingsBusy(true)
-    setSettingsError('')
-    try {
-      const next = await koofr.updateNotificationSettings(
-        settings.notifyOnComplete,
-        settings.notifySound,
-        settings.trayBadge,
-        enabled,
-        true,
-        settings.floatingWindowCompactEnabled,
-        settings.floatingWindowClickToggleEnabled,
-        settings.floatingWindowDoubleClickOpenEnabled,
-      )
-      setSettings(next)
-      setModalKind(null)
-      showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在通知设置中开启悬浮窗')
-    } catch (error) {
-      setSettingsError(commandErrorMessage(error, '无法保存悬浮窗设置。'))
-    } finally {
-      setSettingsBusy(false)
-    }
-  }
-
-  const updateLinkDefaults = (next: {
-    kind: LinkDefaultKind
-    expireDays: number
-    requirePassword: boolean
-  }) =>
-    void runSettingsMutation(
-      () => koofr.updateLinkDefaults(next.kind, next.expireDays, next.requirePassword),
-      '链接默认设置已保存',
-      '无法保存链接默认设置。',
-    )
-
-  const updateSecurity = (next: {
-    idleAutoLogoutMinutes: number
-  }) =>
-    void runSettingsMutation(
-      () =>
-        koofr.updateSecuritySettings(next.idleAutoLogoutMinutes),
-      '安全设置已保存',
-      '无法保存安全设置。',
-    )
-
-  const updateHistoryPolicy = (next: { keepDays: number; keepCount: number }) =>
-    void runSettingsMutation(
-      () => koofr.updateHistoryPolicy(next.keepDays, next.keepCount),
-      '历史策略已保存',
-      '无法保存历史策略。',
-    )
-
-  const clearDownloadHistoryRecords = async () => {
-    try {
-      await koofr.clearFinishedDownloadHistory()
-      setTransfers((current) =>
-        current.filter(
-          (item) =>
-            item.state === 'queued'
-            || item.state === 'running'
-            || item.state === 'retrying'
-            || item.state === 'paused'
-            || (item.state === 'failed' && item.recoveryKind !== null),
-        ),
-      )
-      showNotice('已清除下载历史')
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法清除下载历史。'))
-    }
-  }
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await koofr.disconnect()
       setModalKind(null)
@@ -803,130 +360,13 @@ function App() {
     } catch (error) {
       showNotice(commandErrorMessage(error, '暂时无法退出登录，请重试。'))
     }
-  }
+  }, [setTransfers, showNotice])
 
-  const startVaultTransfer = (transfer: VaultTransferSpec) => {
-    const startedAt = Date.now()
-    setTransfers((current) => [{
-      id: transfer.transferId,
-      name: transfer.name,
-      direction: transfer.direction,
-      state: 'running',
-      bytesTransferred: 0,
-      totalBytes: transfer.totalBytes,
-      localKind: 'file',
-      recoveryKind: transfer.recoveryKind,
-      remotePath: null,
-      localPath: transfer.localPath,
-      startedAt,
-      finishedAt: null,
-      speedSamples: [{ recordedAt: startedAt, bytesTransferred: 0 }],
-    }, ...current])
-    setTransferVisible(true)
 
-    void transfer.result
-      .then((result) => {
-        setTransfers((current) => current.map((item) => item.id === transfer.transferId
-          ? {
-              ...item,
-              state: 'completed',
-              bytesTransferred: result.bytesTransferred,
-              integrityStatus: result.integrityStatus,
-              totalBytes: item.totalBytes ?? result.bytesTransferred,
-              finishedAt: Date.now(),
-            }
-          : item))
-      })
-      .catch((error) => {
-        setTransfers((current) => current.map((item) => item.id === transfer.transferId
-          ? {
-              ...item,
-              state: isCommandErrorCode(error, 'transfer_paused')
-                ? 'paused'
-                : isCommandErrorCode(error, 'cancelled') ? 'cancelled' : 'failed',
-              finishedAt: null,
-            }
-          : item))
-        showNotice(commandErrorMessage(
-          error,
-          transfer.direction === 'upload' ? '加密上传失败，请稍后重试。' : '加密下载失败，请稍后重试。',
-        ))
-      })
-  }
 
-  const startSelectedUpload = async (
-    selection: LocalFileSelection,
-    uploadMountId: string,
-    uploadPath: string,
-    splitSettings: SplitUploadSettings | null,
-  ) => {
-    const transfer = splitSettings
-      ? koofr.uploadSplitFile(uploadMountId, uploadPath, selection.grantId, splitSettings)
-      : koofr.uploadFile(uploadMountId, uploadPath, selection.grantId)
-    const startedAt = Date.now()
-    setTransfers((current) => [{
-      id: transfer.transferId,
-      name: selection.fileName,
-      direction: 'upload',
-      state: 'running',
-      bytesTransferred: 0,
-      totalBytes: null,
-      localKind: 'file',
-      recoveryKind: splitSettings ? 'chunk_resume' : 'restart',
-      remotePath: null,
-      localPath: null,
-      startedAt,
-      finishedAt: null,
-      speedSamples: [{ recordedAt: startedAt, bytesTransferred: 0 }],
-      splitProgress: splitSettings && selection.fileSize
-        ? {
-            completedParts: 0,
-            currentPart: 1,
-            totalParts: Math.ceil(selection.fileSize / splitSettings.partBytes),
-            phase: 'parts',
-          }
-        : undefined,
-    }, ...current])
-    setTransferVisible(true)
 
-    let result: TransferResult
-    try {
-      result = await transfer.result
-    } catch (error) {
-      setTransfers((current) => current.map((item) => item.id === transfer.transferId
-        ? {
-            ...item,
-            state: isCommandErrorCode(error, 'transfer_paused')
-              ? 'paused'
-              : isCommandErrorCode(error, 'cancelled') ? 'cancelled' : 'failed',
-          }
-        : item))
-      showNotice(commandErrorMessage(error, '上传失败，请稍后重试。'))
-      return
-    }
-    setTransfers((current) => current.map((item) => item.id === transfer.transferId
-      ? {
-          ...item,
-          state: 'completed',
-          bytesTransferred: result.bytesTransferred,
-          integrityStatus: result.integrityStatus,
-          totalBytes: item.totalBytes ?? result.bytesTransferred,
-          finishedAt: Date.now(),
-        }
-      : item))
-    if (
-      workspaceLocation.current.activeMountId === uploadMountId
-      && workspaceLocation.current.path === uploadPath
-    ) {
-      try {
-        await workspace.loadDirectory(uploadMountId, uploadPath, true)
-      } catch (error) {
-        showNotice(commandErrorMessage(error, '上传已完成，但当前文件夹刷新失败。'))
-      }
-    }
-  }
 
-  const handleUpload = async (mode: UploadMode) => {
+  const handleUpload = useCallback(async (mode: UploadMode) => {
     if (!workspace.activeMountId) return
     const uploadMountId = workspace.activeMountId
     const uploadPath = workspace.path
@@ -954,100 +394,17 @@ function App() {
     } catch (error) {
       showNotice(commandErrorMessage(error, '无法选择本地文件。'))
     }
-  }
+  }, [settings?.autoSplitThresholdMib, showNotice, startSelectedUpload, workspace.activeMountId, workspace.path])
 
-  const confirmSplitUpload = (settings: SplitUploadSettings) => {
+  const confirmSplitUpload = useCallback((splitSettings: SplitUploadSettings) => {
     if (!pendingSplitUpload) return
     const pending = pendingSplitUpload
     setPendingSplitUpload(null)
     setModalKind(null)
-    void startSelectedUpload(pending.selection, pending.mountId, pending.path, settings)
-  }
+    void startSelectedUpload(pending.selection, pending.mountId, pending.path, splitSettings)
+  }, [pendingSplitUpload, startSelectedUpload])
 
-  const startDownload = async (
-    file: RemoteFile,
-    mountId: string,
-    targetDirectory: string,
-  ) => {
-    let transfer
-    try {
-      transfer = await beginDownload(file, mountId, targetDirectory)
-    } catch (error) {
-      if (!isCommandErrorCode(error, 'conflict')) throw error
-      const strategy = settings?.downloadConflictStrategy ?? 'rename'
-      if (strategy === 'skip') {
-        showNotice('目标已存在，已按设置跳过下载。')
-        return
-      }
-      if (strategy === 'ask') {
-        const rename = window.confirm('目标已存在。选择“确定”自动加序号；选择“取消”跳过下载。')
-        if (!rename) {
-          showNotice('已跳过下载。')
-          return
-        }
-        transfer = await beginDownload(file, mountId, targetDirectory, 'rename')
-      } else {
-        throw error
-      }
-    }
-    const startedAt = Date.now()
-    setTransfers((current) => [{
-      id: transfer.transferId,
-      name: file.name,
-      direction: 'download',
-      state: 'running',
-      bytesTransferred: 0,
-      totalBytes: transfer.localKind === 'file' && file.size > 0 ? file.size : null,
-      localKind: transfer.localKind,
-      recoveryKind: transfer.localKind === 'file' ? 'byte_resume' : null,
-      remotePath: file.path,
-      localPath: transfer.localPath,
-      startedAt,
-      finishedAt: null,
-      speedSamples: [{ recordedAt: startedAt, bytesTransferred: 0 }],
-    }, ...current])
-    setTransferVisible(true)
 
-    const monitorDownload = async () => {
-      try {
-        const result = await transfer.result
-        setTransfers((current) => current.map((item) => item.id === transfer.transferId
-          ? {
-              ...item,
-              state: 'completed',
-              bytesTransferred: result.bytesTransferred,
-              integrityStatus: result.integrityStatus,
-              totalBytes: item.totalBytes ?? result.bytesTransferred,
-              finishedAt: Date.now(),
-            }
-          : item))
-      } catch (error) {
-        setTransfers((current) => current.map((item) => item.id === transfer.transferId
-          ? {
-              ...item,
-              state: isCommandErrorCode(error, 'transfer_paused')
-                ? 'paused'
-                : isCommandErrorCode(error, 'cancelled') ? 'cancelled' : 'failed',
-              finishedAt: null,
-            }
-          : item))
-        showNotice(commandErrorMessage(error, '下载失败，请稍后重试。'))
-      }
-    }
-    void monitorDownload()
-  }
-
-  const openDownloadDestination = (
-    file: RemoteFile,
-    mountId: string,
-    initialDirectory: string,
-    error = '',
-  ) => {
-    setPendingDownload({ file, mountId })
-    setDownloadDirectory(initialDirectory)
-    setDownloadError(error)
-    setModalKind('download')
-  }
 
   const openFilePreview = async (
     file: RemoteFile,
@@ -1088,197 +445,6 @@ function App() {
     const download = filePreview.onDownload
     closeFilePreview()
     download()
-  }
-
-  const handleDownload = async (file: RemoteFile, mountId = workspace.activeMountId) => {
-    if (!mountId) return
-    let downloadSettings = settings
-    try {
-      if (!downloadSettings) {
-        downloadSettings = await koofr.getSettings()
-        setSettings(downloadSettings)
-      }
-      if (downloadSettings.askDownloadLocation) {
-        openDownloadDestination(file, mountId, downloadSettings.downloadDirectory)
-        return
-      }
-      await startDownload(file, mountId, downloadSettings.downloadDirectory)
-    } catch (error) {
-      const fallbackDirectory = downloadSettings?.downloadDirectory ?? ''
-      openDownloadDestination(
-        file,
-        mountId,
-        fallbackDirectory,
-        commandErrorMessage(error, '默认下载位置不可用，请选择其他文件夹。'),
-      )
-    }
-  }
-
-  const confirmDownload = async (targetDirectory: string, askEveryTime: boolean) => {
-    if (!pendingDownload) return
-    setDownloadBusy(true)
-    setDownloadError('')
-    try {
-      if (!askEveryTime || settings?.askDownloadLocation !== askEveryTime) {
-        setSettings(await koofr.updateDownloadSettings(targetDirectory, askEveryTime))
-      }
-      await startDownload(pendingDownload.file, pendingDownload.mountId, targetDirectory)
-      setModalKind(null)
-      setPendingDownload(null)
-    } catch (error) {
-      setDownloadError(commandErrorMessage(error, '无法使用这个下载位置，请检查路径后重试。'))
-    } finally {
-      setDownloadBusy(false)
-    }
-  }
-
-  const browseDownloadDirectory = async () => {
-    setDownloadError('')
-    try {
-      return await koofr.selectDownloadDirectory()
-    } catch (error) {
-      setDownloadError(commandErrorMessage(error, '无法打开下载文件夹选择器。'))
-      return null
-    }
-  }
-
-  const cancelTransfer = async (transferId: string) => {
-    try {
-      await koofr.cancelTransfer(transferId)
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法取消这个传输任务。'))
-    }
-  }
-
-  const pauseTransfer = async (transferId: string) => {
-    try {
-      await koofr.pauseTransfer(transferId)
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法暂停这个传输任务。'))
-    }
-  }
-
-  const resumeTransfer = async (transferId: string, revealPanel = true) => {
-    const resumedAt = Date.now()
-    setTransfers((current) => current.map((item) => item.id === transferId
-      ? {
-          ...item,
-          state: 'running',
-          speedSamples: item.speedSamples.length > 0
-            ? item.speedSamples
-            : [{ recordedAt: resumedAt, bytesTransferred: item.bytesTransferred }],
-        }
-      : item))
-    if (revealPanel) setTransferVisible(true)
-    try {
-      const result = await koofr.resumeTransfer(transferId)
-      setTransfers((current) => current.map((item) => item.id === transferId
-        ? {
-            ...item,
-            state: 'completed',
-            bytesTransferred: result.bytesTransferred,
-            integrityStatus: result.integrityStatus,
-            totalBytes: item.totalBytes ?? result.bytesTransferred,
-            finishedAt: Date.now(),
-          }
-        : item))
-      await workspace.refresh()
-    } catch (error) {
-      setTransfers((current) => current.map((item) => item.id === transferId
-        ? {
-            ...item,
-            state: isCommandErrorCode(error, 'transfer_paused') ? 'paused' : 'failed',
-            finishedAt: null,
-          }
-        : item))
-      showNotice(commandErrorMessage(error, '无法继续这个传输任务。'))
-    }
-  }
-
-  const toggleFloatingTransfers = useCallback(() => {
-    const active = transfers.filter((item) => (
-      item.state === 'queued' || item.state === 'running' || item.state === 'retrying'
-    ))
-    if (active.length > 0) {
-      void Promise.allSettled(active.map((item) => koofr.pauseTransfer(item.id))).then((results) => {
-        if (results.some((result) => result.status === 'rejected')) {
-          setTransferVisible(true)
-          showNotice('部分传输无法暂停，请在传输面板中查看。')
-        }
-      })
-      return
-    }
-
-    const paused = transfers.filter((item) => item.state === 'paused')
-    const resumable = paused.filter((item) => item.recoveryKind !== null)
-    if (resumable.length === 0) {
-      if (paused.length > 0) {
-        setTransferVisible(true)
-        showNotice('这些暂停任务需要在传输面板中处理。')
-      }
-      return
-    }
-    for (const item of resumable) void resumeTransfer(item.id, false)
-    if (resumable.length !== paused.length) {
-      setTransferVisible(true)
-      showNotice('已继续可恢复任务；其余任务需要在传输面板中处理。')
-    }
-  }, [resumeTransfer, transfers])
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    void koofr.onFloatingTransferAction((action) => {
-      if (!disposed && action === 'toggle') toggleFloatingTransfers()
-    }).then((stopListening) => {
-      if (disposed) stopListening()
-      else unlisten = stopListening
-    })
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
-  }, [toggleFloatingTransfers])
-
-  const discardResumableTransfer = async (transferId: string) => {
-    try {
-      await koofr.discardResumableTransfer(transferId)
-      setTransfers((current) => current.filter((item) => item.id !== transferId))
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法放弃这个中断任务。'))
-    }
-  }
-
-  const clearFinishedTransfers = async () => {
-    try {
-      await koofr.clearFinishedDownloadHistory()
-      setTransfers((current) => current.filter((item) => (
-        item.state === 'queued'
-        || item.state === 'running'
-        || item.state === 'retrying'
-        || item.state === 'paused'
-        || (item.state === 'failed' && item.recoveryKind !== null)
-      )))
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法清除下载历史。'))
-    }
-  }
-
-  const openDownloadedFile = async (transferId: string) => {
-    try {
-      await koofr.openDownloadedFile(transferId)
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法打开下载的文件。'))
-    }
-  }
-
-  const openDownloadedFolder = async (transferId: string) => {
-    try {
-      await koofr.openDownloadedFolder(transferId)
-    } catch (error) {
-      showNotice(commandErrorMessage(error, '无法打开文件所在的文件夹。'))
-    }
   }
 
   const openCreateFolder = () => {
@@ -1532,11 +698,11 @@ function App() {
               onCreateFolder={openCreateFolder}
               onThemeOpen={() => setModalKind('theme')}
               onUpload={(mode) => void handleUpload(mode)}
-              onDownload={(file) => void handleDownload(file)}
+              onDownload={(file) => void handleDownload(file, workspace.activeMountId)}
               onPreview={(file) => void openFilePreview(
                 file,
                 workspace.activeMountId,
-                () => void handleDownload(file),
+                () => void handleDownload(file, workspace.activeMountId),
               )}
               onShare={openShare}
               onRename={openRename}
@@ -1779,7 +945,7 @@ function App() {
             onLinkDefaultsChange={updateLinkDefaults}
             onSecurityChange={updateSecurity}
             onHistoryPolicyChange={updateHistoryPolicy}
-            onClearDownloadHistory={() => void clearDownloadHistoryRecords()}
+            onClearDownloadHistory={() => void clearFinishedTransfers()}
             versionInfo={versionInfo}
             onOpenExternalPage={(page) => {
               void koofr.openExternalPage(page).catch((error) => {

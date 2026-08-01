@@ -18,7 +18,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { memo, useEffect, useMemo, useState, type ComponentType } from 'react'
 import { themes, type ThemeId } from '../../theme'
 import type {
   AppSettings,
@@ -172,7 +172,7 @@ const CACHE_OPTIONS = [
   icon: typeof Ban
 }>
 
-export function SettingsPanel(props: SettingsPanelProps) {
+export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelProps) {
   const {
     settings,
     loading,
@@ -1504,7 +1504,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       </div>
     </div>
   )
-}
+})
 
 function sectionLabel(id: SectionId): string {
   const section = SECTIONS.find((entry) => entry.id === id)

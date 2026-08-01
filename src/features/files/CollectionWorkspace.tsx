@@ -13,7 +13,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { memo, useDeferredValue, useMemo, useState } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { isPreviewableFile } from '../../preview'
 import type { LocatedFile, RemoteFile, TrashItem } from '../../types/backend'
@@ -108,7 +108,7 @@ function locationLabel(file: LocatedFile) {
   return location === '/' ? file.mountName || '根目录' : `${file.mountName || '存储位置'}${location}`
 }
 
-export function CollectionWorkspace({
+export const CollectionWorkspace = memo(function CollectionWorkspace({
   view,
   files,
   trash,
@@ -363,4 +363,4 @@ export function CollectionWorkspace({
       </section>
     </main>
   )
-}
+})

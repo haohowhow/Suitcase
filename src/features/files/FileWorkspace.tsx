@@ -16,7 +16,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { isPreviewableFile } from '../../preview'
 import type { KoofrMount, RemoteFile } from '../../types/backend'
@@ -65,7 +65,7 @@ function parentDirectory(path: string) {
   return segments.length > 0 ? `/${segments.join('/')}` : '/'
 }
 
-export function FileWorkspace({
+export const FileWorkspace = memo(function FileWorkspace({
   mounts,
   activeMountId,
   path,
@@ -362,4 +362,4 @@ export function FileWorkspace({
       </section>
     </main>
   )
-}
+})

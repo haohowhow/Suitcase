@@ -11,7 +11,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { formatStorageMegabytes } from '../features/files/filePresentation'
 import { ShareLinksDialog } from '../features/links/ShareLinksDialog'
 import { ConnectedPlacesDialog } from '../features/places/ConnectedPlacesDialog'
@@ -37,7 +37,7 @@ interface AppSidebarProps {
   mounts: readonly KoofrMount[]
 }
 
-export function AppSidebar({
+export const AppSidebar = memo(function AppSidebar({
   activeItem,
   onSelect,
   onSettingsClick,
@@ -130,4 +130,4 @@ export function AppSidebar({
       ) : null}
     </aside>
   )
-}
+})

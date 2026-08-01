@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import {
   ExternalLink,
   FolderOpen,
@@ -229,7 +229,7 @@ function SpeedChart({ item }: { readonly item: TransferItem }) {
   )
 }
 
-export function TransferPanel({
+export const TransferPanel = memo(function TransferPanel({
   visible,
   items,
   onClose,
@@ -498,4 +498,4 @@ export function TransferPanel({
       ) : null}
     </aside>
   )
-}
+})

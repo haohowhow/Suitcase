@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -6,6 +10,10 @@ use tokio_util::sync::CancellationToken;
 use crate::{AppState, error::AppError, koofr_api::FileInfo, settings::NetworkRetrySettings};
 
 pub const TRANSFER_EVENT: &str = "koofr://transfer-progress";
+
+static LAST_EMIT: LazyLock<Mutex<HashMap<String, Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+const MIN_PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(80);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -175,6 +183,26 @@ pub fn emit_progress_with_split(
         bytes_transferred,
         total_bytes,
     );
+
+    let is_running = state == TransferState::Running;
+    let is_boundary =
+        bytes_transferred == 0 || total_bytes.is_some_and(|total| bytes_transferred >= total);
+
+    if is_running && !is_boundary {
+        let now = Instant::now();
+        if let Ok(mut map) = LAST_EMIT.lock() {
+            let should_suppress = map.get(transfer_id).is_some_and(|last_time| {
+                now.duration_since(*last_time) < MIN_PROGRESS_EMIT_INTERVAL
+            });
+            if should_suppress {
+                return;
+            }
+            map.insert(transfer_id.to_owned(), now);
+        }
+    } else if !is_running {
+        let _ = LAST_EMIT.lock().map(|mut map| map.remove(transfer_id));
+    }
+
     let _ = app.emit(
         TRANSFER_EVENT,
         TransferProgress {
