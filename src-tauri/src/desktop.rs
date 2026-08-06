@@ -15,8 +15,8 @@ pub const FLOATING_WINDOW_DISABLED_EVENT: &str = "koofr://floating-window-disabl
 const FLOATING_MENU_OPEN_ID: &str = "floating-open-app";
 const FLOATING_MENU_CLOSE_ID: &str = "floating-close-window";
 const FLOATING_MENU_QUIT_ID: &str = "floating-quit-app";
-const FLOATING_WINDOW_WIDTH: f64 = 252.0;
-const FLOATING_WINDOW_HEIGHT: f64 = 64.0;
+const FLOATING_WINDOW_WIDTH: f64 = 300.0;
+const FLOATING_WINDOW_HEIGHT: f64 = 72.0;
 const FLOATING_WINDOW_COMPACT_SIZE: f64 = 52.0;
 const FLOATING_WINDOW_MARGIN: i32 = 20;
 static FLOATING_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -560,6 +560,7 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
         }
     }
     state.transfers.cancel_all();
+    state.sync.stop_all();
     app.exit(0);
 }
 

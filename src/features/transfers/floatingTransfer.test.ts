@@ -77,6 +77,11 @@ describe('summarizeFloatingTransfers', () => {
       direction: null,
       percent: null,
       taskCount: 0,
+      activityKind: 'none',
+      syncPairCount: 0,
+      syncIssueCount: 0,
+      uploadBytesPerSecond: 0,
+      downloadBytesPerSecond: 0,
     })
   })
 })

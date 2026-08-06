@@ -404,8 +404,25 @@ impl KoofrApi {
     }
 
     pub async fn delete(&self, mount_id: &MountId, path: &RemotePath) -> Result<(), AppError> {
+        self.delete_conditional(mount_id, path, None).await
+    }
+
+    pub async fn delete_conditional(
+        &self,
+        mount_id: &MountId,
+        path: &RemotePath,
+        expected: Option<(&str, i64, i64)>,
+    ) -> Result<(), AppError> {
         let mut url = self.mount_endpoint(mount_id, &["files", "remove"])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
+        if let Some((hash, size, modified)) = expected {
+            if !hash.is_empty() {
+                url.query_pairs_mut().append_pair("removeIfHash", hash);
+            }
+            url.query_pairs_mut()
+                .append_pair("removeIfSize", &size.to_string())
+                .append_pair("removeIfModified", &modified.to_string());
+        }
         let response = self
             .authenticated_request(Method::DELETE, url)
             .await?
@@ -486,11 +503,48 @@ impl KoofrApi {
         body: reqwest::Body,
         content_length: u64,
     ) -> Result<FileInfo, AppError> {
+        self.upload_conditional(
+            mount_id,
+            directory,
+            file_name,
+            body,
+            content_length,
+            None,
+            0,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upload_conditional(
+        &self,
+        mount_id: &MountId,
+        directory: &RemotePath,
+        file_name: &RemoteName,
+        body: reqwest::Body,
+        content_length: u64,
+        expected: Option<(&str, i64, i64)>,
+        modified: i64,
+    ) -> Result<FileInfo, AppError> {
         let mut url = self.content_mount_endpoint(mount_id, &["files", "put"])?;
         url.query_pairs_mut()
             .append_pair("path", directory.as_str())
             .append_pair("filename", file_name.as_str())
-            .append_pair("info", "true");
+            .append_pair("info", "true")
+            .append_pair("autorename", "false");
+        if modified > 0 {
+            url.query_pairs_mut()
+                .append_pair("modified", &modified.to_string());
+        }
+        if let Some((hash, size, previous_modified)) = expected {
+            url.query_pairs_mut()
+                .append_pair("overwrite", "true")
+                .append_pair("overwriteIfSize", &size.to_string())
+                .append_pair("overwriteIfModified", &previous_modified.to_string());
+            if !hash.is_empty() {
+                url.query_pairs_mut().append_pair("overwriteIfHash", hash);
+            }
+        }
         let part = reqwest::multipart::Part::stream_with_length(body, content_length)
             .file_name(file_name.as_str().to_owned())
             .mime_str("application/octet-stream")?;
@@ -600,7 +654,7 @@ mod tests {
     use super::{KoofrApi, Session, account_scope};
     use crate::{
         error::AppError,
-        file_ops::{MountId, RemotePath},
+        file_ops::{MountId, RemoteName, RemotePath},
     };
 
     #[tokio::test]
@@ -745,6 +799,82 @@ mod tests {
         mock.assert_async().await;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "/资料/计划.txt");
+    }
+
+    #[tokio::test]
+    async fn sends_conditional_delete_identity_parameters() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(DELETE)
+                    .path("/api/v2/mounts/mount_1/files/remove")
+                    .query_param("path", "/docs/a.txt")
+                    .query_param("removeIfHash", "hash-a")
+                    .query_param("removeIfSize", "42")
+                    .query_param("removeIfModified", "123")
+                    .header("authorization", "Token token=test-token");
+                then.status(200);
+            })
+            .await;
+        let api = KoofrApi::new(&server.base_url()).expect("create API client");
+        *api.session.write().await = Some(Session {
+            token: "test-token".to_owned(),
+            user_id: None,
+        });
+
+        api.delete_conditional(
+            &MountId::parse("mount_1".to_owned()).unwrap(),
+            &RemotePath::parse("/docs/a.txt".to_owned()).unwrap(),
+            Some(("hash-a", 42, 123)),
+        )
+        .await
+        .expect("conditional delete");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn sends_conditional_upload_identity_and_modified_time() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/content/api/v2/mounts/mount_1/files/put")
+                    .query_param("path", "/docs")
+                    .query_param("filename", "a.txt")
+                    .query_param("autorename", "false")
+                    .query_param("modified", "456")
+                    .query_param("overwrite", "true")
+                    .query_param("overwriteIfHash", "old-hash")
+                    .query_param("overwriteIfSize", "42")
+                    .query_param("overwriteIfModified", "123")
+                    .header("authorization", "Token token=test-token");
+                then.status(200).json_body(json!({
+                    "name": "a.txt",
+                    "type": "file",
+                    "modified": 456,
+                    "size": 4,
+                    "hash": "new-hash"
+                }));
+            })
+            .await;
+        let api = KoofrApi::new(&server.base_url()).expect("create API client");
+        *api.session.write().await = Some(Session {
+            token: "test-token".to_owned(),
+            user_id: None,
+        });
+
+        api.upload_conditional(
+            &MountId::parse("mount_1".to_owned()).unwrap(),
+            &RemotePath::parse("/docs".to_owned()).unwrap(),
+            &RemoteName::parse("a.txt".to_owned()).unwrap(),
+            reqwest::Body::from("data"),
+            4,
+            Some(("old-hash", 42, 123)),
+            456,
+        )
+        .await
+        .expect("conditional upload");
+        mock.assert_async().await;
     }
 
     #[tokio::test]

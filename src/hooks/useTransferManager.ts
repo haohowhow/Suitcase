@@ -23,6 +23,7 @@ import type {
   ResumableTransfer,
   TransferProgress,
   TransferResult,
+  SyncPairSummary,
 } from '../types/backend'
 import type { SplitUploadSettings, TransferItem } from '../types/files'
 import type { VaultTransferSpec } from '../types/vault'
@@ -39,6 +40,11 @@ export function useTransferManager(
     fallbackDirectory: string,
     errorMessage?: string,
   ) => void,
+  syncControl?: {
+    readonly pairs: readonly SyncPairSummary[]
+    readonly completionVersion?: number
+    readonly setPairPaused: (pairId: string, paused: boolean) => Promise<void>
+  },
 ) {
   const [transfers, setTransfers] = useState<TransferItem[]>([])
   const [transferVisible, setTransferVisible] = useState(false)
@@ -127,11 +133,11 @@ export function useTransferManager(
   // Publish floating transfer snapshot
   useEffect(() => {
     if (!isTauriRuntime()) return
-    const summary = summarizeFloatingTransfers(transfers)
+    const summary = summarizeFloatingTransfers(transfers, syncControl?.pairs ?? [])
     void koofr
       .publishFloatingTransferSnapshot({
         ...summary,
-        completionVersion: floatingCompletionVersion,
+        completionVersion: floatingCompletionVersion + (syncControl?.completionVersion ?? 0),
         language: settings?.language ?? 'system',
         reduceMotion: settings?.reduceMotion ?? false,
         themeId,
@@ -146,6 +152,7 @@ export function useTransferManager(
       .catch(() => {})
   }, [
     floatingCompletionVersion,
+    syncControl?.completionVersion,
     settings?.language,
     settings?.reduceMotion,
     settings?.floatingWindowCompactEnabled,
@@ -153,6 +160,7 @@ export function useTransferManager(
     settings?.floatingWindowDoubleClickOpenEnabled,
     themeId,
     transfers,
+    syncControl?.pairs,
   ])
 
   // Restore history and checkpoints on sign in
@@ -452,10 +460,14 @@ export function useTransferManager(
         item.state === 'running' ||
         item.state === 'retrying',
     )
-    if (active.length > 0) {
-      void Promise.allSettled(
-        active.map((item) => koofr.pauseTransfer(item.id)),
-      ).then((results) => {
+    const activeSync = (syncControl?.pairs ?? []).filter((pair) =>
+      !pair.paused && (pair.status === 'initializing' || pair.status === 'scanning' || pair.status === 'syncing'),
+    )
+    if (active.length > 0 || activeSync.length > 0) {
+      void Promise.allSettled([
+        ...active.map((item) => koofr.pauseTransfer(item.id)),
+        ...(syncControl ? activeSync.map((pair) => syncControl.setPairPaused(pair.id, true)) : []),
+      ]).then((results) => {
         if (results.some((result) => result.status === 'rejected')) {
           setTransferVisible(true)
           showNotice('部分传输无法暂停，请在传输面板中查看。')
@@ -466,7 +478,8 @@ export function useTransferManager(
 
     const paused = transfers.filter((item) => item.state === 'paused')
     const resumable = paused.filter((item) => item.recoveryKind !== null)
-    if (resumable.length === 0) {
+    const pausedSync = syncControl?.pairs.filter((pair) => pair.paused || pair.status === 'paused') ?? []
+    if (resumable.length === 0 && pausedSync.length === 0) {
       if (paused.length > 0) {
         setTransferVisible(true)
         showNotice('这些暂停任务需要在传输面板中处理。')
@@ -474,11 +487,16 @@ export function useTransferManager(
       return
     }
     for (const item of resumable) void resumeTransfer(item.id, false)
-    if (resumable.length !== paused.length) {
+    if (syncControl) {
+      for (const pair of pausedSync) {
+        void syncControl.setPairPaused(pair.id, false).catch(() => showNotice('部分同步组无法继续，请在同步页面中查看。'))
+      }
+    }
+    if (resumable.length !== paused.length || pausedSync.length > 0) {
       setTransferVisible(true)
       showNotice('已继续可恢复任务；其余任务需要在传输面板中处理。')
     }
-  }, [resumeTransfer, showNotice, transfers])
+  }, [resumeTransfer, showNotice, syncControl, transfers])
 
   useEffect(() => {
     if (!isTauriRuntime()) return

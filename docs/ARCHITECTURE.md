@@ -46,6 +46,7 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 │  │  - KoofrApi (reqwest / rustls)                 │  │
 │  │  - TransferManager                             │  │
 │  │  - TransferCheckpointStore                     │  │
+│  │  - SyncManager (SQLite + watcher/coordinator)  │  │
 │  │  - SettingsStore                               │  │
 │  │  - MetadataCache                               │  │
 │  │  - CredentialManager (Windows Credentials)     │  │
@@ -68,6 +69,7 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 - **主线程**：Tauri 事件循环、UI 事件调度。
 - **WebView 窗口**：`main` 持有完整应用状态；可选的 `transfer-float` 是固定大小、置顶且跳过任务栏的轻量状态窗口，只接收脱敏聚合传输快照。
 - **tokio runtime**：`rt-multi-thread`，异步 HTTP、异步磁盘 IO、传输任务、进度事件发射都在这里跑。
+- **同步协调器**：登录 / 恢复会话后，`SyncManager` 为当前账户的每个同步组启动一个协调循环；本地 `notify` 事件经过 2 秒防抖，远端每 60 秒扫描一次。主窗口隐藏到托盘不影响循环，完全退出或退出登录时取消并落盘。
 - **传输并发**：`TransferManager` 允许多个传输任务并行（每个任务一个 tokio task），共享同一个 `reqwest::Client`（连接池、rustls 会话复用）。
 
 ## 数据流
@@ -387,6 +389,14 @@ pub enum AppError {
 - 失败临时文件由 checkpoint 记录精确路径和保留时间。到期清理会先重新生成 checkpoint snapshot 验证路径，只删除该精确普通文件并同步移除 checkpoint，不扫描下载目录。
 - 托盘、开机启动、通知和传输悬浮窗使用 Tauri 官方能力。悬浮窗默认关闭，整个表面可左键拖动；右键由校验窗口标签的 Rust 命令弹出原生菜单。菜单关闭会同步关闭持久设置，安全退出复用活动传输确认。首次提示状态与拖动后的物理坐标存入 `settings.json`；显示器布局变化时坐标会被收回可见范围。外部项目页面只能通过 Rust 固定枚举打开；WebView 没有任意 shell / URL 权限。
 
+## 本地文件夹同步
+
+同步范围限定为 Koofr 主存储中的普通目录；Rust 侧再次拒绝 Vault、共享 / 第三方挂载、非法路径以及本地或远端根目录重叠。每组配置只保存原生文件夹选择器签发的一次性授权后得到的绝对目录，并在每次扫描前重新检查目录存在、不是符号链接且仍为目录。
+
+`sync-state.sqlite3` 使用 WAL 和事务保存账户隔离的同步组、三方基线、问题及操作状态。首次同步只合并，不执行删除；之后仅在基线仍匹配时传播删除，远端使用 Koofr 条件删除进入回收站，本地使用 Windows 回收站，失败时保留文件。双侧修改保留远端原名，并给本地版本追加带 UTC 时间的冲突名；任何条件上传 / 删除冲突都会触发重新扫描而不是强制覆盖。
+
+本地扫描跳过符号链接、重解析点、特殊文件、系统回收站目录和客户端临时项；普通隐藏文件参与同步。根目录 `.syncignore` 支持空行、注释、gitignore 风格 glob 与 `!` 反向包含，规则变化会通过监听触发完整重扫。同步操作复用传输并发闸门、限速、取消和网络错误重试，但单独写入同步操作日志，不进入手动传输恢复列表。
+
 ## 事件与命令目录
 
 **Tauri 命令**（前端 → Rust，由各 `*_commands.rs` 注册）：
@@ -400,6 +410,8 @@ pub enum AppError {
 文件操作：`create_folder`, `rename_entry`, `move_entry`, `copy_entry`, `delete_entry`, `restore_trash`, `empty_trash`, `open_downloaded_file`, `open_downloaded_folder`, `open_external_page`
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
+
+同步：`select_sync_folder`, `list_sync_pairs`, `create_sync_pair`, `set_sync_pair_paused`, `run_sync_pair_now`, `list_sync_issues`, `remove_sync_pair`
 
 传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `pause_transfer`, `list_resumable_transfers`, `list_download_history`, `clear_finished_download_history`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`, `open_main_window_from_floating`, `set_taskbar_badge`
 
@@ -419,6 +431,7 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 - `koofr://floating-transfer-state`：主窗口 → `transfer-float` 的脱敏聚合状态；只含方向、任务数、百分比、外观与交互偏好、可恢复暂停数和完成计数。
 - `koofr://floating-transfer-action`：`transfer-float` → 主窗口的脱敏批量暂停/继续意图；不含任务标识。
 - `koofr://floating-window-disabled`：原生右键菜单关闭悬浮窗后，同步主窗口中的通知设置开关。
+- `koofr://sync-state`：同步组级状态、待处理 / 已完成项目与字节汇总、最近成功时间、问题数量和稳定错误码；不含文件名、完整路径或服务端正文。
 
 ## 本地数据布局
 
@@ -427,6 +440,7 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 ├─ settings.json                # AppSettings（下载、缓存和日志策略等）
 ├─ transfer-checkpoints.json    # TransferCheckpointStore（可恢复任务）
 ├─ download-history.json        # 按账户隔离的下载历史、目标位置与限量速度采样
+├─ sync-state.sqlite3           # 同步组、设备标识、双边基线、问题与操作日志（WAL）
 ├─ cache/metadata-cache.json    # 磁盘缓存
 └─ logs/koofr-gui*.jsonl       # 诊断日志
 ```

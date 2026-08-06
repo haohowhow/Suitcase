@@ -19,6 +19,7 @@ use crate::{
         BandwidthMode, CacheMode, DownloadConflictStrategy, InterfaceLanguage, LinkDefaultKind,
         LogLevel, UiDensity,
     },
+    sync::{self, SyncIssue, SyncPairSummary},
     transfer::{self, TransferResult},
 };
 
@@ -115,12 +116,14 @@ pub struct AppVersionInfo {
 
 #[tauri::command]
 pub async fn connect_koofr(
+    app: AppHandle,
     state: State<'_, AppState>,
     email: String,
     app_password: String,
     remember_password: bool,
 ) -> CommandResult<SessionInfo> {
     state.transfers.cancel_all();
+    state.sync.stop_all();
     state.local_access.clear();
     state.vault.reset().await;
     if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
@@ -131,6 +134,15 @@ pub async fn connect_koofr(
         .api
         .authenticate(&email, app_password.as_str())
         .await
+        .map_err(CommandError::from)?;
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .start_for_owner(app, owner_id)
         .map_err(CommandError::from)?;
     let previous_email = state.settings.remembered_email().await;
     if remember_password {
@@ -178,7 +190,10 @@ pub async fn connect_koofr(
 }
 
 #[tauri::command]
-pub async fn restore_saved_login(state: State<'_, AppState>) -> CommandResult<LoginBootstrap> {
+pub async fn restore_saved_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<LoginBootstrap> {
     if state.api.session_info().await.authenticated {
         return Ok(LoginBootstrap {
             session: state.api.session_info().await,
@@ -212,6 +227,15 @@ pub async fn restore_saved_login(state: State<'_, AppState>) -> CommandResult<Lo
         .authenticate(&email, password.as_str())
         .await
         .map_err(CommandError::from)?;
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .start_for_owner(app, owner_id)
+        .map_err(CommandError::from)?;
     state.vault.reset().await;
     if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
         sessions.close_all();
@@ -236,6 +260,7 @@ pub async fn restore_saved_login(state: State<'_, AppState>) -> CommandResult<Lo
 #[tauri::command]
 pub async fn disconnect_koofr(state: State<'_, AppState>) -> CommandResult<()> {
     state.transfers.cancel_all();
+    state.sync.stop_all();
     state.vault.reset().await;
     state.api.disconnect().await;
     state.local_access.clear();
@@ -395,6 +420,120 @@ pub async fn prepare_download_location(
 #[tauri::command]
 pub async fn koofr_session(state: State<'_, AppState>) -> CommandResult<SessionInfo> {
     Ok(state.api.session_info().await)
+}
+
+#[tauri::command]
+pub async fn select_sync_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<LocalFileSelection>> {
+    let Some(folder) = app.dialog().file().blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let folder = folder
+        .into_path()
+        .map_err(|_| CommandError::from(AppError::Dialog))?;
+    sync::validate_local_root_sync(&folder).map_err(CommandError::from)?;
+    state
+        .local_access
+        .grant_sync_directory(folder)
+        .map(Some)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn list_sync_pairs(state: State<'_, AppState>) -> CommandResult<Vec<SyncPairSummary>> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state.sync.list_pairs(&owner_id).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn create_sync_pair(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    local_path_grant: String,
+    mount_id: String,
+    remote_path: String,
+) -> CommandResult<SyncPairSummary> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    let local_root = state
+        .local_access
+        .take_sync_directory(&local_path_grant)
+        .map_err(CommandError::from)?;
+    let mount_id = MountId::parse(mount_id).map_err(CommandError::from)?;
+    let remote_path = RemotePath::parse(remote_path).map_err(CommandError::from)?;
+    state
+        .sync
+        .create_pair(app, owner_id, local_root, mount_id, remote_path)
+        .await
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn set_sync_pair_paused(
+    state: State<'_, AppState>,
+    pair_id: String,
+    paused: bool,
+) -> CommandResult<bool> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .set_paused(&owner_id, &pair_id, paused)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn run_sync_pair_now(state: State<'_, AppState>, pair_id: String) -> CommandResult<bool> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .run_now(&owner_id, &pair_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn list_sync_issues(
+    state: State<'_, AppState>,
+    pair_id: String,
+) -> CommandResult<Vec<SyncIssue>> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .list_issues(&owner_id, &pair_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn remove_sync_pair(state: State<'_, AppState>, pair_id: String) -> CommandResult<bool> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .remove_pair(&owner_id, &pair_id)
+        .map_err(CommandError::from)
 }
 
 async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {

@@ -17,6 +17,7 @@ import { SettingsPanel } from './features/settings/SettingsPanel'
 import { DownloadDestinationDialog } from './features/transfers/DownloadDestinationDialog'
 import { SplitUploadDialog } from './features/transfers/SplitUploadDialog'
 import { TransferPanel } from './features/transfers/TransferPanel'
+import { SyncWorkspace } from './features/sync/SyncWorkspace'
 import { VaultDialog } from './features/vault/VaultDialog'
 import { countActiveDownloads } from './features/transfers/transferProgress'
 import { shouldPromptForFloatingWindow } from './features/transfers/floatingTransfer'
@@ -28,6 +29,7 @@ import {
 import { readStoredTheme, storeTheme, type ThemeId } from './theme'
 import { useAppSettings } from './hooks/useAppSettings'
 import { useTransferManager } from './hooks/useTransferManager'
+import { useSyncManager } from './hooks/useSyncManager'
 import { installRuntimeTranslations } from './i18n'
 import type {
   LocatedFile,
@@ -123,6 +125,7 @@ function App() {
   const collections = useKoofrCollections(authState === 'signedIn', activeItem)
   const workspaceLocation = useRef({ activeMountId: '', path: '/' })
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
+  const sync = useSyncManager(authState, showNotice)
 
   const openDownloadDestination = useCallback((
     file: RemoteFile,
@@ -161,6 +164,7 @@ function App() {
     workspace.refresh,
     showNotice,
     openDownloadDestination,
+    sync,
   )
 
   const confirmDownload = useCallback(async (targetDirectory: string, askEveryTime: boolean) => {
@@ -659,7 +663,14 @@ function App() {
             storageTotal={activeMount?.spaceTotal ?? null}
             mounts={workspace.mounts}
           />
-          {isCollectionView(activeItem) ? (
+          {activeItem === '同步' ? (
+            <SyncWorkspace
+              mounts={workspace.mounts}
+              defaultMountId={workspace.activeMountId}
+              defaultRemotePath={workspace.path}
+              sync={sync}
+            />
+          ) : isCollectionView(activeItem) ? (
             <CollectionWorkspace
               view={activeItem}
               files={collections.files}

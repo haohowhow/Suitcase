@@ -242,6 +242,81 @@ export interface LocalFileSelection {
   readonly fileSize: number | null
 }
 
+export type SyncPairStatus =
+  | 'initializing'
+  | 'scanning'
+  | 'syncing'
+  | 'idle'
+  | 'paused'
+  | 'offline'
+  | 'attention'
+
+export interface SyncEndpointStats {
+  readonly fileCount: number
+  readonly directoryCount: number
+  readonly bytes: number
+}
+
+export interface SyncDirectionStats {
+  readonly pendingItems: number
+  readonly totalItems: number
+  readonly completedItems: number
+  readonly pendingBytes: number
+  readonly totalBytes: number
+  readonly completedBytes: number
+  readonly bytesPerSecond: number
+}
+
+export interface SyncPairSummary {
+  readonly id: string
+  readonly localRoot: string
+  readonly remotePath: string
+  readonly status: SyncPairStatus
+  readonly paused: boolean
+  readonly pendingItems: number
+  readonly pendingBytes: number
+  readonly completedItems: number
+  readonly totalItems: number
+  readonly completedBytes: number
+  readonly totalBytes: number
+  readonly lastSyncedAt: number | null
+  readonly issueCount: number
+  readonly lastErrorCode: string | null
+  readonly local: SyncEndpointStats
+  readonly remote: SyncEndpointStats
+  readonly upload: SyncDirectionStats
+  readonly download: SyncDirectionStats
+  readonly lastScanAt: number | null
+}
+
+export interface SyncIssue {
+  readonly id: number
+  readonly pairId: string
+  readonly relativePath: string
+  readonly code: string
+  readonly message: string
+  readonly createdAt: number
+}
+
+export interface SyncStateEvent {
+  readonly pairId: string
+  readonly status: SyncPairStatus
+  readonly pendingItems: number
+  readonly pendingBytes: number
+  readonly completedItems: number
+  readonly totalItems: number
+  readonly completedBytes: number
+  readonly totalBytes: number
+  readonly lastSyncedAt: number | null
+  readonly issueCount: number
+  readonly errorCode: string | null
+  readonly local: SyncEndpointStats
+  readonly remote: SyncEndpointStats
+  readonly upload: SyncDirectionStats
+  readonly download: SyncDirectionStats
+  readonly lastScanAt: number | null
+}
+
 export interface VaultSummary {
   readonly id: string
   readonly name: string

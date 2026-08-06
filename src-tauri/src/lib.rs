@@ -19,6 +19,7 @@ mod settings;
 mod split_commands;
 mod stream_commands;
 mod stream_session;
+mod sync;
 mod transfer;
 mod transfer_commands;
 mod vault_commands;
@@ -50,6 +51,7 @@ pub struct AppState {
     logger: AppLogger,
     vault: VaultManager,
     work_directory: WorkDirectoryStore,
+    sync: sync::SyncManager,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -145,6 +147,7 @@ pub fn run() {
             tauri::async_runtime::block_on(
                 transfer_checkpoints.cleanup_expired(download_behavior.keep_failed_part_days),
             )?;
+            let sync = sync::SyncManager::load(data_dir.join("sync-state.sqlite3"))?;
             app.manage(AppState {
                 api: KoofrApi::production()?,
                 local_access: LocalAccessManager::default(),
@@ -157,6 +160,7 @@ pub fn run() {
                 logger,
                 vault,
                 work_directory,
+                sync,
             });
             let _ = stream_session::STREAM_SESSIONS
                 .set(stream_session::StreamSessionManager::default());
@@ -168,6 +172,13 @@ pub fn run() {
             commands::connect_koofr,
             commands::restore_saved_login,
             commands::disconnect_koofr,
+            commands::select_sync_folder,
+            commands::list_sync_pairs,
+            commands::create_sync_pair,
+            commands::set_sync_pair_paused,
+            commands::run_sync_pair_now,
+            commands::list_sync_issues,
+            commands::remove_sync_pair,
             commands::koofr_session,
             commands::get_settings,
             commands::update_settings,
