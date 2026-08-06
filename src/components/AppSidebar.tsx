@@ -2,6 +2,7 @@ import {
   Clock3,
   Cloud,
   Folder,
+  FolderSync,
   HelpCircle,
   LockKeyhole,
   LogOut,
@@ -22,6 +23,7 @@ const primaryItems = [
   { label: '最近的文件', icon: Clock3 },
   { label: '已共享', icon: Share2 },
   { label: '回收站', icon: Trash2 },
+  { label: '同步', icon: FolderSync },
 ]
 
 interface AppSidebarProps {

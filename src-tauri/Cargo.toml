@@ -1,6 +1,6 @@
 [package]
 name = "koofr-gui"
-version = "2.4.0"
+version = "2.5.0"
 description = "Windows-first desktop client for Koofr"
 authors = ["Koofr-GUI contributors"]
 edition = "2024"
@@ -16,13 +16,16 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 futures-util = "0.3.32"
+filetime = "0.2.26"
 chardetng = "0.1.17"
 data-encoding = "2.9.0"
 encoding_rs = "0.8.35"
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png", "tiff"] }
 keyring-core = "1.0.0"
 md-5 = "0.10.6"
+notify = "8.0.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "multipart", "query", "rustls", "stream"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.11.0"
@@ -33,6 +36,7 @@ tauri-plugin-notification = "2"
 thiserror = "2.0.18"
 tokio = { version = "1.50.0", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7.18", features = ["compat", "io", "rt"] }
+trash = "5.2.5"
 url = "2.5.8"
 uuid = { version = "1.23.0", features = ["v4"] }
 vault-crypto = { git = "https://github.com/koofr/vault.git", rev = "17c95914dbc25f42f71869d1878f58a6675474ce" }

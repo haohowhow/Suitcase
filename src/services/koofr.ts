@@ -33,6 +33,9 @@ import type {
   VaultSummary,
   FilePreviewInfo,
   PreviewTextResult,
+  SyncIssue,
+  SyncPairSummary,
+  SyncStateEvent,
 } from '../types/backend'
 import type { SplitUploadSettings } from '../types/files'
 import type { FloatingTransferSnapshot } from '../features/transfers/floatingTransfer'
@@ -41,6 +44,7 @@ const TRANSFER_EVENT = 'koofr://transfer-progress'
 const FLOATING_TRANSFER_EVENT = 'koofr://floating-transfer-state'
 const FLOATING_WINDOW_DISABLED_EVENT = 'koofr://floating-window-disabled'
 const FLOATING_TRANSFER_ACTION_EVENT = 'koofr://floating-transfer-action'
+const SYNC_STATE_EVENT = 'koofr://sync-state'
 
 export type FloatingTransferAction = 'toggle'
 
@@ -371,6 +375,38 @@ export const koofr = {
     return invoke<string | null>('select_download_directory')
   },
 
+  selectSyncFolder() {
+    return invoke<LocalFileSelection | null>('select_sync_folder')
+  },
+
+  listSyncPairs() {
+    return invoke<SyncPairSummary[]>('list_sync_pairs')
+  },
+
+  createSyncPair(localPathGrant: string, mountId: string, remotePath: string) {
+    return invoke<SyncPairSummary>('create_sync_pair', {
+      localPathGrant,
+      mountId,
+      remotePath,
+    })
+  },
+
+  setSyncPairPaused(pairId: string, paused: boolean) {
+    return invoke<boolean>('set_sync_pair_paused', { pairId, paused })
+  },
+
+  runSyncPairNow(pairId: string) {
+    return invoke<boolean>('run_sync_pair_now', { pairId })
+  },
+
+  listSyncIssues(pairId: string) {
+    return invoke<SyncIssue[]>('list_sync_issues', { pairId })
+  },
+
+  removeSyncPair(pairId: string) {
+    return invoke<boolean>('remove_sync_pair', { pairId })
+  },
+
   selectWorkDirectory() {
     return invoke<string | null>('select_work_directory')
   },
@@ -643,6 +679,10 @@ export const koofr = {
 
   onTransferProgress(listener: (progress: TransferProgress) => void): Promise<UnlistenFn> {
     return listen<TransferProgress>(TRANSFER_EVENT, (event) => listener(event.payload))
+  },
+
+  onSyncState(listener: (state: SyncStateEvent) => void): Promise<UnlistenFn> {
+    return listen<SyncStateEvent>(SYNC_STATE_EVENT, (event) => listener(event.payload))
   },
 
   publishFloatingTransferSnapshot(snapshot: FloatingTransferSnapshot) {

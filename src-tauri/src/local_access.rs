@@ -12,6 +12,7 @@ enum LocalPathGrant {
     Upload(PathBuf),
     Download(PathBuf),
     DownloadDirectory(PathBuf),
+    SyncDirectory(PathBuf),
 }
 
 #[derive(Debug, Serialize)]
@@ -42,11 +43,16 @@ impl LocalAccessManager {
         self.insert(LocalPathGrant::DownloadDirectory(path))
     }
 
+    pub fn grant_sync_directory(&self, path: PathBuf) -> Result<LocalFileSelection, AppError> {
+        self.insert(LocalPathGrant::SyncDirectory(path))
+    }
+
     fn insert(&self, grant: LocalPathGrant) -> Result<LocalFileSelection, AppError> {
         let path = match &grant {
             LocalPathGrant::Upload(path)
             | LocalPathGrant::Download(path)
-            | LocalPathGrant::DownloadDirectory(path) => path,
+            | LocalPathGrant::DownloadDirectory(path)
+            | LocalPathGrant::SyncDirectory(path) => path,
         };
         let file_name = path
             .file_name()
@@ -56,7 +62,9 @@ impl LocalAccessManager {
         let grant_id = uuid::Uuid::new_v4().to_string();
         let local_path = matches!(
             &grant,
-            LocalPathGrant::Download(_) | LocalPathGrant::DownloadDirectory(_)
+            LocalPathGrant::Download(_)
+                | LocalPathGrant::DownloadDirectory(_)
+                | LocalPathGrant::SyncDirectory(_)
         )
         .then(|| path.to_string_lossy().into_owned());
         let file_size = matches!(&grant, LocalPathGrant::Upload(_))
@@ -86,13 +94,16 @@ impl LocalAccessManager {
             LocalPathGrant::Download(_) | LocalPathGrant::DownloadDirectory(_) => {
                 Err(AppError::InvalidInput("upload path grant"))
             }
+            LocalPathGrant::SyncDirectory(_) => Err(AppError::InvalidInput("upload path grant")),
         }
     }
 
     pub fn take_download(&self, grant_id: &str) -> Result<PathBuf, AppError> {
         match self.take(grant_id)? {
             LocalPathGrant::Download(path) => Ok(path),
-            LocalPathGrant::Upload(_) | LocalPathGrant::DownloadDirectory(_) => {
+            LocalPathGrant::Upload(_)
+            | LocalPathGrant::DownloadDirectory(_)
+            | LocalPathGrant::SyncDirectory(_) => {
                 Err(AppError::InvalidInput("download path grant"))
             }
         }
@@ -101,8 +112,21 @@ impl LocalAccessManager {
     pub fn take_download_directory(&self, grant_id: &str) -> Result<PathBuf, AppError> {
         match self.take(grant_id)? {
             LocalPathGrant::DownloadDirectory(path) => Ok(path),
-            LocalPathGrant::Upload(_) | LocalPathGrant::Download(_) => {
+            LocalPathGrant::Upload(_)
+            | LocalPathGrant::Download(_)
+            | LocalPathGrant::SyncDirectory(_) => {
                 Err(AppError::InvalidInput("download directory path grant"))
+            }
+        }
+    }
+
+    pub fn take_sync_directory(&self, grant_id: &str) -> Result<PathBuf, AppError> {
+        match self.take(grant_id)? {
+            LocalPathGrant::SyncDirectory(path) => Ok(path),
+            LocalPathGrant::Upload(_)
+            | LocalPathGrant::Download(_)
+            | LocalPathGrant::DownloadDirectory(_) => {
+                Err(AppError::InvalidInput("sync directory path grant"))
             }
         }
     }
