@@ -19,7 +19,7 @@ use crate::{
         BandwidthMode, CacheMode, DownloadConflictStrategy, InterfaceLanguage, LinkDefaultKind,
         LogLevel, UiDensity,
     },
-    sync::{self, SyncIssue, SyncPairSummary},
+    sync::{self, SyncIssue, SyncPairSummary, SyncTaskSummary},
     transfer::{self, TransferResult},
 };
 
@@ -68,6 +68,7 @@ pub struct SettingsSnapshot {
     // General
     launch_at_login: bool,
     close_to_tray: bool,
+    native_sync_background_required: bool,
     minimize_to_tray: bool,
     confirm_quit_with_transfers: bool,
     // Transfer (advanced)
@@ -478,6 +479,161 @@ pub async fn create_sync_pair(
 }
 
 #[tauri::command]
+pub fn get_native_sync_capability(
+    state: State<'_, AppState>,
+) -> CommandResult<crate::cloud_files::NativeSyncCapability> {
+    Ok(state.sync.native_capability())
+}
+
+#[tauri::command]
+pub fn suggested_on_demand_sync_root() -> CommandResult<String> {
+    let profile = std::env::var_os("USERPROFILE")
+        .ok_or_else(|| CommandError::from(AppError::Initialization))?;
+    let path = PathBuf::from(profile).join("Koofr");
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| CommandError::from(AppError::InvalidInput("sync directory")))
+}
+
+async fn enable_native_sync_background(
+    state: &AppState,
+) -> Result<(bool, crate::settings::GeneralSettings), AppError> {
+    let previous_autostart = autostart::is_launch_at_login_enabled();
+    let general = state.settings.general().await;
+    if !previous_autostart {
+        autostart::set_launch_at_login(true)?;
+    }
+    if let Err(error) = state
+        .settings
+        .update_general(
+            true,
+            true,
+            general.minimize_to_tray,
+            general.confirm_quit_with_transfers,
+        )
+        .await
+    {
+        if !previous_autostart {
+            let _ = autostart::set_launch_at_login(false);
+        }
+        let _ = state
+            .settings
+            .update_general(
+                general.launch_at_login,
+                general.close_to_tray,
+                general.minimize_to_tray,
+                general.confirm_quit_with_transfers,
+            )
+            .await;
+        return Err(error);
+    }
+    Ok((previous_autostart, general))
+}
+
+async fn restore_native_sync_background(
+    state: &AppState,
+    previous: (bool, crate::settings::GeneralSettings),
+) {
+    let (autostart_enabled, general) = previous;
+    let _ = autostart::set_launch_at_login(autostart_enabled);
+    let _ = state
+        .settings
+        .update_general(
+            general.launch_at_login,
+            general.close_to_tray,
+            general.minimize_to_tray,
+            general.confirm_quit_with_transfers,
+        )
+        .await;
+}
+
+#[tauri::command]
+pub async fn create_on_demand_sync_pair(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    local_path_grant: String,
+    mount_id: String,
+    remote_path: String,
+    root_kind: String,
+) -> CommandResult<SyncPairSummary> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    let local_root = state
+        .local_access
+        .take_sync_directory(&local_path_grant)
+        .map_err(CommandError::from)?;
+    let mount_id = MountId::parse(mount_id).map_err(CommandError::from)?;
+    let remote_path = RemotePath::parse(remote_path).map_err(CommandError::from)?;
+    let created = state
+        .sync
+        .create_on_demand_pair(
+            app,
+            owner_id.clone(),
+            local_root,
+            mount_id,
+            remote_path,
+            root_kind,
+        )
+        .await
+        .map_err(CommandError::from)?;
+    if let Err(error) = enable_native_sync_background(&state).await {
+        let _ = state.sync.remove_pair(&owner_id, &created.id);
+        return Err(CommandError::from(error));
+    }
+    Ok(created)
+}
+
+#[tauri::command]
+pub async fn migrate_sync_pair_to_on_demand(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    pair_id: String,
+    local_path_grant: String,
+    root_kind: String,
+) -> CommandResult<SyncPairSummary> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    let local_root = state
+        .local_access
+        .take_sync_directory(&local_path_grant)
+        .map_err(CommandError::from)?;
+    let background = enable_native_sync_background(&state)
+        .await
+        .map_err(CommandError::from)?;
+    let migrated = state
+        .sync
+        .migrate_pair(app, owner_id.clone(), &pair_id, local_root, root_kind)
+        .await;
+    let migrated = match migrated {
+        Ok(migrated) => migrated,
+        Err(error) => {
+            restore_native_sync_background(&state, background).await;
+            return Err(CommandError::from(error));
+        }
+    };
+    Ok(migrated)
+}
+
+#[tauri::command]
+pub async fn open_sync_root(state: State<'_, AppState>, pair_id: String) -> CommandResult<()> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .open_root(&owner_id, &pair_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
 pub async fn set_sync_pair_paused(
     state: State<'_, AppState>,
     pair_id: String,
@@ -520,6 +676,22 @@ pub async fn list_sync_issues(
     state
         .sync
         .list_issues(&owner_id, &pair_id)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn list_sync_tasks(
+    state: State<'_, AppState>,
+    pair_id: String,
+) -> CommandResult<Vec<SyncTaskSummary>> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    state
+        .sync
+        .list_tasks(&owner_id, &pair_id)
         .map_err(CommandError::from)
 }
 
@@ -584,6 +756,7 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
         density: appearance.density,
         launch_at_login: general.launch_at_login && autostart::is_launch_at_login_enabled(),
         close_to_tray: general.close_to_tray,
+        native_sync_background_required: state.sync.native_background_required().unwrap_or(false),
         minimize_to_tray: general.minimize_to_tray,
         confirm_quit_with_transfers: general.confirm_quit_with_transfers,
         upload_concurrency: advanced.upload_concurrency,
@@ -1201,6 +1374,14 @@ pub async fn update_general_settings(
     minimize_to_tray: bool,
     confirm_quit_with_transfers: bool,
 ) -> CommandResult<SettingsSnapshot> {
+    if state
+        .sync
+        .native_background_required()
+        .map_err(CommandError::from)?
+        && (!launch_at_login || !close_to_tray)
+    {
+        return Err(CommandError::from(AppError::Conflict));
+    }
     let previous = state.settings.general().await.launch_at_login;
     if previous != launch_at_login {
         autostart::set_launch_at_login(launch_at_login).map_err(CommandError::from)?;

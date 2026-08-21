@@ -35,7 +35,10 @@ import type {
   PreviewTextResult,
   SyncIssue,
   SyncPairSummary,
+  SyncTaskSummary,
   SyncStateEvent,
+  NativeSyncCapability,
+  SyncRootKind,
 } from '../types/backend'
 import type { SplitUploadSettings } from '../types/files'
 import type { FloatingTransferSnapshot } from '../features/transfers/floatingTransfer'
@@ -391,6 +394,44 @@ export const koofr = {
     })
   },
 
+  nativeSyncCapability() {
+    return invoke<NativeSyncCapability>('get_native_sync_capability')
+  },
+
+  suggestedOnDemandSyncRoot() {
+    return invoke<string>('suggested_on_demand_sync_root')
+  },
+
+  createOnDemandSyncPair(
+    localPathGrant: string,
+    mountId: string,
+    remotePath: string,
+    rootKind: SyncRootKind,
+  ) {
+    return invoke<SyncPairSummary>('create_on_demand_sync_pair', {
+      localPathGrant,
+      mountId,
+      remotePath,
+      rootKind,
+    })
+  },
+
+  migrateSyncPairToOnDemand(
+    pairId: string,
+    localPathGrant: string,
+    rootKind: SyncRootKind,
+  ) {
+    return invoke<SyncPairSummary>('migrate_sync_pair_to_on_demand', {
+      pairId,
+      localPathGrant,
+      rootKind,
+    })
+  },
+
+  openSyncRoot(pairId: string) {
+    return invoke<void>('open_sync_root', { pairId })
+  },
+
   setSyncPairPaused(pairId: string, paused: boolean) {
     return invoke<boolean>('set_sync_pair_paused', { pairId, paused })
   },
@@ -401,6 +442,10 @@ export const koofr = {
 
   listSyncIssues(pairId: string) {
     return invoke<SyncIssue[]>('list_sync_issues', { pairId })
+  },
+
+  listSyncTasks(pairId: string) {
+    return invoke<SyncTaskSummary[]>('list_sync_tasks', { pairId })
   },
 
   removeSyncPair(pairId: string) {

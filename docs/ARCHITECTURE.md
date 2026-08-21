@@ -47,6 +47,7 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 │  │  - TransferManager                             │  │
 │  │  - TransferCheckpointStore                     │  │
 │  │  - SyncManager (SQLite + watcher/coordinator)  │  │
+│  │  - Cloud Files API provider (Windows on-demand) │  │
 │  │  - SettingsStore                               │  │
 │  │  - MetadataCache                               │  │
 │  │  - CredentialManager (Windows Credentials)     │  │
@@ -397,6 +398,14 @@ pub enum AppError {
 
 本地扫描跳过符号链接、重解析点、特殊文件、系统回收站目录和客户端临时项；普通隐藏文件参与同步。根目录 `.syncignore` 支持空行、注释、gitignore 风格 glob 与 `!` 反向包含，规则变化会通过监听触发完整重扫。同步操作复用传输并发闸门、限速、取消和网络错误重试，但单独写入同步操作日志，不进入手动传输恢复列表。
 
+Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` 使用固定 Provider GUID 注册部分填充同步根，目录首次展开通过 `FETCH_PLACEHOLDERS` 只列出当前层，文件打开通过 `FETCH_DATA` 完整水合。回调线程只复制路径、随机条目键和请求范围，再把工作投递到异步运行时；网络等待以 60 秒无进展超时保护，写入 `CfExecute` 的中间块按 4 KiB 对齐。
+
+占位符身份格式为 `KFG1:<UUID>`，不含账户、文件名或远端路径。`sync_entries` 表按账户所属同步组保存 UUID 到相对路径、远端路径、类型、大小、修改时间和 MD5 的映射。原生扫描先查询 CFAPI 状态：已同步占位符直接复用数据库身份且不打开 / 哈希；只有本地新增、修改或尚未转换的完整文件才读取内容。远端轮询只递归根目录和已经填充的目录，未访问目录在 Explorer 首次展开时读取最新内容。
+
+按需根使用完整文件水合、自动释放空间、禁止硬链接和仅 Provider 管理占位符的策略。水合复用全局下载并发、限速、取消和 MD5 校验；本地重命名在身份唯一匹配时优先调用 Koofr `move`。资源管理器删除占位符会进入异步 `NOTIFY_DELETE` 处理：Provider 先校验同步组、回调路径和条目身份并立即通过 `ACK_DELETE` 结束 Windows 删除请求，再异步执行 Koofr 条件删除；远端请求失败时由三方基线扫描重试或进入冲突协调，不能让资源管理器进度框等待网络。暂停、扫描、同步、离线和错误会同时更新应用同步事件和 Windows Provider 状态。
+
+经典迁移要求旧组成功空闲且无问题，并选择新的空目录。旧组暂停后，新根以 `staging` 注册并完成首次元数据 / 占位符验证；只有达到成功空闲才标为 `ready` 并移除旧配置。60 秒超时或任意失败会解除暂存根并恢复旧组，旧目录从不移动或删除。解除注册前必须断开连接并核对 Provider 名称与 `KFG1:<pairId>` 根身份；NSIS `PREUNINSTALL` 在非升级卸载时调用同一无界面清理入口，失败会要求重试或取消。
+
 ## 事件与命令目录
 
 **Tauri 命令**（前端 → Rust，由各 `*_commands.rs` 注册）：
@@ -411,7 +420,7 @@ pub enum AppError {
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 
-同步：`select_sync_folder`, `list_sync_pairs`, `create_sync_pair`, `set_sync_pair_paused`, `run_sync_pair_now`, `list_sync_issues`, `remove_sync_pair`
+同步：`select_sync_folder`, `list_sync_pairs`, `create_sync_pair`, `get_native_sync_capability`, `suggested_on_demand_sync_root`, `create_on_demand_sync_pair`, `migrate_sync_pair_to_on_demand`, `open_sync_root`, `set_sync_pair_paused`, `run_sync_pair_now`, `list_sync_issues`, `list_sync_tasks`, `remove_sync_pair`
 
 传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `pause_transfer`, `list_resumable_transfers`, `list_download_history`, `clear_finished_download_history`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`, `open_main_window_from_floating`, `set_taskbar_badge`
 
@@ -440,7 +449,7 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 ├─ settings.json                # AppSettings（下载、缓存和日志策略等）
 ├─ transfer-checkpoints.json    # TransferCheckpointStore（可恢复任务）
 ├─ download-history.json        # 按账户隔离的下载历史、目标位置与限量速度采样
-├─ sync-state.sqlite3           # 同步组、设备标识、双边基线、问题与操作日志（WAL）
+├─ sync-state.sqlite3           # 同步组、占位符条目、设备标识、双边基线、问题与操作日志（WAL）
 ├─ cache/metadata-cache.json    # 磁盘缓存
 └─ logs/koofr-gui*.jsonl       # 诊断日志
 ```

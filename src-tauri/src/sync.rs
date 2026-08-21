@@ -26,17 +26,178 @@ use tokio_util::{io::ReaderStream, sync::CancellationToken};
 
 use crate::{
     AppState,
+    cloud_files::{self, NativeCallbackRequest},
     error::AppError,
     file_ops::{MountId, RemoteName, RemotePath},
     koofr_api::KoofrApi,
-    transfer::{TransferDirection, TransferManager},
+    transfer::{
+        NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferManager,
+        should_retry_network, wait_for_network_retry,
+    },
 };
+
+pub fn wake_native_pair(app: &AppHandle, pair_id: &str) {
+    let state = app.state::<AppState>();
+    if let Ok(runtimes) = state.sync.runtimes.lock()
+        && let Some(runtime) = runtimes.get(pair_id)
+    {
+        runtime.wake.notify_one();
+    }
+}
+
+pub async fn handle_native_callback(
+    app: AppHandle,
+    pair_id: String,
+    request: NativeCallbackRequest,
+    cancel: CancellationToken,
+) {
+    let manager = app.state::<AppState>().sync.clone();
+    if let NativeCallbackRequest::Delete { operation, .. } = &request {
+        let prepared = manager.prepare_native_delete(&pair_id, &request);
+        let (pair, entry) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let offline = matches!(error, AppError::Network(_) | AppError::NotAuthenticated);
+                manager.set_native_provider_status(
+                    &pair_id,
+                    if offline {
+                        cloud_files::NativeProviderStatus::Offline
+                    } else {
+                        cloud_files::NativeProviderStatus::Error
+                    },
+                );
+                let acknowledgement = if offline {
+                    cloud_files::complete_delete_network_error(*operation)
+                } else {
+                    cloud_files::complete_delete_error(*operation)
+                };
+                if acknowledgement.is_err() {
+                    manager.set_native_provider_status(
+                        &pair_id,
+                        cloud_files::NativeProviderStatus::Error,
+                    );
+                }
+                return;
+            }
+        };
+
+        // The Explorer delete operation must not wait for a remote HTTP request. After
+        // the pair, path, and opaque identity have been validated, acknowledge the
+        // local delete immediately and continue the conditional Koofr delete in this
+        // asynchronous task. The normal scanner remains the retry/reconciliation path.
+        if cloud_files::complete_delete_success(*operation).is_err() {
+            manager.set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Error);
+            return;
+        }
+        manager.set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Syncing);
+        let result = manager.delete_native_placeholder(&app, &pair, &entry).await;
+        match result {
+            Ok(()) => manager
+                .set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Idle),
+            Err(error) => manager.set_native_provider_status(
+                &pair_id,
+                if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+                    cloud_files::NativeProviderStatus::Offline
+                } else {
+                    cloud_files::NativeProviderStatus::Error
+                },
+            ),
+        }
+        wake_native_pair(&app, &pair_id);
+        return;
+    }
+
+    let result = match &request {
+        NativeCallbackRequest::FetchPlaceholders { .. } => {
+            manager
+                .fetch_native_placeholders(&app, &pair_id, &request, &cancel)
+                .await
+        }
+        NativeCallbackRequest::FetchData { .. } => {
+            manager
+                .fetch_native_data(&app, &pair_id, &request, &cancel)
+                .await
+        }
+        NativeCallbackRequest::Delete { .. } => unreachable!("delete handled above"),
+    };
+    if let Err(error) = result {
+        manager.set_native_provider_status(
+            &pair_id,
+            if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+                cloud_files::NativeProviderStatus::Offline
+            } else {
+                cloud_files::NativeProviderStatus::Error
+            },
+        );
+        let operation = match request {
+            NativeCallbackRequest::FetchPlaceholders { operation, .. } => {
+                if cancel.is_cancelled() || matches!(error, AppError::Cancelled) {
+                    cloud_files::complete_placeholders_cancelled(operation);
+                } else {
+                    cloud_files::complete_placeholders_error(operation);
+                }
+                return;
+            }
+            NativeCallbackRequest::FetchData { operation, .. } => operation,
+            NativeCallbackRequest::Delete { .. } => return,
+        };
+        if cancel.is_cancelled() || matches!(error, AppError::Cancelled) {
+            cloud_files::complete_cancelled(operation);
+        } else if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+            cloud_files::complete_network_error(operation);
+        } else {
+            cloud_files::complete_unsuccessful(operation);
+        }
+    }
+}
 
 const SYNC_EVENT: &str = "koofr://sync-state";
 const REMOTE_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 const REMOTE_SCAN_CONCURRENCY: usize = 4;
 const LOCAL_DEBOUNCE: Duration = Duration::from_secs(2);
 const SYNC_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
+const NATIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+pub fn cleanup_native_roots_for_uninstall(database_path: &Path) -> Result<(), AppError> {
+    if !database_path.is_file() {
+        return Ok(());
+    }
+    let connection = Connection::open_with_flags(
+        database_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| AppError::LocalData)?;
+    let columns = connection
+        .prepare("PRAGMA table_info(sync_pairs)")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|_| AppError::LocalData)?;
+    if !columns.iter().any(|column| column == "sync_mode") {
+        return Ok(());
+    }
+    let mut statement = connection
+        .prepare("SELECT id, local_root FROM sync_pairs WHERE sync_mode = 'onDemand'")
+        .map_err(|_| AppError::LocalData)?;
+    let roots = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                PathBuf::from(row.get::<_, String>(1)?),
+            ))
+        })
+        .map_err(|_| AppError::LocalData)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AppError::LocalData)?;
+    for (pair_id, root) in roots {
+        if cloud_files::is_owned_sync_root(&root, &pair_id) {
+            cloud_files::unregister(&root, &pair_id)?;
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +225,13 @@ pub struct SyncPairSummary {
     pub id: String,
     pub local_root: String,
     pub remote_path: String,
+    pub sync_mode: String,
+    pub root_kind: String,
+    pub migration_state: String,
+    pub native_connected: bool,
+    pub online_only_files: u64,
+    pub locally_available_files: u64,
+    pub pinned_files: u64,
     pub status: String,
     pub paused: bool,
     pub pending_items: u64,
@@ -95,8 +263,26 @@ pub struct SyncIssue {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SyncTaskSummary {
+    pub id: String,
+    pub operation: String,
+    pub direction: String,
+    pub display_name: String,
+    pub state: String,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SyncStateEvent {
     pair_id: String,
+    sync_mode: String,
+    root_kind: String,
+    migration_state: String,
+    native_connected: bool,
+    online_only_files: u64,
+    locally_available_files: u64,
+    pinned_files: u64,
     status: String,
     pending_items: u64,
     pending_bytes: u64,
@@ -133,6 +319,23 @@ struct SyncPairRecord {
     issue_count: u64,
     last_error_code: Option<String>,
     baseline: BTreeMap<String, SnapshotEntry>,
+    sync_mode: String,
+    root_kind: String,
+    migration_state: String,
+    online_only_files: u64,
+    locally_available_files: u64,
+    pinned_files: u64,
+}
+
+#[derive(Clone, Debug)]
+struct NativeSyncEntry {
+    entry_key: String,
+    pair_id: String,
+    local_relative: String,
+    remote_path: RemotePath,
+    kind: String,
+    identity: Identity,
+    populated: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -190,6 +393,11 @@ enum Action {
         relative: String,
         remote: RemoteEntry,
     },
+    MoveRemote {
+        from_relative: String,
+        to_relative: String,
+        remote: RemoteEntry,
+    },
     Conflict {
         relative: String,
         local: LocalEntry,
@@ -211,6 +419,8 @@ struct PairRuntime {
     cancel: CancellationToken,
     wake: Arc<Notify>,
     telemetry: Arc<Mutex<SyncTelemetry>>,
+    tasks: Arc<Mutex<Vec<SyncTaskSummary>>>,
+    native_connection: Option<Arc<cloud_files::CloudConnection>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -389,6 +599,31 @@ struct SyncStore {
     device_id: String,
 }
 
+fn ensure_sync_pair_column(
+    connection: &Connection,
+    name: &str,
+    definition: &str,
+) -> Result<(), AppError> {
+    let mut statement = connection
+        .prepare("PRAGMA table_info(sync_pairs)")
+        .map_err(|_| AppError::LocalData)?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|_| AppError::LocalData)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AppError::LocalData)?;
+    if columns.iter().any(|column| column == name) {
+        return Ok(());
+    }
+    connection
+        .execute(
+            &format!("ALTER TABLE sync_pairs ADD COLUMN {name} {definition}"),
+            [],
+        )
+        .map_err(|_| AppError::LocalData)?;
+    Ok(())
+}
+
 impl SyncStore {
     fn open(path: PathBuf) -> Result<Self, AppError> {
         let connection = Connection::open(path).map_err(|_| AppError::LocalData)?;
@@ -436,9 +671,39 @@ impl SyncStore {
                  CREATE TABLE IF NOT EXISTS sync_metadata (
                    key TEXT PRIMARY KEY,
                    value TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS sync_entries (
+                   entry_key TEXT PRIMARY KEY,
+                   pair_id TEXT NOT NULL,
+                   local_relative TEXT NOT NULL,
+                   remote_path TEXT NOT NULL,
+                   kind TEXT NOT NULL,
+                   size INTEGER NOT NULL,
+                   modified INTEGER NOT NULL,
+                   hash TEXT NOT NULL,
+                   populated INTEGER NOT NULL DEFAULT 0,
+                   UNIQUE(pair_id, local_relative)
                  );",
             )
             .map_err(|_| AppError::LocalData)?;
+        ensure_sync_pair_column(&connection, "sync_mode", "TEXT NOT NULL DEFAULT 'classic'")?;
+        ensure_sync_pair_column(&connection, "root_kind", "TEXT NOT NULL DEFAULT 'custom'")?;
+        ensure_sync_pair_column(
+            &connection,
+            "migration_state",
+            "TEXT NOT NULL DEFAULT 'none'",
+        )?;
+        ensure_sync_pair_column(
+            &connection,
+            "online_only_files",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_sync_pair_column(
+            &connection,
+            "locally_available_files",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        ensure_sync_pair_column(&connection, "pinned_files", "INTEGER NOT NULL DEFAULT 0")?;
         let device_id = connection
             .query_row(
                 "SELECT value FROM sync_metadata WHERE key = 'device_id'",
@@ -482,7 +747,8 @@ impl SyncStore {
                 "SELECT id, owner_id, local_root, mount_id, remote_path, paused, status,
                         pending_items, pending_bytes, completed_items, total_items,
                         completed_bytes, total_bytes, last_synced_at, issue_count,
-                        last_error_code, baseline_json
+                        last_error_code, baseline_json, sync_mode, root_kind, migration_state,
+                        online_only_files, locally_available_files, pinned_files
                  FROM sync_pairs WHERE owner_id = ?1 ORDER BY id",
             )
             .map_err(|_| AppError::LocalData)?;
@@ -493,6 +759,18 @@ impl SyncStore {
             .collect()
     }
 
+    fn has_on_demand_pairs(&self) -> Result<bool, AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sync_pairs WHERE sync_mode = 'onDemand'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(count > 0)
+    }
+
     fn pair(&self, pair_id: &str) -> Result<Option<SyncPairRecord>, AppError> {
         let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
         connection
@@ -500,7 +778,8 @@ impl SyncStore {
                 "SELECT id, owner_id, local_root, mount_id, remote_path, paused, status,
                         pending_items, pending_bytes, completed_items, total_items,
                         completed_bytes, total_bytes, last_synced_at, issue_count,
-                        last_error_code, baseline_json
+                        last_error_code, baseline_json, sync_mode, root_kind, migration_state,
+                        online_only_files, locally_available_files, pinned_files
                  FROM sync_pairs WHERE id = ?1",
                 [pair_id],
                 decode_pair,
@@ -514,14 +793,18 @@ impl SyncStore {
         connection
             .execute(
                 "INSERT INTO sync_pairs
-                 (id, owner_id, local_root, mount_id, remote_path, paused, status, baseline_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0, 'initializing', '{}')",
+                 (id, owner_id, local_root, mount_id, remote_path, paused, status, baseline_json,
+                  sync_mode, root_kind, migration_state)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0, 'initializing', '{}', ?6, ?7, ?8)",
                 params![
                     pair.id,
                     pair.owner_id,
                     pair.local_root.to_string_lossy().to_string(),
                     pair.mount_id.as_str(),
                     pair.remote_path.as_str(),
+                    pair.sync_mode,
+                    pair.root_kind,
+                    pair.migration_state,
                 ],
             )
             .map_err(|_| AppError::LocalData)?;
@@ -540,9 +823,160 @@ impl SyncStore {
             .execute("DELETE FROM sync_operations WHERE pair_id = ?1", [pair_id])
             .map_err(|_| AppError::LocalData)?;
         transaction
+            .execute("DELETE FROM sync_entries WHERE pair_id = ?1", [pair_id])
+            .map_err(|_| AppError::LocalData)?;
+        transaction
             .execute("DELETE FROM sync_pairs WHERE id = ?1", [pair_id])
             .map_err(|_| AppError::LocalData)?;
         transaction.commit().map_err(|_| AppError::LocalData)
+    }
+
+    fn native_entry(&self, entry_key: &str) -> Result<Option<NativeSyncEntry>, AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .query_row(
+                "SELECT entry_key, pair_id, local_relative, remote_path, kind, size, modified, hash, populated
+                 FROM sync_entries WHERE entry_key = ?1",
+                [entry_key],
+                decode_native_entry,
+            )
+            .optional()
+            .map_err(|_| AppError::LocalData)
+    }
+
+    fn native_entry_for_local(
+        &self,
+        pair_id: &str,
+        local_relative: &str,
+    ) -> Result<Option<NativeSyncEntry>, AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .query_row(
+                "SELECT entry_key, pair_id, local_relative, remote_path, kind, size, modified, hash, populated
+                 FROM sync_entries WHERE pair_id = ?1 AND local_relative = ?2",
+                params![pair_id, local_relative],
+                decode_native_entry,
+            )
+            .optional()
+            .map_err(|_| AppError::LocalData)
+    }
+
+    fn native_entries_for_pair(&self, pair_id: &str) -> Result<Vec<NativeSyncEntry>, AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT entry_key, pair_id, local_relative, remote_path, kind, size, modified, hash, populated
+                 FROM sync_entries WHERE pair_id = ?1 ORDER BY local_relative",
+            )
+            .map_err(|_| AppError::LocalData)?;
+        let rows = statement
+            .query_map([pair_id], decode_native_entry)
+            .map_err(|_| AppError::LocalData)?;
+        rows.map(|row| row.map_err(|_| AppError::LocalData))
+            .collect()
+    }
+
+    fn upsert_native_entry(&self, mut entry: NativeSyncEntry) -> Result<NativeSyncEntry, AppError> {
+        if let Some(existing) =
+            self.native_entry_for_local(&entry.pair_id, &entry.local_relative)?
+        {
+            entry.entry_key = existing.entry_key;
+            entry.populated |= existing.populated;
+        }
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "INSERT INTO sync_entries
+                 (entry_key, pair_id, local_relative, remote_path, kind, size, modified, hash, populated)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(pair_id, local_relative) DO UPDATE SET
+                   remote_path = excluded.remote_path,
+                   kind = excluded.kind,
+                   size = excluded.size,
+                   modified = excluded.modified,
+                   hash = excluded.hash,
+                   populated = MAX(sync_entries.populated, excluded.populated)",
+                params![
+                    entry.entry_key,
+                    entry.pair_id,
+                    entry.local_relative,
+                    entry.remote_path.as_str(),
+                    entry.kind,
+                    entry.identity.size,
+                    entry.identity.modified,
+                    entry.identity.hash,
+                    i64::from(entry.populated),
+                ],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(entry)
+    }
+
+    fn set_native_directory_populated(
+        &self,
+        pair_id: &str,
+        local_relative: &str,
+    ) -> Result<(), AppError> {
+        if local_relative.is_empty() {
+            return Ok(());
+        }
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "UPDATE sync_entries SET populated = 1 WHERE pair_id = ?1 AND local_relative = ?2 AND kind = 'dir'",
+                params![pair_id, local_relative],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(())
+    }
+
+    fn rename_native_entry(
+        &self,
+        pair_id: &str,
+        from_relative: &str,
+        to_relative: &str,
+        remote_path: &RemotePath,
+    ) -> Result<(), AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "UPDATE sync_entries SET local_relative = ?3, remote_path = ?4
+                 WHERE pair_id = ?1 AND local_relative = ?2",
+                params![pair_id, from_relative, to_relative, remote_path.as_str()],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(())
+    }
+
+    fn update_native_counts(
+        &self,
+        pair_id: &str,
+        online_only: u64,
+        available: u64,
+        pinned: u64,
+    ) -> Result<(), AppError> {
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "UPDATE sync_pairs SET online_only_files = ?2, locally_available_files = ?3, pinned_files = ?4 WHERE id = ?1",
+                params![pair_id, online_only as i64, available as i64, pinned as i64],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(())
+    }
+
+    fn set_migration_state(&self, pair_id: &str, state: &str) -> Result<(), AppError> {
+        if !matches!(state, "none" | "preflight" | "staging" | "ready" | "failed") {
+            return Err(AppError::InvalidInput("sync migration state"));
+        }
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "UPDATE sync_pairs SET migration_state = ?2 WHERE id = ?1",
+                params![pair_id, state],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(())
     }
 
     fn set_paused(&self, pair_id: &str, paused: bool) -> Result<(), AppError> {
@@ -725,6 +1159,30 @@ fn decode_pair(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncPairRecord> {
         issue_count: row.get::<_, i64>(14)?.max(0) as u64,
         last_error_code: row.get(15)?,
         baseline: serde_json::from_str(&baseline_json).unwrap_or_default(),
+        sync_mode: row.get(17)?,
+        root_kind: row.get(18)?,
+        migration_state: row.get(19)?,
+        online_only_files: row.get::<_, i64>(20)?.max(0) as u64,
+        locally_available_files: row.get::<_, i64>(21)?.max(0) as u64,
+        pinned_files: row.get::<_, i64>(22)?.max(0) as u64,
+    })
+}
+
+fn decode_native_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<NativeSyncEntry> {
+    let remote_path =
+        RemotePath::parse(row.get::<_, String>(3)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(NativeSyncEntry {
+        entry_key: row.get(0)?,
+        pair_id: row.get(1)?,
+        local_relative: row.get(2)?,
+        remote_path,
+        kind: row.get(4)?,
+        identity: Identity {
+            size: row.get(5)?,
+            modified: row.get(6)?,
+            hash: row.get(7)?,
+        },
+        populated: row.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -747,15 +1205,29 @@ impl SyncManager {
             .pairs_for_owner(owner_id)?
             .into_iter()
             .map(|pair| {
-                let telemetry = self
+                let runtime = self
                     .runtimes
                     .lock()
                     .map_err(|_| AppError::LocalData)?
                     .get(&pair.id)
-                    .map(|runtime| runtime.telemetry.clone());
-                summary(pair, telemetry.as_deref())
+                    .map(|runtime| {
+                        (
+                            runtime.telemetry.clone(),
+                            runtime.native_connection.is_some(),
+                        )
+                    });
+                let native_connected = runtime.as_ref().is_some_and(|runtime| runtime.1);
+                summary(
+                    pair,
+                    runtime.as_ref().map(|runtime| runtime.0.as_ref()),
+                    native_connected,
+                )
             })
             .collect()
+    }
+
+    pub fn native_background_required(&self) -> Result<bool, AppError> {
+        self.store.has_on_demand_pairs()
     }
 
     pub fn list_issues(&self, owner_id: &str, pair_id: &str) -> Result<Vec<SyncIssue>, AppError> {
@@ -764,6 +1236,27 @@ impl SyncManager {
             return Err(AppError::Forbidden);
         }
         self.store.issues(pair_id)
+    }
+
+    pub fn list_tasks(
+        &self,
+        owner_id: &str,
+        pair_id: &str,
+    ) -> Result<Vec<SyncTaskSummary>, AppError> {
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        if pair.owner_id != owner_id {
+            return Err(AppError::Forbidden);
+        }
+        let tasks = self.task_tracker_for(pair_id)?;
+        let tasks = tasks.lock().map_err(|_| AppError::LocalData)?;
+        let focus = tasks
+            .iter()
+            .position(|task| matches!(task.state.as_str(), "running" | "waiting"))
+            .or_else(|| tasks.iter().position(|task| task.state == "queued"))
+            .or_else(|| tasks.iter().position(|task| task.state == "failed"))
+            .unwrap_or_else(|| tasks.len().saturating_sub(10));
+        let start = focus.saturating_sub(2);
+        Ok(tasks.iter().skip(start).take(30).cloned().collect())
     }
 
     pub async fn create_pair(
@@ -821,10 +1314,220 @@ impl SyncManager {
             issue_count: 0,
             last_error_code: None,
             baseline: BTreeMap::new(),
+            sync_mode: "classic".to_owned(),
+            root_kind: "custom".to_owned(),
+            migration_state: "none".to_owned(),
+            online_only_files: 0,
+            locally_available_files: 0,
+            pinned_files: 0,
         };
         self.store.insert_pair(&pair)?;
         self.start_pair(app, &pair.id)?;
-        summary(pair, None)
+        summary(pair, None, false)
+    }
+
+    pub fn native_capability(&self) -> cloud_files::NativeSyncCapability {
+        cloud_files::capability()
+    }
+
+    pub async fn create_on_demand_pair(
+        &self,
+        app: AppHandle,
+        owner_id: String,
+        local_root: PathBuf,
+        mount_id: MountId,
+        remote_path: RemotePath,
+        root_kind: String,
+    ) -> Result<SyncPairSummary, AppError> {
+        self.create_on_demand_pair_inner(
+            app,
+            owner_id,
+            local_root,
+            mount_id,
+            remote_path,
+            root_kind,
+            "none",
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn create_on_demand_pair_inner(
+        &self,
+        app: AppHandle,
+        owner_id: String,
+        local_root: PathBuf,
+        mount_id: MountId,
+        remote_path: RemotePath,
+        root_kind: String,
+        migration_state: &str,
+        ignored_pair_id: Option<&str>,
+    ) -> Result<SyncPairSummary, AppError> {
+        if !cloud_files::capability().supported {
+            return Err(AppError::Initialization);
+        }
+        if !matches!(root_kind.as_str(), "unified" | "custom")
+            || root_kind == "unified" && remote_path.as_str() != "/"
+            || root_kind == "custom" && remote_path.as_str() == "/"
+        {
+            return Err(AppError::InvalidInput("sync root kind"));
+        }
+        validate_local_root(&local_root).await?;
+        let state = app.state::<AppState>();
+        let mounts = state.api.list_mounts().await?;
+        let primary = mounts
+            .iter()
+            .find(|mount| mount.id == mount_id.as_str() && mount.is_primary && mount.online)
+            .ok_or(AppError::Forbidden)?;
+        if !primary.mount_type.eq_ignore_ascii_case("device")
+            || primary.mount_type.eq_ignore_ascii_case("vault")
+            || primary.is_shared
+        {
+            return Err(AppError::Forbidden);
+        }
+        let remote = state.api.file_info(&mount_id, &remote_path).await?;
+        if !is_directory(&remote.entry_type) {
+            return Err(AppError::InvalidInput("sync remote directory"));
+        }
+        for existing in self.store.pairs_for_owner(&owner_id)? {
+            if ignored_pair_id.is_some_and(|ignored| existing.id == ignored) {
+                continue;
+            }
+            if roots_overlap(&existing.local_root, &local_root)
+                || remote_roots_overlap(
+                    &existing.mount_id,
+                    &existing.remote_path,
+                    &mount_id,
+                    &remote_path,
+                )
+            {
+                return Err(AppError::Conflict);
+            }
+        }
+        let pair = SyncPairRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            owner_id,
+            local_root,
+            mount_id,
+            remote_path,
+            paused: false,
+            status: "initializing".to_owned(),
+            pending_items: 0,
+            pending_bytes: 0,
+            completed_items: 0,
+            total_items: 0,
+            completed_bytes: 0,
+            total_bytes: 0,
+            last_synced_at: None,
+            issue_count: 0,
+            last_error_code: None,
+            baseline: BTreeMap::new(),
+            sync_mode: "onDemand".to_owned(),
+            root_kind,
+            migration_state: migration_state.to_owned(),
+            online_only_files: 0,
+            locally_available_files: 0,
+            pinned_files: 0,
+        };
+        self.store.insert_pair(&pair)?;
+        if let Err(error) = cloud_files::register(&pair.local_root, &pair.id) {
+            let _ = self.store.delete_pair(&pair.id);
+            return Err(error);
+        }
+        if let Err(error) = self.start_pair(app, &pair.id) {
+            let _ = cloud_files::unregister(&pair.local_root, &pair.id);
+            let _ = self.store.delete_pair(&pair.id);
+            return Err(error);
+        }
+        summary(pair, None, true)
+    }
+
+    pub async fn migrate_pair(
+        &self,
+        app: AppHandle,
+        owner_id: String,
+        source_pair_id: &str,
+        local_root: PathBuf,
+        root_kind: String,
+    ) -> Result<SyncPairSummary, AppError> {
+        let source = self.store.pair(source_pair_id)?.ok_or(AppError::NotFound)?;
+        if source.owner_id != owner_id {
+            return Err(AppError::Forbidden);
+        }
+        validate_local_root(&local_root).await?;
+        if source.sync_mode != "classic" || source.status != "idle" || source.issue_count != 0 {
+            return Err(AppError::Conflict);
+        }
+        if std::fs::read_dir(&local_root)
+            .map_err(AppError::Io)?
+            .next()
+            .is_some()
+        {
+            return Err(AppError::Conflict);
+        }
+        self.store
+            .set_migration_state(source_pair_id, "preflight")?;
+        match self.set_paused(&owner_id, source_pair_id, true) {
+            Ok(true) => {}
+            Ok(false) => {
+                let _ = self.store.set_migration_state(source_pair_id, "none");
+                return Err(AppError::Conflict);
+            }
+            Err(error) => {
+                let _ = self.store.set_migration_state(source_pair_id, "none");
+                return Err(error);
+            }
+        }
+        let created = self
+            .create_on_demand_pair_inner(
+                app,
+                owner_id.clone(),
+                local_root,
+                source.mount_id.clone(),
+                source.remote_path.clone(),
+                root_kind,
+                "staging",
+                Some(source_pair_id),
+            )
+            .await;
+        let created = match created {
+            Ok(created) => created,
+            Err(error) => {
+                let _ = self.store.set_migration_state(source_pair_id, "none");
+                let _ = self.set_paused(&owner_id, source_pair_id, false);
+                return Err(error);
+            }
+        };
+        let validation = tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                let current = self.store.pair(&created.id)?.ok_or(AppError::NotFound)?;
+                match current.status.as_str() {
+                    "idle" => return Ok::<(), AppError>(()),
+                    "attention" | "offline" | "paused" => return Err(AppError::Conflict),
+                    _ => tokio::time::sleep(Duration::from_millis(250)).await,
+                }
+            }
+        })
+        .await
+        .map_err(|_| AppError::LocalData)
+        .and_then(|result| result);
+        if let Err(error) = validation {
+            let _ = self.store.set_migration_state(&created.id, "failed");
+            let _ = self.remove_pair(&owner_id, &created.id);
+            let _ = self.store.set_migration_state(source_pair_id, "none");
+            let _ = self.set_paused(&owner_id, source_pair_id, false);
+            return Err(error);
+        }
+        self.store.set_migration_state(&created.id, "ready")?;
+        if let Err(error) = self.remove_pair(&owner_id, source_pair_id) {
+            let _ = self.remove_pair(&owner_id, &created.id);
+            let _ = self.store.set_migration_state(source_pair_id, "none");
+            let _ = self.set_paused(&owner_id, source_pair_id, false);
+            return Err(error);
+        }
+        let migrated = self.store.pair(&created.id)?.ok_or(AppError::NotFound)?;
+        summary(migrated, None, true)
     }
 
     pub fn remove_pair(&self, owner_id: &str, pair_id: &str) -> Result<bool, AppError> {
@@ -841,6 +1544,10 @@ impl SyncManager {
             .remove(pair_id)
         {
             runtime.cancel.cancel();
+            drop(runtime);
+        }
+        if pair.sync_mode == "onDemand" {
+            cloud_files::unregister(&pair.local_root, &pair.id)?;
         }
         self.store.delete_pair(pair_id)?;
         Ok(true)
@@ -868,9 +1575,16 @@ impl SyncManager {
             return Ok(false);
         };
         self.store.set_paused(pair_id, paused)?;
-        if !paused {
-            runtime.wake.notify_one();
+        if pair.sync_mode == "onDemand"
+            && let Some(connection) = runtime.native_connection.as_ref()
+        {
+            connection.set_status(if paused {
+                cloud_files::NativeProviderStatus::Paused
+            } else {
+                cloud_files::NativeProviderStatus::Idle
+            });
         }
+        runtime.wake.notify_one();
         Ok(true)
     }
 
@@ -893,6 +1607,14 @@ impl SyncManager {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn open_root(&self, owner_id: &str, pair_id: &str) -> Result<(), AppError> {
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        if pair.owner_id != owner_id {
+            return Err(AppError::Forbidden);
+        }
+        crate::local_open::open(&pair.local_root)
     }
 
     pub fn stop_all(&self) {
@@ -920,6 +1642,61 @@ impl SyncManager {
             .ok_or(AppError::NotFound)
     }
 
+    fn task_tracker_for(
+        &self,
+        pair_id: &str,
+    ) -> Result<Arc<Mutex<Vec<SyncTaskSummary>>>, AppError> {
+        self.runtimes
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .get(pair_id)
+            .map(|runtime| runtime.tasks.clone())
+            .ok_or(AppError::NotFound)
+    }
+
+    fn clear_tasks(&self, pair_id: &str) -> Result<(), AppError> {
+        self.task_tracker_for(pair_id)?
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .clear();
+        Ok(())
+    }
+
+    fn set_task_plan(&self, pair_id: &str, actions: &[Action]) -> Result<(), AppError> {
+        let tasks = actions
+            .iter()
+            .enumerate()
+            .map(|(index, action)| sync_task_summary(index, action))
+            .collect();
+        *self
+            .task_tracker_for(pair_id)?
+            .lock()
+            .map_err(|_| AppError::LocalData)? = tasks;
+        Ok(())
+    }
+
+    fn set_task_state(&self, pair_id: &str, index: usize, state: &str) -> Result<(), AppError> {
+        if let Some(task) = self
+            .task_tracker_for(pair_id)?
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .get_mut(index)
+        {
+            task.state = state.to_owned();
+        }
+        Ok(())
+    }
+
+    fn set_native_provider_status(&self, pair_id: &str, status: cloud_files::NativeProviderStatus) {
+        if let Ok(runtimes) = self.runtimes.lock()
+            && let Some(connection) = runtimes
+                .get(pair_id)
+                .and_then(|runtime| runtime.native_connection.as_ref())
+        {
+            connection.set_status(status);
+        }
+    }
+
     fn start_pair(&self, app: AppHandle, pair_id: &str) -> Result<(), AppError> {
         let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
         let mut runtimes = self.runtimes.lock().map_err(|_| AppError::LocalData)?;
@@ -935,10 +1712,22 @@ impl SyncManager {
             last_scan_at: pair.last_synced_at,
             ..SyncTelemetry::default()
         }));
+        let native_connection = if pair.sync_mode == "onDemand" {
+            cloud_files::register(&pair.local_root, &pair.id)?;
+            Some(Arc::new(cloud_files::connect(
+                &pair.local_root,
+                app.clone(),
+                pair.id.clone(),
+            )?))
+        } else {
+            None
+        };
         let runtime = PairRuntime {
             cancel: cancel.clone(),
             wake: wake.clone(),
             telemetry: telemetry.clone(),
+            tasks: Arc::new(Mutex::new(Vec::new())),
+            native_connection,
         };
         runtimes.insert(pair_id.to_owned(), runtime);
         drop(runtimes);
@@ -969,8 +1758,823 @@ impl SyncManager {
 
         let manager = self.clone();
         let pair_id = pair_id.to_owned();
-        tauri::async_runtime::spawn(manager.run_pair_loop(app, pair_id, cancel, wake));
+        if pair.sync_mode == "onDemand" {
+            tauri::async_runtime::spawn(manager.run_native_pair_loop(app, pair_id, cancel, wake));
+        } else {
+            tauri::async_runtime::spawn(manager.run_pair_loop(app, pair_id, cancel, wake));
+        }
         Ok(())
+    }
+
+    async fn fetch_native_placeholders(
+        &self,
+        app: &AppHandle,
+        pair_id: &str,
+        request: &NativeCallbackRequest,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let NativeCallbackRequest::FetchPlaceholders {
+            operation,
+            local_path: local_directory,
+        } = request
+        else {
+            return Err(AppError::InvalidInput("native callback"));
+        };
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        if pair.sync_mode != "onDemand" || pair.paused {
+            return Err(AppError::Cancelled);
+        }
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Syncing);
+        let relative = native_relative_path(&pair.local_root, local_directory)?;
+        let remote_directory = if relative.is_empty() {
+            pair.remote_path.clone()
+        } else {
+            let entry = self
+                .store
+                .native_entry_for_local(pair_id, &relative)?
+                .ok_or(AppError::NotFound)?;
+            if entry.kind != "dir" {
+                return Err(AppError::InvalidInput("native directory"));
+            }
+            entry.remote_path
+        };
+        let rules = load_ignore_rules(&pair.local_root)?;
+        let state = app.state::<AppState>();
+        let files = tokio::select! {
+            result = tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, state.api.list_files(&pair.mount_id, &remote_directory)) => result.map_err(|_| native_timeout_error())??,
+            () = cancel.cancelled() => return Err(AppError::Cancelled),
+        };
+        let mut specs = Vec::new();
+        for file in files {
+            if cancel.is_cancelled() {
+                return Err(AppError::Cancelled);
+            }
+            let child_relative = if relative.is_empty() {
+                file.name.clone()
+            } else {
+                format!("{relative}/{}", file.name)
+            };
+            if child_relative != ".syncignore"
+                && (is_builtin_ignored(&child_relative) || matches_ignore(&rules, &child_relative))
+            {
+                continue;
+            }
+            let name = RemoteName::parse(file.name.clone())?;
+            let remote_path = remote_directory.join(&name)?;
+            let is_directory = is_directory(&file.entry_type);
+            let entry = self.store.upsert_native_entry(NativeSyncEntry {
+                entry_key: uuid::Uuid::new_v4().to_string(),
+                pair_id: pair_id.to_owned(),
+                local_relative: child_relative.clone(),
+                remote_path,
+                kind: if is_directory { "dir" } else { "file" }.to_owned(),
+                identity: Identity {
+                    size: file.size,
+                    modified: file.modified,
+                    hash: file.hash,
+                },
+                populated: false,
+            })?;
+            let target = local_path(&pair.local_root, &child_relative)?;
+            if cloud_files::placeholder_state(&target)?.is_none() {
+                match fs::symlink_metadata(&target) {
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        specs.push(native_placeholder_spec(&file.name, &entry));
+                    }
+                    Err(error) => return Err(AppError::Io(error)),
+                }
+            }
+        }
+        cloud_files::transfer_placeholders(*operation, &specs)?;
+        self.store
+            .set_native_directory_populated(pair_id, &relative)?;
+        self.refresh_native_counts(pair_id)?;
+        self.emit_summary(app, pair_id)?;
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Idle);
+        Ok(())
+    }
+
+    async fn fetch_native_data(
+        &self,
+        app: &AppHandle,
+        pair_id: &str,
+        request: &NativeCallbackRequest,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let NativeCallbackRequest::FetchData {
+            operation,
+            entry_key,
+            required_offset,
+            required_length,
+        } = request
+        else {
+            return Err(AppError::InvalidInput("native callback"));
+        };
+        if *required_offset < 0 || *required_length < 0 {
+            return Err(AppError::InvalidInput("native data range"));
+        }
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        let mut entry = self
+            .store
+            .native_entry(entry_key)?
+            .filter(|entry| entry.pair_id == pair_id && entry.kind == "file")
+            .ok_or(AppError::NotFound)?;
+        if pair.paused {
+            return Err(AppError::Cancelled);
+        }
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Syncing);
+        let state = app.state::<AppState>();
+        let remote = tokio::select! {
+            result = tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, state.api.file_info(&pair.mount_id, &entry.remote_path)) => result.map_err(|_| native_timeout_error())??,
+            () = cancel.cancelled() => return Err(AppError::Cancelled),
+        };
+        if is_directory(&remote.entry_type) {
+            return Err(AppError::Conflict);
+        }
+        entry.identity = Identity {
+            size: remote.size,
+            modified: remote.modified,
+            hash: remote.hash,
+        };
+        entry = self.store.upsert_native_entry(entry)?;
+
+        let transfer_id = uuid::Uuid::new_v4().to_string();
+        let _permit = state
+            .transfers
+            .acquire(TransferDirection::Download, cancel)
+            .await?;
+        let retry_policy = NetworkRetryPolicy::from(state.settings.network_retry_settings().await);
+        let telemetry = self.telemetry_for(pair_id)?;
+        let mut digest = Md5::new();
+        let mut pending = Vec::with_capacity(1024 * 1024 + 4096);
+        let mut offset = 0_i64;
+        let mut total = 0_u64;
+        let mut retries_completed = 0_u32;
+        'download: loop {
+            let response_result = tokio::select! {
+                result = tokio::time::timeout(
+                    NATIVE_REQUEST_TIMEOUT,
+                    state.api.download_response_from(&pair.mount_id, &entry.remote_path, total),
+                ) => result.map_err(|_| native_timeout_error())?,
+                () = cancel.cancelled() => return Err(AppError::Cancelled),
+            };
+            let response = match response_result {
+                Ok(response) => response,
+                Err(error) => {
+                    let failure = Err::<(), AppError>(error);
+                    if !should_retry_network(&failure, retry_policy, retries_completed) {
+                        return failure;
+                    }
+                    retries_completed = retries_completed.saturating_add(1);
+                    wait_for_network_retry(NetworkRetryRequest {
+                        app,
+                        cancel,
+                        transfer_id: &transfer_id,
+                        direction: TransferDirection::Download,
+                        retry_attempt: retries_completed,
+                        bytes_transferred: total,
+                        total_bytes: Some(entry.identity.size.max(0) as u64),
+                        split_progress: None,
+                        policy: retry_policy,
+                    })
+                    .await?;
+                    continue;
+                }
+            };
+            if total > 0 && response.status() == reqwest::StatusCode::OK {
+                digest = Md5::new();
+                pending.clear();
+                offset = 0;
+                total = 0;
+            } else if total > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+                return Err(AppError::IncompleteTransfer);
+            }
+            let mut stream = response.bytes_stream();
+            loop {
+                let next = tokio::select! {
+                    item = tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, stream.next()) => item.map_err(|_| native_timeout_error())?,
+                    () = cancel.cancelled() => return Err(AppError::Cancelled),
+                };
+                match next {
+                    Some(Ok(chunk)) => {
+                        state
+                            .transfers
+                            .throttle(&transfer_id, chunk.len(), cancel)
+                            .await?;
+                        digest.update(&chunk);
+                        total = total.saturating_add(chunk.len() as u64);
+                        pending.extend_from_slice(&chunk);
+                        let aligned = aligned_native_chunk_length(pending.len());
+                        if aligned > 0 {
+                            cloud_files::transfer_data(*operation, offset, &pending[..aligned])?;
+                            offset = offset.saturating_add(aligned as i64);
+                            pending.drain(..aligned);
+                        }
+                        if let Ok(mut telemetry) = telemetry.lock() {
+                            telemetry.record(false, chunk.len() as u64);
+                        }
+                    }
+                    Some(Err(error)) => {
+                        let failure = Err::<(), AppError>(AppError::Network(error));
+                        if !should_retry_network(&failure, retry_policy, retries_completed) {
+                            return failure;
+                        }
+                        retries_completed = retries_completed.saturating_add(1);
+                        wait_for_network_retry(NetworkRetryRequest {
+                            app,
+                            cancel,
+                            transfer_id: &transfer_id,
+                            direction: TransferDirection::Download,
+                            retry_attempt: retries_completed,
+                            bytes_transferred: total,
+                            total_bytes: Some(entry.identity.size.max(0) as u64),
+                            split_progress: None,
+                            policy: retry_policy,
+                        })
+                        .await?;
+                        continue 'download;
+                    }
+                    None => break 'download,
+                }
+            }
+        }
+        if !pending.is_empty() || total == 0 {
+            cloud_files::transfer_data(*operation, offset, &pending)?;
+        }
+        if total != entry.identity.size.max(0) as u64 {
+            return Err(AppError::IncompleteTransfer);
+        }
+        let hash = format!("{:x}", digest.finalize());
+        if !entry.identity.hash.is_empty() && !hash.eq_ignore_ascii_case(&entry.identity.hash) {
+            return Err(AppError::Integrity);
+        }
+        self.refresh_native_counts(pair_id)?;
+        self.emit_summary(app, pair_id)?;
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Idle);
+        Ok(())
+    }
+
+    fn prepare_native_delete(
+        &self,
+        pair_id: &str,
+        request: &NativeCallbackRequest,
+    ) -> Result<(SyncPairRecord, NativeSyncEntry), AppError> {
+        let NativeCallbackRequest::Delete {
+            entry_key,
+            local_path: callback_path,
+            ..
+        } = request
+        else {
+            return Err(AppError::InvalidInput("native callback"));
+        };
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        if pair.sync_mode != "onDemand" || pair.paused {
+            return Err(AppError::Cancelled);
+        }
+        let entry = self
+            .store
+            .native_entry(entry_key)?
+            .filter(|entry| entry.pair_id == pair_id)
+            .ok_or(AppError::NotFound)?;
+        let callback_relative = native_relative_path(&pair.local_root, callback_path)?;
+        if callback_relative != entry.local_relative || callback_relative.is_empty() {
+            return Err(AppError::Forbidden);
+        }
+        Ok((pair, entry))
+    }
+
+    async fn delete_native_placeholder(
+        &self,
+        app: &AppHandle,
+        pair: &SyncPairRecord,
+        entry: &NativeSyncEntry,
+    ) -> Result<(), AppError> {
+        let state = app.state::<AppState>();
+        let deletion = tokio::time::timeout(
+            NATIVE_REQUEST_TIMEOUT,
+            state.api.delete_conditional(
+                &pair.mount_id,
+                &entry.remote_path,
+                Some((
+                    &entry.identity.hash,
+                    entry.identity.size,
+                    entry.identity.modified,
+                )),
+            ),
+        )
+        .await
+        .map_err(|_| native_timeout_error())?;
+        match deletion {
+            Ok(()) | Err(AppError::NotFound) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn ensure_native_placeholder(
+        &self,
+        pair: &SyncPairRecord,
+        relative: &str,
+        remote: &RemoteEntry,
+    ) -> Result<(), AppError> {
+        let old = self.store.native_entry_for_local(&pair.id, relative)?;
+        let entry = self.store.upsert_native_entry(NativeSyncEntry {
+            entry_key: uuid::Uuid::new_v4().to_string(),
+            pair_id: pair.id.clone(),
+            local_relative: relative.to_owned(),
+            remote_path: remote.path.clone(),
+            kind: remote.kind.clone(),
+            identity: remote.identity.clone(),
+            populated: old.as_ref().is_some_and(|entry| entry.populated),
+        })?;
+        let target = local_path(&pair.local_root, relative)?;
+        validate_native_local_parent(&pair.local_root, &target, &pair.id)?;
+        let name = target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or(AppError::InvalidInput("sync file name"))?;
+        let spec = native_placeholder_spec(name, &entry);
+        if let Some(state) = cloud_files::placeholder_state(&target)? {
+            let changed = old
+                .as_ref()
+                .is_none_or(|old| old.kind != entry.kind || old.identity != entry.identity);
+            if changed {
+                if entry.kind == "file" && state.pinned && state.in_sync {
+                    cloud_files::set_pinned(&target, false)?;
+                    cloud_files::update_placeholder(&target, &spec, true)?;
+                    cloud_files::set_pinned(&target, true)?;
+                } else {
+                    cloud_files::update_placeholder(
+                        &target,
+                        &spec,
+                        entry.kind == "file" && state.in_sync && !state.partial,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) => {
+                if is_reparse_point(&metadata) {
+                    return Err(AppError::InvalidInput("native sync local entry"));
+                }
+                cloud_files::convert_to_placeholder(
+                    &target,
+                    &entry.entry_key,
+                    entry.kind == "dir",
+                )?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let parent = target
+                    .parent()
+                    .ok_or(AppError::InvalidInput("sync local path"))?;
+                fs::create_dir_all(parent)?;
+                cloud_files::create_placeholders(parent, &[spec])?;
+            }
+            Err(error) => return Err(AppError::Io(error)),
+        }
+        Ok(())
+    }
+
+    fn refresh_native_counts(&self, pair_id: &str) -> Result<(), AppError> {
+        let pair = self.store.pair(pair_id)?.ok_or(AppError::NotFound)?;
+        let mut online_only = 0_u64;
+        let mut available = 0_u64;
+        let mut pinned = 0_u64;
+        for entry in self.store.native_entries_for_pair(pair_id)? {
+            if entry.kind != "file" {
+                continue;
+            }
+            let target = local_path(&pair.local_root, &entry.local_relative)?;
+            match cloud_files::placeholder_state(&target)? {
+                Some(state) => {
+                    if state.pinned {
+                        pinned = pinned.saturating_add(1);
+                    }
+                    if state.partial {
+                        online_only = online_only.saturating_add(1);
+                    } else {
+                        available = available.saturating_add(1);
+                    }
+                }
+                None => match fs::symlink_metadata(&target) {
+                    Ok(metadata) if metadata.is_file() => {
+                        available = available.saturating_add(1);
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(AppError::Io(error)),
+                },
+            }
+        }
+        self.store
+            .update_native_counts(pair_id, online_only, available, pinned)
+    }
+
+    async fn execute_native_action(
+        &self,
+        app: &AppHandle,
+        pair: &SyncPairRecord,
+        action: &Action,
+        remote_entries: &BTreeMap<String, RemoteEntry>,
+        cancel: &CancellationToken,
+        telemetry: Arc<Mutex<SyncTelemetry>>,
+    ) -> Result<u64, AppError> {
+        match action {
+            Action::EnsureLocalDir { relative } => {
+                let remote = remote_entries.get(relative).ok_or(AppError::NotFound)?;
+                self.ensure_native_placeholder(pair, relative, remote)?;
+                Ok(0)
+            }
+            Action::Download {
+                relative, remote, ..
+            } => {
+                self.ensure_native_placeholder(pair, relative, remote)?;
+                Ok(0)
+            }
+            Action::DeleteLocal { relative, expected } => {
+                let path = local_path(&pair.local_root, relative)?;
+                if let Some(state) = cloud_files::placeholder_state(&path)? {
+                    let entry = self
+                        .store
+                        .native_entry_for_local(&pair.id, relative)?
+                        .ok_or(AppError::Conflict)?;
+                    if entry.identity != *expected || !state.in_sync {
+                        return Err(AppError::Conflict);
+                    }
+                    if entry.kind == "dir" {
+                        fs::remove_dir_all(path)?;
+                    } else {
+                        fs::remove_file(path)?;
+                    }
+                    Ok(0)
+                } else {
+                    execute_action(app, pair, action, self.store.device_id(), cancel, telemetry)
+                        .await
+                }
+            }
+            Action::MoveRemote {
+                from_relative,
+                to_relative,
+                remote,
+            } => {
+                let state = app.state::<AppState>();
+                let current = state.api.file_info(&pair.mount_id, &remote.path).await?;
+                let current_identity = Identity {
+                    size: current.size,
+                    modified: current.modified,
+                    hash: current.hash,
+                };
+                if !same_content(&current_identity, &remote.identity) {
+                    return Err(AppError::Conflict);
+                }
+                let destination = remote_path_for(&pair.remote_path, to_relative)?;
+                state
+                    .api
+                    .move_to(&pair.mount_id, &remote.path, &pair.mount_id, &destination)
+                    .await?;
+                self.store.rename_native_entry(
+                    &pair.id,
+                    from_relative,
+                    to_relative,
+                    &destination,
+                )?;
+                Ok(0)
+            }
+            _ => execute_action(app, pair, action, self.store.device_id(), cancel, telemetry).await,
+        }
+    }
+
+    async fn run_native_once(
+        &self,
+        app: &AppHandle,
+        pair_id: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), AppError> {
+        let Some(pair) = self.store.pair(pair_id)? else {
+            return Ok(());
+        };
+        let telemetry = self.telemetry_for(pair_id)?;
+        if pair.paused {
+            self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Paused);
+            telemetry
+                .lock()
+                .map_err(|_| AppError::LocalData)?
+                .clear_active();
+            self.emit_summary(app, pair_id)?;
+            return Ok(());
+        }
+        self.store
+            .update_progress(pair_id, "scanning", 0, 0, 0, 0, 0, 0, None, None)?;
+        self.clear_tasks(pair_id)?;
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Scanning);
+        telemetry
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .begin_scanning();
+        self.emit_summary(app, pair_id)?;
+
+        let native_entries = self.store.native_entries_for_pair(pair_id)?;
+        let known = baseline_local_identities(&pair.baseline);
+        let root = pair.local_root.clone();
+        let scan_pair_id = pair.id.clone();
+        let local_scan = tokio::task::spawn_blocking(move || {
+            scan_native_local(&root, &scan_pair_id, &native_entries, &known)
+        })
+        .await
+        .map_err(|_| AppError::LocalData)??;
+        if cancel.is_cancelled() {
+            return Err(AppError::Cancelled);
+        }
+        let rules = load_ignore_rules(&pair.local_root)?;
+        let remote = match scan_native_remote(
+            &app.state::<AppState>().api,
+            &pair.mount_id,
+            &pair.remote_path,
+            &rules,
+            &local_scan.populated_directories,
+        )
+        .await
+        {
+            Ok(remote) => remote,
+            Err(error @ (AppError::Network(_) | AppError::NotAuthenticated)) => {
+                self.set_native_provider_status(
+                    pair_id,
+                    cloud_files::NativeProviderStatus::Offline,
+                );
+                self.store.update_progress(
+                    pair_id,
+                    "offline",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    Some(error.log_code()),
+                )?;
+                self.emit_summary(app, pair_id)?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
+        telemetry
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .update_endpoints(
+                local_endpoint_stats(&local_scan.entries),
+                remote_endpoint_stats(&remote),
+            );
+        let scan = ScanResult {
+            local: local_scan.entries,
+            remote,
+        };
+        let actions = coalesce_native_renames(plan_actions(&pair.baseline, &scan));
+        self.set_task_plan(pair_id, &actions)?;
+        let (upload_items, upload_bytes, download_items, download_bytes) =
+            action_direction_totals(&actions);
+        telemetry
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .reset_for_scan(
+                local_endpoint_stats(&scan.local),
+                remote_endpoint_stats(&scan.remote),
+                upload_items,
+                upload_bytes,
+                download_items,
+                download_bytes,
+            );
+        let total_items = actions.len() as u64;
+        let total_bytes = actions.iter().map(action_bytes).sum::<u64>();
+        self.store.update_progress(
+            pair_id,
+            if actions.is_empty() {
+                "idle"
+            } else {
+                "syncing"
+            },
+            total_items,
+            total_bytes,
+            0,
+            total_items,
+            0,
+            total_bytes,
+            None,
+            None,
+        )?;
+        if !actions.is_empty() {
+            self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Syncing);
+        }
+        self.emit_summary(app, pair_id)?;
+
+        let mut completed_items = 0_u64;
+        let mut completed_bytes = 0_u64;
+        for (task_index, action) in actions.iter().enumerate() {
+            if cancel.is_cancelled() {
+                return Err(AppError::Cancelled);
+            }
+            self.set_task_state(pair_id, task_index, "running")?;
+            let relative = action_relative(action);
+            let result = self
+                .execute_native_action(app, &pair, action, &scan.remote, cancel, telemetry.clone())
+                .await;
+            match result {
+                Ok(bytes) => {
+                    self.set_task_state(pair_id, task_index, "completed")?;
+                    completed_items = completed_items.saturating_add(1);
+                    completed_bytes = completed_bytes.saturating_add(bytes);
+                    let direction = action_direction(action);
+                    telemetry
+                        .lock()
+                        .map_err(|_| AppError::LocalData)?
+                        .complete_action(direction.0, direction.1, direction.2, direction.3);
+                }
+                Err(error @ (AppError::Network(_) | AppError::NotAuthenticated)) => {
+                    self.set_task_state(pair_id, task_index, "waiting")?;
+                    self.set_native_provider_status(
+                        pair_id,
+                        cloud_files::NativeProviderStatus::Offline,
+                    );
+                    self.store.update_progress(
+                        pair_id,
+                        "offline",
+                        total_items.saturating_sub(completed_items),
+                        total_bytes.saturating_sub(completed_bytes),
+                        completed_items,
+                        total_items,
+                        completed_bytes,
+                        total_bytes,
+                        None,
+                        Some(error.log_code()),
+                    )?;
+                    self.emit_summary(app, pair_id)?;
+                    return Err(error);
+                }
+                Err(AppError::Conflict) => {
+                    self.set_task_state(pair_id, task_index, "queued")?;
+                    self.store.update_progress(
+                        pair_id,
+                        "scanning",
+                        total_items.saturating_sub(completed_items),
+                        total_bytes.saturating_sub(completed_bytes),
+                        completed_items,
+                        total_items,
+                        completed_bytes,
+                        total_bytes,
+                        None,
+                        None,
+                    )?;
+                    self.emit_summary(app, pair_id)?;
+                    return Ok(());
+                }
+                Err(error @ AppError::Cancelled) => {
+                    self.set_task_state(pair_id, task_index, "queued")?;
+                    return Err(error);
+                }
+                Err(error) => {
+                    self.set_task_state(pair_id, task_index, "failed")?;
+                    self.set_native_provider_status(
+                        pair_id,
+                        cloud_files::NativeProviderStatus::Error,
+                    );
+                    self.store.add_issue(
+                        pair_id,
+                        &relative,
+                        error.log_code(),
+                        "按需同步操作未完成，请检查后重试。",
+                    )?;
+                    self.store.update_progress(
+                        pair_id,
+                        "attention",
+                        total_items.saturating_sub(completed_items),
+                        total_bytes.saturating_sub(completed_bytes),
+                        completed_items,
+                        total_items,
+                        completed_bytes,
+                        total_bytes,
+                        None,
+                        Some("sync_attention"),
+                    )?;
+                    self.emit_summary(app, pair_id)?;
+                    return Ok(());
+                }
+            }
+            self.store.update_progress(
+                pair_id,
+                "syncing",
+                total_items.saturating_sub(completed_items),
+                total_bytes.saturating_sub(completed_bytes),
+                completed_items,
+                total_items,
+                completed_bytes,
+                total_bytes,
+                None,
+                None,
+            )?;
+            self.emit_summary(app, pair_id)?;
+        }
+
+        let current_native = self.store.native_entries_for_pair(pair_id)?;
+        let current_known = scan
+            .local
+            .iter()
+            .map(|(relative, entry)| (relative.clone(), entry.identity.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let root = pair.local_root.clone();
+        let scan_pair_id = pair.id.clone();
+        let local_after_actions = tokio::task::spawn_blocking(move || {
+            scan_native_local(&root, &scan_pair_id, &current_native, &current_known)
+        })
+        .await
+        .map_err(|_| AppError::LocalData)??;
+        let final_remote = scan_native_remote(
+            &app.state::<AppState>().api,
+            &pair.mount_id,
+            &pair.remote_path,
+            &rules,
+            &local_after_actions.populated_directories,
+        )
+        .await?;
+        for (relative, remote) in &final_remote {
+            if let Some(local) = local_after_actions.entries.get(relative)
+                && (remote.kind == "dir" || same_content(&local.identity, &remote.identity))
+            {
+                self.ensure_native_placeholder(&pair, relative, remote)?;
+            }
+        }
+        let final_native = self.store.native_entries_for_pair(pair_id)?;
+        let final_known = local_after_actions
+            .entries
+            .iter()
+            .map(|(relative, entry)| (relative.clone(), entry.identity.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let root = pair.local_root.clone();
+        let scan_pair_id = pair.id.clone();
+        let final_local = tokio::task::spawn_blocking(move || {
+            scan_native_local(&root, &scan_pair_id, &final_native, &final_known)
+        })
+        .await
+        .map_err(|_| AppError::LocalData)??;
+        let mut baseline = BTreeMap::new();
+        for relative in final_local.entries.keys().chain(final_remote.keys()) {
+            let local = final_local.entries.get(relative);
+            let remote = final_remote.get(relative);
+            baseline
+                .entry(relative.clone())
+                .or_insert_with(|| SnapshotEntry {
+                    kind: local
+                        .map(|entry| entry.kind.clone())
+                        .or_else(|| remote.map(|entry| entry.kind.clone()))
+                        .unwrap_or_else(|| "file".to_owned()),
+                    local: local.map(|entry| entry.identity.clone()),
+                    remote: remote.map(|entry| entry.identity.clone()),
+                });
+        }
+        telemetry
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .update_endpoints(
+                local_endpoint_stats(&final_local.entries),
+                remote_endpoint_stats(&final_remote),
+            );
+        self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        self.refresh_native_counts(pair_id)?;
+        telemetry
+            .lock()
+            .map_err(|_| AppError::LocalData)?
+            .clear_active();
+        self.emit_summary(app, pair_id)?;
+        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Idle);
+        Ok(())
+    }
+
+    fn run_native_pair_loop(
+        self,
+        app: AppHandle,
+        pair_id: String,
+        cancel: CancellationToken,
+        wake: Arc<Notify>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        Box::pin(async move {
+            let mut remote_tick = tokio::time::interval(REMOTE_SCAN_INTERVAL);
+            remote_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            remote_tick.tick().await;
+            let _ = self.run_native_once(&app, &pair_id, &cancel).await;
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = remote_tick.tick() => { let _ = self.run_native_once(&app, &pair_id, &cancel).await; },
+                    _ = wake.notified() => {
+                        tokio::time::sleep(LOCAL_DEBOUNCE).await;
+                        if !cancel.is_cancelled() { let _ = self.run_native_once(&app, &pair_id, &cancel).await; }
+                    }
+                }
+            }
+            if let Ok(mut runtimes) = self.runtimes.lock() {
+                runtimes.remove(&pair_id);
+            }
+        })
     }
 
     fn run_pair_loop(
@@ -1089,6 +2693,7 @@ impl SyncManager {
         }
         self.store
             .update_progress(pair_id, "scanning", 0, 0, 0, 0, 0, 0, None, None)?;
+        self.clear_tasks(pair_id)?;
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -1167,6 +2772,7 @@ impl SyncManager {
         };
         let scan = ScanResult { local, remote };
         let actions = plan_actions(&pair.baseline, &scan);
+        self.set_task_plan(pair_id, &actions)?;
         let (upload_items, upload_bytes, download_items, download_bytes) =
             action_direction_totals(&actions);
         telemetry
@@ -1199,10 +2805,11 @@ impl SyncManager {
         let mut completed_items = 0_u64;
         let mut completed_bytes = 0_u64;
         let mut had_failure = false;
-        for action in actions {
+        for (task_index, action) in actions.into_iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(AppError::Cancelled);
             }
+            self.set_task_state(pair_id, task_index, "running")?;
             let relative = action_relative(&action);
             let operation = self
                 .store
@@ -1220,6 +2827,7 @@ impl SyncManager {
                 .await;
             match result {
                 Ok(bytes) => {
+                    self.set_task_state(pair_id, task_index, "completed")?;
                     let (
                         action_upload_items,
                         action_upload_bytes,
@@ -1253,6 +2861,7 @@ impl SyncManager {
                     self.emit_summary(app, pair_id)?;
                 }
                 Err(error @ AppError::Network(_)) => {
+                    self.set_task_state(pair_id, task_index, "waiting")?;
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -1274,6 +2883,7 @@ impl SyncManager {
                     return Err(error);
                 }
                 Err(AppError::Conflict) => {
+                    self.set_task_state(pair_id, task_index, "queued")?;
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -1295,6 +2905,7 @@ impl SyncManager {
                     return Ok(());
                 }
                 Err(error @ AppError::Cancelled) => {
+                    self.set_task_state(pair_id, task_index, "queued")?;
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -1303,6 +2914,7 @@ impl SyncManager {
                     return Err(error);
                 }
                 Err(error) => {
+                    self.set_task_state(pair_id, task_index, "failed")?;
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -1432,7 +3044,7 @@ impl SyncManager {
         let Some(pair) = self.store.pair(pair_id)? else {
             return Ok(());
         };
-        let (local, remote, upload, download, last_scan_at) = self
+        let (local, remote, upload, download, last_scan_at, native_connected) = self
             .runtimes
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -1441,7 +3053,17 @@ impl SyncManager {
                 runtime
                     .telemetry
                     .lock()
-                    .map(|telemetry| telemetry.public())
+                    .map(|telemetry| {
+                        let (local, remote, upload, download, last_scan_at) = telemetry.public();
+                        (
+                            local,
+                            remote,
+                            upload,
+                            download,
+                            last_scan_at,
+                            runtime.native_connection.is_some(),
+                        )
+                    })
                     .map_err(|_| AppError::LocalData)
             })
             .transpose()?
@@ -1453,10 +3075,18 @@ impl SyncManager {
                     SyncDirectionStats::default(),
                     SyncDirectionStats::default(),
                     pair.last_synced_at,
+                    false,
                 )
             });
         let event = SyncStateEvent {
             pair_id: pair.id,
+            sync_mode: pair.sync_mode,
+            root_kind: pair.root_kind,
+            migration_state: pair.migration_state,
+            native_connected,
+            online_only_files: pair.online_only_files,
+            locally_available_files: pair.locally_available_files,
+            pinned_files: pair.pinned_files,
             status: if pair.paused {
                 "paused".to_owned()
             } else {
@@ -1484,6 +3114,7 @@ impl SyncManager {
 fn summary(
     pair: SyncPairRecord,
     telemetry: Option<&Mutex<SyncTelemetry>>,
+    native_connected: bool,
 ) -> Result<SyncPairSummary, AppError> {
     let (local, remote, upload, download, last_scan_at) = if let Some(telemetry) = telemetry {
         telemetry.lock().map_err(|_| AppError::LocalData)?.public()
@@ -1501,6 +3132,13 @@ fn summary(
         id: pair.id,
         local_root: pair.local_root.to_string_lossy().into_owned(),
         remote_path: pair.remote_path.as_str().to_owned(),
+        sync_mode: pair.sync_mode,
+        root_kind: pair.root_kind,
+        migration_state: pair.migration_state,
+        native_connected,
+        online_only_files: pair.online_only_files,
+        locally_available_files: pair.locally_available_files,
+        pinned_files: pair.pinned_files,
         status: if pair.paused {
             "paused".to_owned()
         } else {
@@ -1558,6 +3196,15 @@ pub fn validate_local_root_sync(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_native_local_root(path: &Path, pair_id: &str) -> Result<(), AppError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !path.is_absolute() || !metadata.is_dir() || !cloud_files::is_owned_sync_root(path, pair_id)
+    {
+        return Err(AppError::InvalidInput("native sync local directory"));
+    }
+    Ok(())
+}
+
 async fn validate_local_root(path: &Path) -> Result<(), AppError> {
     let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || validate_local_root_sync(&path))
@@ -1583,9 +3230,22 @@ fn remote_roots_overlap(
     }
     let left = left.as_str();
     let right = right.as_str();
-    left == right
+    left == "/"
+        || right == "/"
+        || left == right
         || left.starts_with(&format!("{right}/"))
         || right.starts_with(&format!("{left}/"))
+}
+
+fn aligned_native_chunk_length(buffered: usize) -> usize {
+    buffered / 4096 * 4096
+}
+
+fn native_timeout_error() -> AppError {
+    AppError::Io(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "native sync request timed out",
+    ))
 }
 
 fn baseline_local_identities(
@@ -1600,6 +3260,151 @@ fn baseline_local_identities(
                 .map(|identity| (relative.clone(), identity.clone()))
         })
         .collect()
+}
+
+#[derive(Default)]
+struct NativeLocalScan {
+    entries: BTreeMap<String, LocalEntry>,
+    populated_directories: BTreeSet<String>,
+}
+
+fn scan_native_local(
+    root: &Path,
+    pair_id: &str,
+    native_entries: &[NativeSyncEntry],
+    known: &BTreeMap<String, Identity>,
+) -> Result<NativeLocalScan, AppError> {
+    validate_native_local_root(root, pair_id)?;
+    let rules = load_ignore_rules(root)?;
+    let native = native_entries
+        .iter()
+        .map(|entry| (entry.local_relative.clone(), entry.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut result = NativeLocalScan::default();
+    scan_native_local_directory(root, root, &rules, &native, known, &mut result)?;
+    Ok(result)
+}
+
+fn scan_native_local_directory(
+    root: &Path,
+    directory: &Path,
+    rules: &[IgnoreRule],
+    native: &BTreeMap<String, NativeSyncEntry>,
+    known: &BTreeMap<String, Identity>,
+    result: &mut NativeLocalScan,
+) -> Result<(), AppError> {
+    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| AppError::LocalData)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative != ".syncignore"
+            && (is_builtin_ignored(&relative) || matches_ignore(rules, &relative))
+        {
+            continue;
+        }
+        if let Some(state) = cloud_files::placeholder_state(&path)? {
+            let Some(native_entry) = native.get(&relative) else {
+                continue;
+            };
+            let identity = if native_entry.kind == "file" && !state.in_sync && !state.partial {
+                let metadata = fs::symlink_metadata(&path)?;
+                Identity {
+                    size: i64::try_from(metadata.len())
+                        .map_err(|_| AppError::InvalidInput("local file size"))?,
+                    modified: modified_millis(&metadata)?,
+                    hash: hash_file(&path)?,
+                }
+            } else {
+                native_entry.identity.clone()
+            };
+            result.entries.insert(
+                relative.clone(),
+                LocalEntry {
+                    kind: native_entry.kind.clone(),
+                    identity,
+                    path: path.clone(),
+                },
+            );
+            if native_entry.kind == "dir" && native_entry.populated {
+                result.populated_directories.insert(relative);
+                scan_native_local_directory(root, &path, rules, native, known, result)?;
+            }
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&path)?;
+        if is_reparse_point(&metadata) {
+            continue;
+        }
+        if metadata.is_dir() {
+            result.populated_directories.insert(relative.clone());
+            result.entries.insert(
+                relative.clone(),
+                LocalEntry {
+                    kind: "dir".to_owned(),
+                    identity: Identity {
+                        size: 0,
+                        modified: modified_millis(&metadata)?,
+                        hash: String::new(),
+                    },
+                    path: path.clone(),
+                },
+            );
+            scan_native_local_directory(root, &path, rules, native, known, result)?;
+        } else if metadata.is_file() {
+            let size = i64::try_from(metadata.len())
+                .map_err(|_| AppError::InvalidInput("local file size"))?;
+            let modified = modified_millis(&metadata)?;
+            let hash = known
+                .get(&relative)
+                .filter(|identity| {
+                    identity.size == size
+                        && identity.modified == modified
+                        && !identity.hash.is_empty()
+                })
+                .map(|identity| identity.hash.clone())
+                .map_or_else(|| hash_file(&path), Ok)?;
+            result.entries.insert(
+                relative,
+                LocalEntry {
+                    kind: "file".to_owned(),
+                    identity: Identity {
+                        size,
+                        modified,
+                        hash,
+                    },
+                    path,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn native_relative_path(root: &Path, path: &Path) -> Result<String, AppError> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| AppError::Forbidden)?
+        .to_string_lossy()
+        .replace('\\', "/");
+    if relative.split('/').any(|segment| segment == "..") {
+        return Err(AppError::Forbidden);
+    }
+    Ok(relative.trim_matches('/').to_owned())
+}
+
+fn native_placeholder_spec(name: &str, entry: &NativeSyncEntry) -> cloud_files::PlaceholderSpec {
+    cloud_files::PlaceholderSpec {
+        name: name.to_owned(),
+        entry_key: entry.entry_key.clone(),
+        is_directory: entry.kind == "dir",
+        size: entry.identity.size.max(0) as u64,
+        modified_millis: entry.identity.modified,
+    }
 }
 
 fn scan_local_cached(
@@ -1818,6 +3623,54 @@ async fn scan_remote(
     Ok(result)
 }
 
+async fn scan_native_remote(
+    api: &KoofrApi,
+    mount_id: &MountId,
+    root: &RemotePath,
+    rules: &[IgnoreRule],
+    populated_directories: &BTreeSet<String>,
+) -> Result<BTreeMap<String, RemoteEntry>, AppError> {
+    let mut result = BTreeMap::new();
+    let mut queue = VecDeque::from([(root.clone(), String::new())]);
+    while let Some((directory, relative_directory)) = queue.pop_front() {
+        for entry in api.list_files(mount_id, &directory).await? {
+            let name = RemoteName::parse(entry.name.clone())?;
+            let relative = if relative_directory.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{relative_directory}/{}", entry.name)
+            };
+            if relative != ".syncignore"
+                && (is_builtin_ignored(&relative) || matches_ignore(rules, &relative))
+            {
+                continue;
+            }
+            let remote_path = directory.join(&name)?;
+            let kind = if is_directory(&entry.entry_type) {
+                "dir"
+            } else {
+                "file"
+            };
+            result.insert(
+                relative.clone(),
+                RemoteEntry {
+                    kind: kind.to_owned(),
+                    identity: Identity {
+                        size: entry.size,
+                        modified: entry.modified,
+                        hash: entry.hash,
+                    },
+                    path: remote_path.clone(),
+                },
+            );
+            if kind == "dir" && populated_directories.contains(&relative) {
+                queue.push_back((remote_path, relative));
+            }
+        }
+    }
+    Ok(result)
+}
+
 fn remote_endpoint_stats(entries: &BTreeMap<String, RemoteEntry>) -> SyncEndpointStats {
     let mut stats = SyncEndpointStats::default();
     for entry in entries.values() {
@@ -1977,6 +3830,9 @@ fn plan_actions(baseline: &BTreeMap<String, SnapshotEntry>, scan: &ScanResult) -
         | Action::Download { relative, .. }
         | Action::Conflict { relative, .. }
         | Action::TypeConflict { relative } => (1, relative.matches('/').count(), relative.clone()),
+        Action::MoveRemote { to_relative, .. } => {
+            (1, to_relative.matches('/').count(), to_relative.clone())
+        }
         Action::DeleteLocal { relative, .. } | Action::DeleteRemote { relative, .. } => (
             2,
             usize::MAX - relative.matches('/').count(),
@@ -1984,6 +3840,87 @@ fn plan_actions(baseline: &BTreeMap<String, SnapshotEntry>, scan: &ScanResult) -
         ),
     });
     actions
+}
+
+fn coalesce_native_renames(actions: Vec<Action>) -> Vec<Action> {
+    let mut used = vec![false; actions.len()];
+    let mut moves = Vec::new();
+    for (upload_index, upload) in actions.iter().enumerate() {
+        let Action::Upload {
+            relative: to_relative,
+            local,
+            expected_remote: None,
+        } = upload
+        else {
+            continue;
+        };
+        if local.kind != "file" {
+            continue;
+        }
+        let matching_deletes = actions
+            .iter()
+            .enumerate()
+            .filter(|(_, action)| {
+                matches!(action, Action::DeleteRemote { remote, .. }
+                    if remote.kind == "file" && same_content(&local.identity, &remote.identity))
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if matching_deletes.len() != 1 {
+            continue;
+        }
+        let delete_index = matching_deletes[0];
+        let competing_uploads = actions
+            .iter()
+            .filter(|action| {
+                matches!(action, Action::Upload { local, expected_remote: None, .. }
+                    if local.kind == "file"
+                        && matches!(&actions[delete_index], Action::DeleteRemote { remote, .. }
+                            if same_content(&local.identity, &remote.identity)))
+            })
+            .count();
+        if competing_uploads != 1 || used[delete_index] {
+            continue;
+        }
+        let Action::DeleteRemote {
+            relative: from_relative,
+            remote,
+        } = &actions[delete_index]
+        else {
+            continue;
+        };
+        used[upload_index] = true;
+        used[delete_index] = true;
+        moves.push(Action::MoveRemote {
+            from_relative: from_relative.clone(),
+            to_relative: to_relative.clone(),
+            remote: remote.clone(),
+        });
+    }
+    let mut result = actions
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, action)| (!used[index]).then_some(action))
+        .collect::<Vec<_>>();
+    result.extend(moves);
+    result.sort_by_key(|action| match action {
+        Action::EnsureLocalDir { relative } | Action::EnsureRemoteDir { relative } => {
+            (0_u8, relative.matches('/').count(), relative.clone())
+        }
+        Action::Upload { relative, .. }
+        | Action::Download { relative, .. }
+        | Action::Conflict { relative, .. }
+        | Action::TypeConflict { relative } => (1, relative.matches('/').count(), relative.clone()),
+        Action::MoveRemote { to_relative, .. } => {
+            (1, to_relative.matches('/').count(), to_relative.clone())
+        }
+        Action::DeleteLocal { relative, .. } | Action::DeleteRemote { relative, .. } => (
+            2,
+            usize::MAX - relative.matches('/').count(),
+            relative.clone(),
+        ),
+    });
+    result
 }
 
 fn plan_directory_action(
@@ -2110,6 +4047,18 @@ async fn execute_action(
                         remote.identity.modified,
                     )),
                 )
+                .await?;
+            Ok(0)
+        }
+        Action::MoveRemote {
+            to_relative,
+            remote,
+            ..
+        } => {
+            let destination = remote_path_for(&pair.remote_path, to_relative)?;
+            state
+                .api
+                .move_to(&pair.mount_id, &remote.path, &pair.mount_id, &destination)
                 .await?;
             Ok(0)
         }
@@ -2412,6 +4361,30 @@ fn validate_local_parent(root: &Path, target: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_native_local_parent(root: &Path, target: &Path, pair_id: &str) -> Result<(), AppError> {
+    validate_native_local_root(root, pair_id)?;
+    let parent = target
+        .parent()
+        .ok_or(AppError::InvalidInput("native sync local parent"))?;
+    let relative = parent
+        .strip_prefix(root)
+        .map_err(|_| AppError::InvalidInput("native sync local parent"))?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component.as_os_str());
+        if cloud_files::placeholder_state(&current)?.is_some() {
+            continue;
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.is_dir() && !is_reparse_point(&metadata) => {}
+            Ok(_) => return Err(AppError::InvalidInput("native sync local parent")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(AppError::Io(error)),
+        }
+    }
+    Ok(())
+}
+
 fn remote_path_for(root: &RemotePath, relative: &str) -> Result<RemotePath, AppError> {
     if relative.is_empty() {
         return Ok(root.clone());
@@ -2468,6 +4441,7 @@ fn action_relative(action: &Action) -> String {
         | Action::DeleteRemote { relative, .. }
         | Action::Conflict { relative, .. }
         | Action::TypeConflict { relative } => relative.clone(),
+        Action::MoveRemote { to_relative, .. } => to_relative.clone(),
     }
 }
 
@@ -2479,8 +4453,36 @@ fn action_name(action: &Action) -> &'static str {
         Action::Download { .. } => "download",
         Action::DeleteLocal { .. } => "delete_local",
         Action::DeleteRemote { .. } => "delete_remote",
+        Action::MoveRemote { .. } => "move_remote",
         Action::Conflict { .. } => "conflict",
         Action::TypeConflict { .. } => "type_conflict",
+    }
+}
+
+fn sync_task_summary(index: usize, action: &Action) -> SyncTaskSummary {
+    let relative = action_relative(action);
+    let display_name = relative
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or("同步根")
+        .to_owned();
+    let direction = match action {
+        Action::Upload { .. }
+        | Action::EnsureRemoteDir { .. }
+        | Action::DeleteRemote { .. }
+        | Action::MoveRemote { .. } => "upload",
+        Action::Download { .. } | Action::EnsureLocalDir { .. } | Action::DeleteLocal { .. } => {
+            "download"
+        }
+        Action::Conflict { .. } | Action::TypeConflict { .. } => "sync",
+    };
+    SyncTaskSummary {
+        id: format!("task-{index}"),
+        operation: action_name(action).to_owned(),
+        direction: direction.to_owned(),
+        display_name,
+        state: "queued".to_owned(),
+        bytes: action_bytes(action),
     }
 }
 
@@ -2491,6 +4493,7 @@ fn action_bytes(action: &Action) -> u64 {
         Action::Conflict { local, remote, .. } => {
             local.identity.size.max(0) as u64 + remote.identity.size.max(0) as u64
         }
+        Action::MoveRemote { .. } => 0,
         _ => 0,
     }
 }
@@ -2659,6 +4662,12 @@ mod tests {
             issue_count: 0,
             last_error_code: None,
             baseline: BTreeMap::new(),
+            sync_mode: "classic".to_owned(),
+            root_kind: "custom".to_owned(),
+            migration_state: "none".to_owned(),
+            online_only_files: 0,
+            locally_available_files: 0,
+            pinned_files: 0,
         }
     }
 
@@ -2777,6 +4786,158 @@ mod tests {
             &MountId::parse("m".to_owned()).unwrap(),
             &RemotePath::parse("/a/b".to_owned()).unwrap()
         ));
+        assert!(remote_roots_overlap(
+            &MountId::parse("m".to_owned()).unwrap(),
+            &RemotePath::parse("/".to_owned()).unwrap(),
+            &MountId::parse("m".to_owned()).unwrap(),
+            &RemotePath::parse("/documents".to_owned()).unwrap()
+        ));
+        assert!(!remote_roots_overlap(
+            &MountId::parse("m".to_owned()).unwrap(),
+            &RemotePath::parse("/a".to_owned()).unwrap(),
+            &MountId::parse("other".to_owned()).unwrap(),
+            &RemotePath::parse("/a".to_owned()).unwrap()
+        ));
+    }
+
+    #[test]
+    fn native_transfer_chunks_are_four_kib_aligned() {
+        assert_eq!(aligned_native_chunk_length(0), 0);
+        assert_eq!(aligned_native_chunk_length(4095), 0);
+        assert_eq!(aligned_native_chunk_length(4096), 4096);
+        assert_eq!(aligned_native_chunk_length(8193), 8192);
+    }
+
+    #[test]
+    fn task_summary_exposes_only_the_display_name() {
+        let task = sync_task_summary(
+            3,
+            &Action::Upload {
+                relative: "private/reports/年度报告.pdf".to_owned(),
+                local: LocalEntry {
+                    kind: "file".to_owned(),
+                    identity: identity("hash", 1),
+                    path: PathBuf::from("private/reports/年度报告.pdf"),
+                },
+                expected_remote: None,
+            },
+        );
+        assert_eq!(task.id, "task-3");
+        assert_eq!(task.operation, "upload");
+        assert_eq!(task.direction, "upload");
+        assert_eq!(task.display_name, "年度报告.pdf");
+        assert!(!task.display_name.contains("private"));
+        assert_eq!(task.state, "queued");
+    }
+
+    #[test]
+    fn native_local_rename_becomes_remote_move() {
+        let local = LocalEntry {
+            kind: "file".to_owned(),
+            identity: identity("same", 2),
+            path: PathBuf::from("new.txt"),
+        };
+        let remote = RemoteEntry {
+            kind: "file".to_owned(),
+            identity: identity("same", 1),
+            path: RemotePath::parse("/old.txt".to_owned()).unwrap(),
+        };
+        let actions = coalesce_native_renames(vec![
+            Action::Upload {
+                relative: "new.txt".to_owned(),
+                local,
+                expected_remote: None,
+            },
+            Action::DeleteRemote {
+                relative: "old.txt".to_owned(),
+                remote,
+            },
+        ]);
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::MoveRemote {
+                from_relative,
+                to_relative,
+                ..
+            }] if from_relative == "old.txt" && to_relative == "new.txt"
+        ));
+    }
+
+    #[test]
+    fn sqlite_upgrade_adds_native_sync_columns_and_entry_table() {
+        let path = std::env::temp_dir().join(format!(
+            "koofr-sync-upgrade-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE sync_pairs (
+                       id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, local_root TEXT NOT NULL,
+                       mount_id TEXT NOT NULL, remote_path TEXT NOT NULL,
+                       paused INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'initializing',
+                       pending_items INTEGER NOT NULL DEFAULT 0, pending_bytes INTEGER NOT NULL DEFAULT 0,
+                       completed_items INTEGER NOT NULL DEFAULT 0, total_items INTEGER NOT NULL DEFAULT 0,
+                       completed_bytes INTEGER NOT NULL DEFAULT 0, total_bytes INTEGER NOT NULL DEFAULT 0,
+                       last_synced_at INTEGER, issue_count INTEGER NOT NULL DEFAULT 0,
+                       last_error_code TEXT, baseline_json TEXT NOT NULL DEFAULT '{}'
+                     );",
+                )
+                .unwrap();
+        }
+        let store = SyncStore::open(path.clone()).unwrap();
+        let connection = store.connection.lock().unwrap();
+        let columns = connection
+            .prepare("PRAGMA table_info(sync_pairs)")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "sync_mode"));
+        assert!(columns.iter().any(|column| column == "migration_state"));
+        let entry_table: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sync_entries'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(entry_table, 1);
+        drop(connection);
+        drop(store);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_entries_keep_paths_out_of_placeholder_identity() {
+        let path = std::env::temp_dir().join(format!(
+            "koofr-sync-native-entry-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let store = SyncStore::open(path.clone()).unwrap();
+        let mut pair = test_pair("pair-native", "owner-a");
+        pair.sync_mode = "onDemand".to_owned();
+        store.insert_pair(&pair).unwrap();
+        let entry = store
+            .upsert_native_entry(NativeSyncEntry {
+                entry_key: uuid::Uuid::new_v4().to_string(),
+                pair_id: pair.id.clone(),
+                local_relative: "private/report.txt".to_owned(),
+                remote_path: RemotePath::parse("/private/report.txt".to_owned()).unwrap(),
+                kind: "file".to_owned(),
+                identity: identity("abcd", 42),
+                populated: false,
+            })
+            .unwrap();
+        let shell_identity = cloud_files::encode_entry_identity(&entry.entry_key).unwrap();
+        assert!(!String::from_utf8_lossy(&shell_identity).contains("private"));
+        let loaded = store.native_entry(&entry.entry_key).unwrap().unwrap();
+        assert_eq!(loaded.remote_path.as_str(), "/private/report.txt");
+        drop(store);
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -2903,6 +5064,32 @@ mod tests {
             },
         );
         assert!(matches!(actions.as_slice(), [Action::Download { .. }]));
+    }
+
+    #[test]
+    fn unchanged_remote_is_deleted_after_a_local_placeholder_delete() {
+        let old = identity("old", 1);
+        let baseline = BTreeMap::from([(
+            String::from("a.txt"),
+            SnapshotEntry {
+                kind: "file".to_owned(),
+                local: Some(old.clone()),
+                remote: Some(old.clone()),
+            },
+        )]);
+        let remote = RemoteEntry {
+            kind: "file".to_owned(),
+            identity: old,
+            path: RemotePath::parse("/a.txt".to_owned()).unwrap(),
+        };
+        let actions = plan_actions(
+            &baseline,
+            &ScanResult {
+                local: BTreeMap::new(),
+                remote: BTreeMap::from([(String::from("a.txt"), remote)]),
+            },
+        );
+        assert!(matches!(actions.as_slice(), [Action::DeleteRemote { .. }]));
     }
 
     #[test]

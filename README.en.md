@@ -73,6 +73,11 @@ Koofr-GUI is an unaffiliated, Windows-first, file-manager-oriented alternative c
   - **Split upload**: chops a large file into user-sized `part-*.bin` chunks in a user-named remote folder. Resumes from the last confirmed complete chunk. Parts contain no proprietary header; they can be reassembled with `copy /b` on Windows or `cat` on POSIX.
   - **Recursive folder download**: staged into a temporary directory, cleaned up on failure or cancel.
 
+- **Local folder sync (Windows 10/11)**
+  - Classic two-way sync remains available. The optional on-demand preview uses Windows Cloud Files API placeholders and native Explorer status, hydrates online files on open, and supports the system “Always keep on this device” and “Free up space” actions.
+  - On-demand sync supports one unified `%USERPROFILE%\Koofr` root for `/` or non-overlapping custom mappings. Vaults, shared spaces, and third-party mounts are excluded from the preview.
+  - Removing a classic pair only removes its index. Unregistering an on-demand root keeps hydrated files as normal files, removes online-only placeholders locally, and never changes cloud data.
+
 - **Local in-app preview**
   - Preview PDFs, plain text and code, common and RAW images, video, and audio from My files, Recent, Shared, and Vault. Trash has no preview. Double-click opens supported files in the preview; unsupported formats keep the existing download action.
   - PDFs are paged over Range requests; text is limited to the first 5 MiB and supports UTF-8, UTF-16, GB18030, and Big5. SVG is sanitized, while TIFF, HEIC, and RAW use offline bundled decoders. Office, OpenDocument, PSD, AI, and ebook formats still require download.

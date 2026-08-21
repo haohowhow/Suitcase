@@ -71,6 +71,7 @@ export interface AppSettings {
   readonly density: UiDensity
   readonly launchAtLogin: boolean
   readonly closeToTray: boolean
+  readonly nativeSyncBackgroundRequired: boolean
   readonly minimizeToTray: boolean
   readonly confirmQuitWithTransfers: boolean
   readonly uploadConcurrency: number
@@ -251,6 +252,17 @@ export type SyncPairStatus =
   | 'offline'
   | 'attention'
 
+export type SyncMode = 'classic' | 'onDemand'
+export type SyncRootKind = 'unified' | 'custom'
+export type SyncMigrationState = 'none' | 'preflight' | 'staging' | 'ready' | 'failed'
+
+export interface NativeSyncCapability {
+  readonly supported: boolean
+  readonly reason: string | null
+  readonly buildNumber: number | null
+  readonly integrationNumber: number | null
+}
+
 export interface SyncEndpointStats {
   readonly fileCount: number
   readonly directoryCount: number
@@ -271,6 +283,13 @@ export interface SyncPairSummary {
   readonly id: string
   readonly localRoot: string
   readonly remotePath: string
+  readonly syncMode: SyncMode
+  readonly rootKind: SyncRootKind
+  readonly migrationState: SyncMigrationState
+  readonly nativeConnected: boolean
+  readonly onlineOnlyFiles: number
+  readonly locallyAvailableFiles: number
+  readonly pinnedFiles: number
   readonly status: SyncPairStatus
   readonly paused: boolean
   readonly pendingItems: number
@@ -298,8 +317,27 @@ export interface SyncIssue {
   readonly createdAt: number
 }
 
+export type SyncTaskState = 'queued' | 'running' | 'waiting' | 'completed' | 'failed'
+export type SyncTaskOperation = 'mkdir_local' | 'mkdir_remote' | 'upload' | 'download' | 'delete_local' | 'delete_remote' | 'move_remote' | 'conflict' | 'type_conflict'
+
+export interface SyncTaskSummary {
+  readonly id: string
+  readonly operation: SyncTaskOperation
+  readonly direction: 'upload' | 'download' | 'sync'
+  readonly displayName: string
+  readonly state: SyncTaskState
+  readonly bytes: number
+}
+
 export interface SyncStateEvent {
   readonly pairId: string
+  readonly syncMode: SyncMode
+  readonly rootKind: SyncRootKind
+  readonly migrationState: SyncMigrationState
+  readonly nativeConnected: boolean
+  readonly onlineOnlyFiles: number
+  readonly locallyAvailableFiles: number
+  readonly pinnedFiles: number
   readonly status: SyncPairStatus
   readonly pendingItems: number
   readonly pendingBytes: number

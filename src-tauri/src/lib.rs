@@ -1,4 +1,5 @@
 mod autostart;
+mod cloud_files;
 mod commands;
 mod credential_manager;
 mod crypto;
@@ -52,6 +53,34 @@ pub struct AppState {
     vault: VaultManager,
     work_directory: WorkDirectoryStore,
     sync: sync::SyncManager,
+}
+
+pub fn cleanup_native_sync_roots_for_uninstall() -> bool {
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)
+    else {
+        return false;
+    };
+    let default_directory = local_app_data.join("net.koofr.desktop.gui");
+    let locator_path = local_app_data.join("net.koofr.desktop.gui.work-directory.json");
+    let current_directory = match std::fs::symlink_metadata(&locator_path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            std::fs::read(&locator_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                .and_then(|value| {
+                    value
+                        .get("currentDirectory")?
+                        .as_str()
+                        .map(std::path::PathBuf::from)
+                })
+                .filter(|path| path.is_absolute())
+                .unwrap_or(default_directory)
+        }
+        Ok(_) => return false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => default_directory,
+        Err(_) => return false,
+    };
+    sync::cleanup_native_roots_for_uninstall(&current_directory.join("sync-state.sqlite3")).is_ok()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -175,9 +204,15 @@ pub fn run() {
             commands::select_sync_folder,
             commands::list_sync_pairs,
             commands::create_sync_pair,
+            commands::get_native_sync_capability,
+            commands::suggested_on_demand_sync_root,
+            commands::create_on_demand_sync_pair,
+            commands::migrate_sync_pair_to_on_demand,
+            commands::open_sync_root,
             commands::set_sync_pair_paused,
             commands::run_sync_pair_now,
             commands::list_sync_issues,
+            commands::list_sync_tasks,
             commands::remove_sync_pair,
             commands::koofr_session,
             commands::get_settings,

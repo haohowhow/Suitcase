@@ -571,16 +571,16 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
 
             <SwitchRow
               label="开机启动 Koofr GUI"
-              hint="登录 Windows 后自动启动，仅写入当前用户注册表"
+              hint={settings.nativeSyncBackgroundRequired ? '存在按需同步根时必需；登录 Windows 后自动恢复原生文件访问' : '登录 Windows 后自动启动，仅写入当前用户注册表'}
               checked={settings.launchAtLogin}
-              disabled={busy || !onGeneralChange}
+              disabled={busy || !onGeneralChange || settings.nativeSyncBackgroundRequired}
               onChange={(next) => updateGeneral({ launchAtLogin: next })}
             />
             <SwitchRow
               label="关闭窗口时最小化到托盘"
-              hint="点击窗口关闭按钮时不退出应用"
+              hint={settings.nativeSyncBackgroundRequired ? '存在按需同步根时必需；仍可从托盘菜单明确完全退出' : '点击窗口关闭按钮时不退出应用'}
               checked={settings.closeToTray}
-              disabled={busy || !onGeneralChange}
+              disabled={busy || !onGeneralChange || settings.nativeSyncBackgroundRequired}
               onChange={(next) => updateGeneral({ closeToTray: next })}
             />
             <SwitchRow

@@ -6,7 +6,8 @@
 - `src/koofr_api/`：认证、挂载点、目录列表、建文件夹、复制、移动、删除、内容请求和基础分享链接。
 - `src/link_commands.rs`：下载链接和接收文件链接的查询、创建、撤销。
 - `src/transfer/`、`src/folder_download.rs`：流式上传/下载、单文件 Range 续传、通用二进制分卷续传、持久化恢复检查点、递归目录清单、进度事件、取消、下载临时内容清理。
-- `src/sync.rs`：账户隔离的多组本地文件夹同步；SQLite WAL 基线 / 问题 / 操作日志、本地监听、60 秒远端扫描、`.syncignore`、三方比较、条件上传 / 删除和回收站删除。
+- `src/sync.rs`：账户隔离的经典 / 按需同步；SQLite WAL 基线、占位符条目、问题 / 操作日志、本地监听、远端扫描、`.syncignore`、三方比较、条件上传 / 删除和回收站删除。
+- `src/cloud_files.rs`：Windows CFAPI 能力检测、同步根注册 / 连接、占位符创建 / 更新、数据水合、固定状态、Provider 状态和身份核对后的解除注册。
 - `src/transfer/manager.rs`、`src/transfer/limiter.rs`：可动态升降的上传 / 下载闸门、排队取消，以及覆盖普通、分卷、文件夹、Vault 和恢复任务的共享 KiB/s token bucket。
 - `src/transfer/integrity.rs`：最终发布前的流式 MD5 校验；缺少远端 hash 时记录不可校验，hash 不一致不发布最终文件。
 - `src/desktop.rs`、`src/autostart.rs`：官方 Tauri 托盘 / autostart 生命周期、活动传输退出确认、Windows 任务栏 overlay，以及置顶传输悬浮窗的位置恢复、可中断收展、原生右键菜单和主窗口唤起。
@@ -47,7 +48,7 @@
 
 传输通过 `koofr://transfer-progress` 事件上报运行、暂停、完成、取消或失败状态；分卷任务额外携带已确认卷数、当前卷、总卷数和 `parts` / `finalizing` 阶段。事件里不包含本地或远程文件名。主窗口另向 `transfer-float` 发送只含方向、任务数和汇总百分比的 `koofr://floating-transfer-state`。TypeScript 封装在 `src/services/koofr.ts`。
 
-同步通过 `koofr://sync-state` 推送组级状态、待处理 / 已完成项目与字节汇总、最近成功时间、问题数和稳定错误码；文件级问题的相对路径仅作为结构字段返回，不写入日志或错误正文。同步传输复用并发闸门、限速、取消和网络重试，但不进入手动传输恢复列表。
+同步通过 `koofr://sync-state` 推送组级状态、模式 / 根类型、原生连接、在线 / 已下载 / 固定数量、待处理 / 已完成项目与字节汇总、最近成功时间、问题数和稳定错误码；文件级问题的相对路径仅作为结构字段返回，不写入日志或错误正文。同步传输复用并发闸门、限速、取消和网络重试，但不进入手动传输恢复列表。
 
 Koofr 官方 Go 客户端暴露了 `FilesGetRange`，所以下载能做真实的字节级续传。但公开上传协议和 rclone 的 Koofr 后端只有整文件 `FilesPut`，没有针对单个普通文件的分块上传会话或已确认偏移。普通上传会持久化中断任务并提供"重新上传"，不会把整文件重传标成字节续传。用户明确选了"可续传大文件"时，后端建一个独立远端文件夹，把原文件切成自定义大小的 `part-*.bin`，只从最后一个已确认完整的分卷继续。完成后写入通用恢复命令、分卷和整文件 SHA-256 和开放 JSON 清单。分卷可以直接用系统自带的 `copy /b` 或 `cat` 拼接，不需要本客户端。
 
