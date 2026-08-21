@@ -22,6 +22,13 @@ export interface SyncManagerController {
 function mergeEvent(pair: SyncPairSummary, event: SyncStateEvent): SyncPairSummary {
   return {
     ...pair,
+    syncMode: event.syncMode,
+    rootKind: event.rootKind,
+    migrationState: event.migrationState,
+    nativeConnected: event.nativeConnected,
+    onlineOnlyFiles: event.onlineOnlyFiles,
+    locallyAvailableFiles: event.locallyAvailableFiles,
+    pinnedFiles: event.pinnedFiles,
     status: event.status,
     pendingItems: event.pendingItems,
     pendingBytes: event.pendingBytes,

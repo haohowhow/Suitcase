@@ -13,7 +13,7 @@
 
 账户连接、启动会话检查和退出登录已通过 `services/koofr.ts` 接到 Rust 后端。应用专用密码每次提交完成后从表单状态清掉；只有用户勾了"保存密码"，Rust 后端才会把它写入 Windows 凭据管理器（服务名为 `Koofr-GUI`，账号名为邮箱地址）。文件工作区读取真实挂载点和目录，已经接入了本地文件选择、上传、下载、新建、重命名和删除。最近文件、已共享、回收站列表和恢复/清空操作也通过类型化后端命令读取真实账户数据。
 
-`features/sync/SyncWorkspace.tsx` 通过 `services/koofr.ts` 管理同步组。创建时本地目录只能来自 Rust 原生文件夹授权，远端仅显示在线主存储挂载点；同步状态由 `koofr://sync-state` 事件增量更新。移除同步只取消配置和索引，不删除本地或 Koofr 文件。
+`features/sync/SyncWorkspace.tsx` 通过 `services/koofr.ts` 管理经典与 Windows 按需同步组。创建 / 迁移时本地目录只能来自 Rust 原生文件夹授权，远端仅显示在线主存储挂载点；同步状态由 `koofr://sync-state` 事件增量更新。详情窗口打开时通过 `list_sync_tasks` 按需读取当前文件显示名，文件名不进入持续广播事件或诊断日志。经典配置移除不删除文件；按需根会先显示 Windows 解除注册语义的明确警告。
 
 `features/files/FilePreviewModal.tsx` 统一显示 PDF、纯文本 / 代码、图片、视频和音频。普通文件、最近文件和共享文件传入 `mountId + path`，Vault 传入现有不透明 entry handle；回收站没有预览入口。PDF.js、DOMPurify 和 HEIC worker 都由 Vite 离线打包，文本只以纯文本呈现。Office、OpenDocument、PSD、AI 与电子书不尝试解析。
 

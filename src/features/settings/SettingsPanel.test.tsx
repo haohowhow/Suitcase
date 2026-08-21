@@ -29,6 +29,7 @@ const SETTINGS: AppSettings = {
   density: 'standard',
   launchAtLogin: false,
   closeToTray: true,
+  nativeSyncBackgroundRequired: false,
   minimizeToTray: false,
   confirmQuitWithTransfers: true,
   uploadConcurrency: 2,
