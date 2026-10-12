@@ -1555,9 +1555,9 @@ pub async fn update_history_policy(
 pub fn app_version_info() -> AppVersionInfo {
     AppVersionInfo {
         version: env!("CARGO_PKG_VERSION"),
-        homepage_url: "https://github.com/zenwinhow/Koofr-GUI",
-        releases_url: "https://github.com/zenwinhow/Koofr-GUI/releases",
-        issues_url: "https://github.com/zenwinhow/Koofr-GUI/issues",
+        homepage_url: "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI",
+        releases_url: "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases",
+        issues_url: "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/issues",
         license: "MIT",
     }
 }
@@ -1573,9 +1573,11 @@ pub enum ExternalPage {
 #[tauri::command]
 pub fn open_external_page(page: ExternalPage) -> CommandResult<()> {
     let url = match page {
-        ExternalPage::Homepage => "https://github.com/zenwinhow/Koofr-GUI",
-        ExternalPage::Releases => "https://github.com/zenwinhow/Koofr-GUI/releases",
-        ExternalPage::Issues => "https://github.com/zenwinhow/Koofr-GUI/issues",
+        ExternalPage::Homepage => "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI",
+        ExternalPage::Releases => {
+            "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases"
+        }
+        ExternalPage::Issues => "https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/issues",
     };
     local_open::open_url(url).map_err(CommandError::from)
 }

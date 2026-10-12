@@ -6,13 +6,12 @@
 
 用 Tauri v2 + React + TypeScript + Rust 构建。想做成原生文件管理器那种感觉，而不是套个网页壳子完事。
 
-[![Release](https://img.shields.io/github/v/release/zenwinhow/Koofr-GUI?include_prereleases&sort=semver)](https://github.com/zenwinhow/Koofr-GUI/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/zenwinhow/Koofr-GUI/release.yml?branch=main&label=release)](https://github.com/zenwinhow/Koofr-GUI/actions)
+[![Source: Forgejo](https://img.shields.io/badge/Source-Forgejo-fb923c)](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)](#系统要求)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 
-[English](README.en.md) · [下载安装包](https://github.com/zenwinhow/Koofr-GUI/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
+[English](README.en.md) · [下载安装包](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -116,7 +115,7 @@ Koofr-GUI 是一个第三方的、Windows 优先的、侧重原生文件管理�
 
 ## 下载与安装
 
-已发布的安装包（若可用）会列在 Releases 页面。推荐从 [Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases) 下载最新的 NSIS 安装包（例如 `Koofr-GUI_<version>_x64-setup.exe`）。
+已发布的安装包（若可用）会列在 Releases 页面。推荐从 [Releases 页面](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) 下载最新的 NSIS 安装包（例如 `Koofr GUI_<version>_x64-setup.exe`）。
 
 > ⚠️ **未签名警告**：安装包目前不做代码签名。Windows SmartScreen 可能显示"未知发布者"警告。请只从本仓库的 Releases 页面下载，不要从第三方镜像获取。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
 
@@ -142,7 +141,7 @@ Koofr-GUI 是一个第三方的、Windows 优先的、侧重原生文件管理�
 ## 从源码构建
 
 ```powershell
-git clone https://github.com/zenwinhow/Koofr-GUI.git
+git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 npm run dev:desktop          # 开发模式：完整桌面应用

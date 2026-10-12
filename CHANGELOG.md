@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+- 项目托管迁移至自建 Forgejo，更新应用内主页、下载和问题反馈入口、文档链接与贡献模板；安全报告改用维护者邮箱。
+- 移除依赖 GitHub 托管 Windows runner 的工作流，改为 Windows 本地检查、构建和上传 Forgejo Release 草稿，安装包同时附带 SHA-256 校验文件。
+
 ## [2.6.0] - 2026-08-21
 
 ### Added

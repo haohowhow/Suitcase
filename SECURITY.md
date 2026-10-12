@@ -19,16 +19,15 @@
 | 最新稳定版 | ✅ |
 | 其他历史版本 | ❌ 请升级到最新版 |
 
-发布包**未做代码签名**。请只从 [官方 Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases) 下载。
+发布包**未做代码签名**。请只从 [官方 Releases 页面](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) 下载。
 
 ## 报告漏洞
 
 **请不要通过公开 Issue 报告漏洞。**
 
-请通过以下任一私密渠道联系：
+请通过以下私密渠道联系：
 
-- **GitHub Security Advisory（推荐）**：<https://github.com/zenwinhow/Koofr-GUI/security/advisories/new>
-- **邮件**：[zenwinhow@users.noreply.github.com](mailto:zenwinhow@users.noreply.github.com)（可选 GPG 加密，公钥指纹在 GitHub Profile）
+- **邮件**：[zenwinhow@outlook.com](mailto:zenwinhow@outlook.com)。首次联系请勿附上真实凭据或敏感文件；如需加密附件，请先与维护者确认加密方式。
 
 报告请尽量包含：
 
@@ -54,7 +53,7 @@
 | 初步评估（是否属于漏洞、严重程度） | 10 个工作日内 |
 | 修复 / 缓解 | 视严重程度，Critical / High 尽量在 30 天内发布补丁 |
 
-如果超过预期时间没有回复，请通过备用渠道再联系一次。
+如果超过预期时间没有回复，请通过邮件再次联系。
 
 ## 披露策略
 
@@ -62,7 +61,7 @@
 
 1. 收到报告后我们私下确认和评估。
 2. 如果确认是漏洞，一起商议披露时间线，一般 **90 天** 内发布修复。
-3. 修复发布后，在 CHANGELOG 和 GitHub Security Advisory 里公开细节，如果报告者同意会致谢。
+3. 修复发布后，在 CHANGELOG 和 Forgejo Release 说明里公开细节，如果报告者同意会致谢。
 4. 报告者请在**修复发布前**不要公开细节。
 
 ## 安全设计边界
@@ -117,10 +116,9 @@ Koofr-GUI 的信任模型：
 
 ## English version
 
-**Don't open public issues for security vulnerabilities.** Use one of the private channels:
+**Don't open public issues for security vulnerabilities.** Contact the maintainer privately:
 
-- **GitHub Security Advisory (preferred)**: <https://github.com/zenwinhow/Koofr-GUI/security/advisories/new>
-- **Email**: [zenwinhow@users.noreply.github.com](mailto:zenwinhow@users.noreply.github.com)
+- **Email**: [zenwinhow@outlook.com](mailto:zenwinhow@outlook.com). Do not include real credentials or sensitive files in your first message. Agree on encryption with the maintainer before sending sensitive attachments.
 
 Supported: latest stable release only. Older versions must upgrade to receive fixes.
 
@@ -130,7 +128,7 @@ Response targets (best-effort, hobby-maintained project):
 - Triage within 10 business days
 - Critical / High fixes within 30 days when feasible
 
-Coordinated disclosure with a 90-day default embargo. Please keep details private until the fix ships. Credit given on request in CHANGELOG and GitHub Security Advisory.
+Coordinated disclosure with a 90-day default embargo. Please keep details private until the fix ships. Credit given on request in CHANGELOG and Forgejo release notes.
 
 **In scope**: frontend escape, path traversal, credential leaks in logs / error messages / events / crash reports, overwrite of user files, bypassed integrity checks in split upload or byte resume.
 

@@ -1,155 +1,107 @@
 # 发布流程
 
-Koofr-GUI 用 GitHub Actions 在推送版本标签时构建和发布 Windows NSIS 安装包。工作流在 [`.github/workflows/release.yml`](../.github/workflows/release.yml)。
-
-## 目录
-
-- [发布策略](#发布策略)
-- [版本号规则](#版本号规则)
-- [发一个版本](#发一个版本)
-- [手动本地发布](#维护者本地发布仅限本地测试)
-- [用户如何校验安装包](#用户如何校验安装包)
-- [紧急撤回一个版本](#紧急撤回一个版本)
+项目托管于 [自建 Forgejo](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI)。目前没有 Windows runner，正式发布在 Windows 本机完成检查和构建，再上传 Forgejo Release 草稿。推送标签不会自动构建或发布。
 
 ## 发布策略
 
-- **平台**：只发 Windows x64 NSIS 安装包。
-- **签名**：**不做代码签名**。用户下载后 Windows SmartScreen 可能显示"未知发布者"警告。这是有意的成本 / 收益权衡，详见 [SECURITY.md](../SECURITY.md#已知的非漏洞行为)。
-- **触发**：推送符合 `v*` 的 Git 标签自动触发工作流。
-- **Secrets**：不需要任何 GitHub Actions secrets（不签名、不推包管理器）。
-- **发布渠道**：**只**通过本仓库的 [GitHub Releases 页面](https://github.com/zenwinhow/Koofr-GUI/releases)。不使用镜像、CDN、第三方包管理器。
+- 只发 Windows x64 NSIS 安装包，暂不做代码签名。
+- 唯一发布渠道是 [本仓库 Releases](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases)。私有仓库需要登录并有访问权限才能下载。
+- 每次附上 `SHA256SUMS`，只包含本次安装包的 SHA-256；不上传账户数据、日志或凭据。
+- 上传脚本只创建草稿，拒绝覆盖已发布 Release 或已有附件。人工检查附件与说明后在 Forgejo 发布。
+- 仓库 Actions 暂时关闭，旧 GitHub 工作流已移除。将来配置专用 Windows runner 后再启用；不能假定 Forgejo 提供 GitHub 的 `windows-latest` 托管环境。
 
 ## 版本号规则
 
-遵守 [SemVer 2.0](https://semver.org/spec/v2.0.0.html)：
+遵守 [SemVer](https://semver.org/spec/v2.0.0.html)。以下三个手写版本源必须一致：
 
-- **MAJOR**：破坏性变更（API、命令签名、检查点格式、数据布局不兼容）。
-- **MINOR**：新增功能，向后兼容。
-- **PATCH**：Bug 修复，向后兼容。
+- `package.json` 的 `version`。
+- `src-tauri/tauri.conf.json` 的 `version`。
+- `src-tauri/Cargo.toml` 的 `[package].version`。
 
-**三个手写版本源与生成的锁文件镜像**的版本号必须完全一致：
-
-- **手写版本源**：
-  - `package.json` 中的 `version` 字段。
-  - `src-tauri/tauri.conf.json` 中的 `version` 字段。
-  - `src-tauri/Cargo.toml` 中的 `[package].version` 字段。
-- **生成的锁文件镜像**（在执行构建或依赖更新时自动同步）：
-  - `package-lock.json`（由 `package.json` 自动生成）。
-  - `src-tauri/Cargo.lock`（由 `src-tauri/Cargo.toml` 自动生成）。
-- **Git 标签**：
-  - 推送的 Git 标签必须为 `v<version>` 格式。
-
-工作流会校验 Git 标签和前三处手写版本源完全一致，不一致则拒绝构建。
+锁文件 `package-lock.json` 与 `src-tauri/Cargo.lock` 应由工具同步，不手写修改。标签为 `v<version>`，发布时 HEAD 必须与标签指向同一提交。已发布标签不移动、不删除。
 
 ## 发一个版本
 
-### 1. 更新版本号
+### 1. 准备版本与说明
 
-假设要发某个版本（例如 `<version>`）：
+更新三个版本源与锁文件，将 `CHANGELOG.md` 的 Unreleased 内容整理到 `## [<version>] - YYYY-MM-DD` 段落。迁移后的应用链接等代码变更应通过新版本分发，不重新打包覆盖历史版本。
 
-```powershell
-# package.json
-# src-tauri/Cargo.toml
-# src-tauri/tauri.conf.json
-# 三个文件的 version 全改成 <version>
-```
+### 2. 检查并构建
 
-（可以用编辑器全局搜索替换，注意别改到 `Cargo.lock`，那个 cargo 会自动更新。）
-
-### 2. 更新 CHANGELOG
-
-在 [`CHANGELOG.md`](../CHANGELOG.md) 里加一段：
-
-```markdown
-## [<version>] - YYYY-MM-DD
-
-### Changed
-- xxx
-
-### Fixed
-- yyy
-
-### Security
-- zzz（有则加，无则删）
-```
-
-日期用 `YYYY-MM-DD`（发布日期，不是提交日期）。格式遵守 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
-
-### 3. 本地质量检查
+在 Windows MSVC 环境、仓库根目录执行：
 
 ```powershell
 npm ci
-npm run verify:full
+npm run check
+npm run build:installer
 ```
 
-（`verify:full` 等价于 `npm run check`。）
+构建产物在 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri `productName`，例如 `Koofr GUI_<version>_x64-setup.exe`。使用本机人工验证安装、启动和关键操作；代理端检查不能替代 GUI 验收。
 
-### 4. 提交 + 打标签
+### 3. 提交和推送标签
+
+确认工作区、版本和测试结果后，由维护者提交版本变更，再执行：
 
 ```powershell
-git.exe add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
-git.exe commit -m "Prepare <version> release"
-git.exe tag v<version>
-git.exe push origin main
-git.exe push origin v<version>
+git tag v<version>
+git push origin main
+git push origin v<version>
 ```
 
-### 5. 观察 GitHub Actions
+标签推送只保存源码版本；此时尚未创建 Release。
 
-去 [Actions 页面](https://github.com/zenwinhow/Koofr-GUI/actions) 看 `Publish Windows release` 工作流。它会：
+### 4. 检查上传计划
 
-1. 校验 tag 和三个版本源一致。
-2. 装依赖 + 跑全套质量检查（等同 `npm run check`）。
-3. 构建未签名的 NSIS 安装包。
-4. 传到同名的 GitHub Release 上。
+```powershell
+node scripts/release-forgejo.mjs --dry-run
+```
 
-如果检查或构建失败，工作流不会上传发布资产。修复问题后：
+脚本验证三个版本源、CHANGELOG、标签与 HEAD、安装包名称，并计算 SHA-256。Dry run 不联网、不上传、不需要 token。正式上传还要求干净工作区。请从刚通过检查的源码构建；脚本不能证明一个遗留安装包的源码来源。
 
-- **如果标签还没被下载过**：可以强制删除标签重新打（`git.exe tag -d v<version>; git.exe push origin :refs/tags/v<version>`）。但一般不推荐，因为破坏了不可变性。
-- **建议**：直接发一个 patch 版本（例如 `<new_patch_version>`）。
+### 5. 上传 Release 草稿
 
-### 6. 编辑 Release 说明
+在 Forgejo 创建仅限本仓库、具有 `write:repository` 权限的访问令牌。令牌只通过本地环境变量传给脚本，不写入仓库、不作为命令行参数，也不发到聊天中。PowerShell 可用隐藏输入：
 
-工作流会创建 Release 但不填详细说明。手动到 Release 页面：
+```powershell
+$releaseSecret = Read-Host 'Forgejo access token' -AsSecureString
+$releaseCredential = [System.Net.NetworkCredential]::new('', $releaseSecret)
+try {
+    $env:FORGEJO_TOKEN = $releaseCredential.Password
+    node scripts/release-forgejo.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; inspect the draft before retrying.' }
+} finally {
+    Remove-Item Env:FORGEJO_TOKEN -ErrorAction SilentlyContinue
+    $releaseCredential = $null
+    $releaseSecret = $null
+}
+```
 
-- 把 CHANGELOG 里对应版本段落复制到 Release 描述里。
-- 顶部加一段"下载校验方式"，指向 [用户如何校验安装包](#用户如何校验安装包)。
-- 如果是 Pre-release，勾"Set as a pre-release"。
+脚本会核对 Forgejo 上已有标签的提交，创建草稿，再上传安装包和 `SHA256SUMS`；不创建标签、不提交、不推送、不自动发布。认证请求固定到本服务，拒绝跟随重定向，错误仅显示状态类别，不打印令牌或服务端正文。
 
-## 维护者本地发布（仅限本地测试）
+如果上传中断，草稿会保留。检查现有附件后，在 Forgejo 删除不完整的草稿再重试；不要覆盖已有正式 Release。API token 若被撤销或权限不足，请在本地重新配置。
 
-一般情况下不推荐使用。如果需要进行本地测试或在 CI 不可用时构建临时测试包：
+### 6. 人工发布
 
-仓库中包含一个被 Git 忽略的维护者本地脚本 `scripts/release-local.ps1`（如果存在）。该脚本会在本地执行干净构建并生成安装包，但**不会提交代码、不会打标签、也不会推送 Release**。构建产物位于 `src-tauri/target/release/bundle/nsis/` 目录下。
-
-在分发本地构建的安装包前，请务必注意：本地构建的安装包与 CI 构建的产物可能存在差异（如 rustc 或 Node.js 版本、依赖锁文件状态、环境变量等）。正式发布版本必须通过 GitHub Actions 构建。
+打开 [Releases](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases)，核对标签、说明、两个附件、安装包版本与哈希。人工安装验收后发布草稿。没有完成 GUI 验收的包保留为草稿。
 
 ## 用户如何校验安装包
 
-因为不做代码签名，用户下载后至少应该：
-
-1. **确认下载来源**：必须为 `https://github.com/zenwinhow/Koofr-GUI/releases`（注意仓库地址和所有者）。
-2. **确认标签和文件名一致**：例如标签 `v<version>` 对应的安装包文件名通常为 `Koofr-GUI_<version>_x64-setup.exe`。
-3. **对照 CHANGELOG 里的版本段落**确认功能符合预期。
-4. **可选**：校验 SHA-256。用户可以使用 PowerShell 命令行计算下载文件的本地哈希值：
+1. 从本仓库 Forgejo Releases 下载，确认所有者为 `sora-admin`、仓库为 `Koofr-GUI`。
+2. 确认标签、安装包文件名与 CHANGELOG 版本一致。
+3. 同时下载 `SHA256SUMS`，计算并比对完整 SHA-256：
 
    ```powershell
-   Get-FileHash "Koofr-GUI_<version>_x64-setup.exe" -Algorithm SHA256
+   Get-FileHash 'Koofr GUI_<version>_x64-setup.exe' -Algorithm SHA256
    ```
 
-   需要注意的是，`Get-FileHash` 仅用于计算本地文件的哈希值。只有当发布页面上显式且可信地公布了对应的哈希值时，才能进行比对校验；若未公布，则只能通过确认下载来源（即源头可信度）来作为主要的安全验证手段。
+哈希确认文件与该发布页面公布的文件一致，不等同于代码签名。发布包仍可能触发 Windows SmartScreen 未知发布者提示。
 
-如果任何一步不对，**不要运行安装包**，请到 Issues 里反馈。
+## 历史版本迁移
+
+Git 分支、标签和提交历史不包含 Release 附件、Issue、PR 或评论。这些数据需要从旧服务或独立备份恢复。详见 [FORGEJO_MIGRATION.md](FORGEJO_MIGRATION.md)。
+
+根据 Git / CHANGELOG 重建的历史 Release 说明必须标记来源，不能宣称恢复了原始页面、发布日期或附件。无法证明是原发布附件的本地构建包，不作为原附件上传；重新构建的版本应明确标注来源并完成验收。
 
 ## 紧急撤回一个版本
 
-如果发出去的版本有严重问题（数据损坏、凭据泄露之类的）：
-
-1. **立即**在对应 Release 顶部加显眼警告："⚠️ 已撤回，不要使用此版本"。
-2. 在 Release Assets 上加 `.YANKED` 后缀 rename，或者直接删除 Assets。
-3. 在 CHANGELOG 里对应版本下加 `### Yanked` 段落，写清楚撤回原因。
-4. 尽快发一个修复版本（PATCH，或者必要时 MINOR）。
-5. 如果是安全问题，走 [SECURITY.md](../SECURITY.md) 的 Coordinated Disclosure 流程发 Security Advisory。
-6. **不要 `git.exe tag -d` 已发布的标签**，标签保持存在但不再是"当前推荐版本"。
-
-被撤回的 Release 不删除，只做标记，这样已经下载了的用户还能识别自己拿到的是哪个版本。
+在 Release 说明顶部标记“已撤回，不要使用”，删除危险附件或改名加 `.YANKED`，在 CHANGELOG 记录原因，并尽快发布修复版本。保留历史标签与 Release 记录。安全问题通过 [SECURITY.md](../SECURITY.md) 中的私密邮件渠道协调披露。

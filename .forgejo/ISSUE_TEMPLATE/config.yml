@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞 / Security vulnerability
+    url: https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/src/branch/main/SECURITY.md
+    about: 请通过邮件私密报告，不要开公开 Issue。Report privately by email; do not open a public issue.

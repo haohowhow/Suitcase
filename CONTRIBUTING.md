@@ -29,7 +29,7 @@
 在动手之前请确认：
 
 1. 读过 [README.md](README.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-2. 搜过 [已有 Issue](https://github.com/zenwinhow/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
+2. 搜过 [已有 Issue](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
 3. 涉及安全漏洞的**不要**开公开 Issue，走 [SECURITY.md](SECURITY.md) 的私密渠道。
 
 ## 报告 Bug
@@ -67,7 +67,7 @@
 见 [docs/BUILDING.md](docs/BUILDING.md)。快速版：
 
 ```powershell
-git clone https://github.com/zenwinhow/Koofr-GUI.git
+git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 npm run dev:desktop

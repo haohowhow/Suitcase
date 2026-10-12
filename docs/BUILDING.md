@@ -53,7 +53,7 @@ rustup default stable-x86_64-pc-windows-msvc
 ## 2. 拉代码和装依赖
 
 ```powershell
-git clone https://github.com/zenwinhow/Koofr-GUI.git
+git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 ```
@@ -118,10 +118,10 @@ npm run build:installer
 生成 NSIS 安装包到：
 
 ```
-src-tauri/target/release/bundle/nsis/Koofr-GUI_<version>_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Koofr GUI_<version>_x64-setup.exe
 ```
 
-`tauri.conf.json` 里保留了 NSIS 配置。本地 `build:desktop` 不生成安装包是为了迭代快。正式发布由 GitHub Actions 负责，详见 [RELEASING.md](RELEASING.md)。
+`tauri.conf.json` 里保留了 NSIS 配置。本地 `build:desktop` 不生成安装包是为了迭代快。目前在 Windows 本机构建并上传 Forgejo Release 草稿，详见 [RELEASING.md](RELEASING.md)。
 
 > ⚠️ **发布包不做代码签名**。Windows 可能显示未知发布者或 SmartScreen 警告。理由和权衡见 [SECURITY.md](../SECURITY.md#已知的非漏洞行为)。
 
