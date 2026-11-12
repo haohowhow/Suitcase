@@ -39,6 +39,7 @@ describe('VaultDialog', () => {
       directoryId: 'root',
       breadcrumbs: [{ id: 'root', name: lockedVault.name }],
       entries: [],
+      skippedEntries: 0,
     })
   })
 
@@ -98,6 +99,7 @@ describe('VaultDialog', () => {
       directoryId: 'root',
       breadcrumbs: [{ id: 'root', name: lockedVault.name }],
       entries: [entry],
+      skippedEntries: 0,
     })
     const onPreview = vi.fn()
     render(
@@ -117,5 +119,32 @@ describe('VaultDialog', () => {
     if (row) await user.dblClick(row)
 
     expect(onPreview).toHaveBeenCalledWith(lockedVault.id, entry, expect.any(Function))
+  })
+
+  it('says how many items could not be decrypted instead of calling the folder empty', async () => {
+    const user = userEvent.setup()
+    mocks.listVaultFiles.mockResolvedValue({
+      repoId: lockedVault.id,
+      repoName: lockedVault.name,
+      directoryId: 'root',
+      breadcrumbs: [{ id: 'root', name: lockedVault.name }],
+      entries: [],
+      skippedEntries: 2,
+    })
+    render(
+      <VaultDialog
+        mountId="mount-1"
+        parentPath="/"
+        onClose={vi.fn()}
+        onNotice={vi.fn()}
+        onTransferStarted={vi.fn()}
+        onPreview={vi.fn()}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /解锁/ }))
+
+    expect(await screen.findByText(/有 2 个项目无法解密/)).not.toBeNull()
+    expect(screen.queryByText('此加密文件夹为空')).toBeNull()
   })
 })

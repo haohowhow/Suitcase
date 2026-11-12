@@ -383,6 +383,8 @@ export interface VaultDirectory {
   readonly directoryId: string
   readonly breadcrumbs: VaultBreadcrumb[]
   readonly entries: VaultEntry[]
+  /** Items that could not be decrypted and are left out of `entries`. */
+  readonly skippedEntries: number
 }
 
 export type FilePreviewKind = 'video' | 'audio' | 'image' | 'pdf' | 'text'

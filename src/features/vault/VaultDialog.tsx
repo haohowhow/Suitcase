@@ -471,7 +471,12 @@ export function VaultDialog({
 
             <div className="vault-file-list" role="list" aria-label={`${directory.repoName} 内容`}>
               {loading ? <p className="vault-muted">正在解密目录元数据…</p> : null}
-              {!loading && directory.entries.length === 0 ? (
+              {!loading && directory.skippedEntries > 0 ? (
+                <p className="vault-muted" role="status">
+                  有 {directory.skippedEntries} 个项目无法解密，已隐藏。它们可能不是由保险箱创建，或使用了其他 Safe Key。
+                </p>
+              ) : null}
+              {!loading && directory.entries.length === 0 && directory.skippedEntries === 0 ? (
                 <div className="vault-empty">
                   <Folder size={28} />
                   <strong>此加密文件夹为空</strong>

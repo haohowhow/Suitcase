@@ -139,6 +139,15 @@ impl KoofrApi {
         Ok(info)
     }
 
+    /// Lets tests in other modules talk to a mock server as a signed-in client.
+    #[cfg(test)]
+    pub(crate) async fn set_test_session(&self, token: &str) {
+        *self.session.write().await = Some(Session {
+            token: token.to_owned(),
+            user_id: None,
+        });
+    }
+
     pub async fn disconnect(&self) {
         *self.session.write().await = None;
         *self.account_scope.write().await = None;

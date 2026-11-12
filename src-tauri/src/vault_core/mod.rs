@@ -58,6 +58,10 @@ pub struct VaultDirectory {
     pub directory_id: String,
     pub breadcrumbs: Vec<VaultBreadcrumb>,
     pub entries: Vec<VaultEntry>,
+    /// Items in this folder that could not be decrypted (not created by a Vault,
+    /// a different Safe Key, or a damaged name). They are left out of `entries`
+    /// so one bad name does not hide the whole folder.
+    pub skipped_entries: usize,
 }
 
 #[derive(Clone)]
@@ -79,7 +83,21 @@ struct ManagedRepo {
 struct UnlockedRepo {
     cipher: Arc<VaultCipher>,
     handles: HashMap<String, VaultHandle>,
+    /// Encrypted path to handle ID, so listing a folder again hands out the same
+    /// IDs instead of growing the table on every refresh.
+    ids_by_path: HashMap<String, String>,
     last_activity: Instant,
+}
+
+/// A listed item before it has a handle ID.
+struct ListedEntry {
+    name: String,
+    encrypted_path: RemotePath,
+    entry_type: HandleType,
+    remote_type: String,
+    modified: i64,
+    size: i64,
+    content_type: String,
 }
 
 #[derive(Clone)]
@@ -167,9 +185,11 @@ impl VaultManager {
         );
         let mut state = self.state.write().await;
         let managed = state.repos.get_mut(repo_id).ok_or(AppError::NotFound)?;
+        let ids_by_path = HashMap::from([("/".to_owned(), ROOT_HANDLE.to_owned())]);
         managed.unlocked = Some(UnlockedRepo {
             cipher: Arc::new(cipher),
             handles,
+            ids_by_path,
             last_activity: Instant::now(),
         });
         Ok(summary(managed, self.auto_lock_after))
@@ -212,50 +232,17 @@ impl VaultManager {
         let mount_id = MountId::parse(repo.mount_id.clone())?;
         let remote_directory = mount_path(&repo.path, &parent.encrypted_path)?;
         let files = api.list_files(&mount_id, &remote_directory).await?;
-        let mut entries = Vec::with_capacity(files.len());
-        let mut new_handles = Vec::with_capacity(files.len());
+        let mut listed = Vec::with_capacity(files.len());
+        let mut skipped_entries = 0_usize;
         for file in files {
-            let name = cipher.decrypt_name(&file.name)?;
-            RemoteName::parse(name.clone())?;
-            let encrypted_name = RemoteName::parse(file.name)?;
-            let encrypted_path = parent.encrypted_path.join(&encrypted_name)?;
-            let entry_type = if file.entry_type == "dir" {
-                HandleType::Directory
-            } else if file.entry_type == "file" {
-                HandleType::File
-            } else {
-                return Err(AppError::VaultCrypto);
-            };
-            let id = uuid::Uuid::new_v4().to_string();
-            let mut breadcrumbs = parent.breadcrumbs.clone();
-            if entry_type == HandleType::Directory {
-                breadcrumbs.push(VaultBreadcrumb {
-                    id: id.clone(),
-                    name: name.clone(),
-                });
+            match listed_entry(&cipher, &parent.encrypted_path, file) {
+                Some(entry) => listed.push(entry),
+                None => skipped_entries += 1,
             }
-            let size = if entry_type == HandleType::File {
-                VaultCipher::decrypted_size(file.size)?
-            } else {
-                0
-            };
-            entries.push(VaultEntry {
-                id: id.clone(),
-                name,
-                entry_type: file.entry_type,
-                modified: file.modified,
-                size,
-                content_type: file.content_type,
-            });
-            new_handles.push((
-                id,
-                VaultHandle {
-                    encrypted_path,
-                    entry_type,
-                    breadcrumbs,
-                },
-            ));
         }
+        let mut entries = self
+            .install_handles(repo_id, directory_id, &parent, listed)
+            .await?;
         entries.sort_by(|left, right| {
             let left_dir = left.entry_type == "dir";
             let right_dir = right.entry_type == "dir";
@@ -263,13 +250,13 @@ impl VaultManager {
                 .cmp(&left_dir)
                 .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
         });
-        self.install_handles(repo_id, new_handles).await?;
         Ok(VaultDirectory {
             repo_id: repo.id,
             repo_name: repo.name,
             directory_id: directory_id.to_owned(),
             breadcrumbs: parent.breadcrumbs,
             entries,
+            skipped_entries,
         })
     }
 
@@ -439,21 +426,114 @@ impl VaultManager {
         Ok((repo.metadata.clone(), unlocked.cipher.clone(), handle))
     }
 
+    /// Gives every listed item a handle, reusing the ID an item already had, and
+    /// returns the entries for the UI.
     async fn install_handles(
         &self,
         repo_id: &str,
-        handles: Vec<(String, VaultHandle)>,
-    ) -> Result<(), AppError> {
+        directory_id: &str,
+        parent: &VaultHandle,
+        listed: Vec<ListedEntry>,
+    ) -> Result<Vec<VaultEntry>, AppError> {
         let mut state = self.state.write().await;
         let repo = state.repos.get_mut(repo_id).ok_or(AppError::NotFound)?;
         let unlocked = repo.unlocked.as_mut().ok_or(AppError::VaultLocked)?;
-        if unlocked.handles.len().saturating_add(handles.len()) > MAX_HANDLES_PER_REPO {
-            unlocked.handles.retain(|id, _| id == ROOT_HANDLE);
+        let new_handles = listed
+            .iter()
+            .filter(|entry| {
+                !unlocked
+                    .ids_by_path
+                    .contains_key(entry.encrypted_path.as_str())
+            })
+            .count();
+        if unlocked.handles.len().saturating_add(new_handles) > MAX_HANDLES_PER_REPO {
+            // Forget handles of other folders, but keep the folder being listed and
+            // every folder above it so the breadcrumbs and going back keep working.
+            let mut keep = parent
+                .breadcrumbs
+                .iter()
+                .map(|crumb| crumb.id.clone())
+                .collect::<std::collections::HashSet<_>>();
+            keep.insert(ROOT_HANDLE.to_owned());
+            keep.insert(directory_id.to_owned());
+            unlocked.handles.retain(|id, _| keep.contains(id));
+            let handles = &unlocked.handles;
+            unlocked
+                .ids_by_path
+                .retain(|_, id| handles.contains_key(id));
         }
-        unlocked.handles.extend(handles);
+        let mut entries = Vec::with_capacity(listed.len());
+        for entry in listed {
+            let reused = unlocked
+                .ids_by_path
+                .get(entry.encrypted_path.as_str())
+                .filter(|id| {
+                    unlocked
+                        .handles
+                        .get(*id)
+                        .is_some_and(|handle| handle.entry_type == entry.entry_type)
+                })
+                .cloned();
+            let id = reused.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            let mut breadcrumbs = parent.breadcrumbs.clone();
+            if entry.entry_type == HandleType::Directory {
+                breadcrumbs.push(VaultBreadcrumb {
+                    id: id.clone(),
+                    name: entry.name.clone(),
+                });
+            }
+            unlocked
+                .ids_by_path
+                .insert(entry.encrypted_path.as_str().to_owned(), id.clone());
+            unlocked.handles.insert(
+                id.clone(),
+                VaultHandle {
+                    encrypted_path: entry.encrypted_path,
+                    entry_type: entry.entry_type,
+                    breadcrumbs,
+                },
+            );
+            entries.push(VaultEntry {
+                id,
+                name: entry.name,
+                entry_type: entry.remote_type,
+                modified: entry.modified,
+                size: entry.size,
+                content_type: entry.content_type,
+            });
+        }
         unlocked.last_activity = Instant::now();
-        Ok(())
+        Ok(entries)
     }
+}
+
+/// Decrypts one listed item. `None` when it is not a valid Vault item.
+fn listed_entry(
+    cipher: &VaultCipher,
+    parent: &RemotePath,
+    file: crate::koofr_api::FileInfo,
+) -> Option<ListedEntry> {
+    let name = cipher.decrypt_name(&file.name).ok()?;
+    RemoteName::parse(name.clone()).ok()?;
+    let encrypted_name = RemoteName::parse(file.name).ok()?;
+    let encrypted_path = parent.join(&encrypted_name).ok()?;
+    let (entry_type, size) = match file.entry_type.as_str() {
+        "dir" => (HandleType::Directory, 0),
+        "file" => (
+            HandleType::File,
+            VaultCipher::decrypted_size(file.size).ok()?,
+        ),
+        _ => return None,
+    };
+    Some(ListedEntry {
+        name,
+        encrypted_path,
+        entry_type,
+        remote_type: file.entry_type,
+        modified: file.modified,
+        size,
+        content_type: file.content_type,
+    })
 }
 
 fn same_crypto_identity(left: &VaultRepo, right: &VaultRepo) -> bool {
@@ -554,6 +634,7 @@ mod tests {
     use std::time::Duration;
 
     use super::{VaultManager, mount_path};
+    use crate::crypto::VaultCipher;
     use crate::file_ops::RemotePath;
     use crate::{error::AppError, koofr_api::VaultRepo};
 
@@ -602,6 +683,168 @@ mod tests {
         assert!(!unlocked.locked);
         manager.lock("repo-1").await.expect("lock");
         assert!(manager.summaries().await[0].locked);
+    }
+
+    async fn unlocked_manager_and_api(
+        server: &httpmock::MockServer,
+    ) -> (VaultManager, crate::koofr_api::KoofrApi) {
+        let manager = VaultManager::default();
+        manager.sync_repos(vec![test_repo()]).await;
+        manager
+            .unlock("repo-1", "testpassword")
+            .await
+            .expect("unlock valid key");
+        let api = crate::koofr_api::KoofrApi::new(&server.base_url()).expect("create API client");
+        api.set_test_session("test-token").await;
+        (manager, api)
+    }
+
+    fn listing(entries: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "files": entries })
+    }
+
+    #[tokio::test]
+    async fn relisting_reuses_handles_and_skips_undecryptable_names() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        let cipher = VaultCipher::new("testpassword", None);
+        let folder = cipher.encrypt_name("Docs");
+        let file = cipher.encrypt_name("報告.txt");
+        let encrypted_size = VaultCipher::encrypted_size(10).expect("encrypted size");
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path("/api/v2/mounts/mount-1/files/list")
+                    .query_param("path", "/Safe Box");
+                then.status(200).json_body(listing(serde_json::json!([
+                    { "name": folder, "type": "dir", "modified": 1, "size": 0,
+                      "contentType": "", "hash": "" },
+                    { "name": file, "type": "file", "modified": 2, "size": encrypted_size,
+                      "contentType": "text/plain", "hash": "" },
+                    { "name": "not-encrypted.txt", "type": "file", "modified": 3, "size": 5,
+                      "contentType": "text/plain", "hash": "" }
+                ])));
+            })
+            .await;
+        let (manager, api) = unlocked_manager_and_api(&server).await;
+
+        // When
+        let first = manager
+            .list_directory(&api, "repo-1", "root")
+            .await
+            .expect("list vault root");
+        let second = manager
+            .list_directory(&api, "repo-1", "root")
+            .await
+            .expect("list vault root again");
+
+        // Then
+        assert_eq!(first.skipped_entries, 1);
+        let names = first
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Docs", "報告.txt"]);
+        assert_eq!(first.entries[1].size, 10);
+        let ids = |directory: &super::VaultDirectory| {
+            directory
+                .entries
+                .iter()
+                .map(|entry| entry.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&first), ids(&second));
+        let state = manager.state.read().await;
+        let handles = &state.repos["repo-1"]
+            .unlocked
+            .as_ref()
+            .expect("unlocked")
+            .handles;
+        assert_eq!(handles.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn handle_overflow_keeps_the_current_folder_and_its_ancestors() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        let cipher = VaultCipher::new("testpassword", None);
+        let folder = cipher.encrypt_name("Docs");
+        let child = cipher.encrypt_name("Inner");
+        let folder_path = format!("/Safe Box/{folder}");
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path("/api/v2/mounts/mount-1/files/list")
+                    .query_param("path", "/Safe Box");
+                then.status(200).json_body(listing(serde_json::json!([
+                    { "name": folder, "type": "dir", "modified": 1, "size": 0,
+                      "contentType": "", "hash": "" }
+                ])));
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path("/api/v2/mounts/mount-1/files/list")
+                    .query_param("path", folder_path.as_str());
+                then.status(200).json_body(listing(serde_json::json!([
+                    { "name": child, "type": "dir", "modified": 1, "size": 0,
+                      "contentType": "", "hash": "" }
+                ])));
+            })
+            .await;
+        let (manager, api) = unlocked_manager_and_api(&server).await;
+        let root = manager
+            .list_directory(&api, "repo-1", "root")
+            .await
+            .expect("list vault root");
+        let docs_id = root.entries[0].id.clone();
+        {
+            let mut state = manager.state.write().await;
+            let unlocked = state
+                .repos
+                .get_mut("repo-1")
+                .and_then(|repo| repo.unlocked.as_mut())
+                .expect("unlocked");
+            let filler = unlocked.handles[&docs_id].clone();
+            while unlocked.handles.len() < super::MAX_HANDLES_PER_REPO {
+                unlocked
+                    .handles
+                    .insert(uuid::Uuid::new_v4().to_string(), filler.clone());
+            }
+        }
+
+        // When
+        let docs = manager
+            .list_directory(&api, "repo-1", &docs_id)
+            .await
+            .expect("list Docs after the table filled up");
+
+        // Then
+        let breadcrumb_ids = docs
+            .breadcrumbs
+            .iter()
+            .map(|crumb| crumb.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(breadcrumb_ids, ["root", docs_id.as_str()]);
+        for id in ["root", docs_id.as_str(), docs.entries[0].id.as_str()] {
+            manager
+                .operation_target("repo-1", id, Some("dir"))
+                .await
+                .expect("handle survived the overflow");
+        }
+        let state = manager.state.read().await;
+        let handles = &state.repos["repo-1"]
+            .unlocked
+            .as_ref()
+            .expect("unlocked")
+            .handles;
+        assert!(
+            handles.len() <= 4,
+            "stale handles were kept: {}",
+            handles.len()
+        );
     }
 
     #[tokio::test]

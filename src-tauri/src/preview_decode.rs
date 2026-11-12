@@ -9,6 +9,9 @@ use image::{DynamicImage, ImageFormat, ImageReader, RgbImage};
 use crate::error::AppError;
 
 const MAX_PREVIEW_PIXELS: u64 = 80_000_000;
+/// Embedded previews smaller than this on their long edge look blurry in the
+/// viewer; developing the RAW file is worth the extra time then.
+const MIN_EMBEDDED_PREVIEW_EDGE: u32 = 1024;
 const LIBRAW_SUCCESS: c_int = 0;
 const LIBRAW_IMAGE_JPEG: c_int = 1;
 const LIBRAW_IMAGE_BITMAP: c_int = 2;
@@ -124,28 +127,42 @@ fn make_processed_image(data: *mut c_void, thumbnail: bool) -> Result<(Vec<u8>, 
     }
     let result = unsafe {
         let image = &*image_ptr;
-        let pixels = u64::from(image.width) * u64::from(image.height);
-        if pixels == 0 || pixels > MAX_PREVIEW_PIXELS {
-            Err(AppError::PreviewTooLarge)
-        } else {
-            let bytes =
-                std::slice::from_raw_parts(image.data.as_ptr(), image.data_size as usize).to_vec();
-            match image.image_type {
-                LIBRAW_IMAGE_JPEG => Ok((bytes, "image/jpeg".to_owned())),
-                LIBRAW_IMAGE_BITMAP if image.colors == 3 && image.bits == 8 => {
+        let bytes =
+            std::slice::from_raw_parts(image.data.as_ptr(), image.data_size as usize).to_vec();
+        match image.image_type {
+            // LibRaw leaves width and height at zero for JPEG previews, so the size
+            // has to come from the JPEG header itself.
+            LIBRAW_IMAGE_JPEG => {
+                accept_embedded_jpeg(&bytes).map(|()| (bytes, "image/jpeg".to_owned()))
+            }
+            LIBRAW_IMAGE_BITMAP if image.colors == 3 && image.bits == 8 => {
+                validate_pixels(u32::from(image.width), u32::from(image.height)).and_then(|()| {
                     let rgb =
                         RgbImage::from_raw(u32::from(image.width), u32::from(image.height), bytes)
                             .ok_or(AppError::PreviewDecode)?;
                     encode_bounded_png(DynamicImage::ImageRgb8(rgb))
                         .map(|png| (png, "image/png".to_owned()))
-                }
-                _ => Err(AppError::PreviewDecode),
+                })
             }
+            _ => Err(AppError::PreviewDecode),
         }
     };
     // SAFETY: image_ptr was allocated by libraw_dcraw_make_mem_* above.
     unsafe { libraw_dcraw_clear_mem(image_ptr) };
     result
+}
+
+/// Accepts an embedded JPEG preview that is a real JPEG, within the pixel limit
+/// and large enough to be worth showing instead of developing the RAW data.
+fn accept_embedded_jpeg(bytes: &[u8]) -> Result<(), AppError> {
+    let (width, height) = ImageReader::with_format(Cursor::new(bytes), ImageFormat::Jpeg)
+        .into_dimensions()
+        .map_err(|_| AppError::PreviewDecode)?;
+    validate_pixels(width, height)?;
+    if width.max(height) < MIN_EMBEDDED_PREVIEW_EDGE {
+        return Err(AppError::PreviewDecode);
+    }
+    Ok(())
 }
 
 fn encode_bounded_png(image: DynamicImage) -> Result<Vec<u8>, AppError> {
@@ -177,6 +194,28 @@ mod tests {
         ));
         assert!(matches!(
             decode_raw(b"not-a-raw"),
+            Err(AppError::PreviewDecode)
+        ));
+    }
+
+    fn jpeg(width: u32, height: u32) -> Vec<u8> {
+        let mut output = Cursor::new(Vec::new());
+        DynamicImage::ImageRgb8(RgbImage::new(width, height))
+            .write_to(&mut output, ImageFormat::Jpeg)
+            .expect("encode test JPEG");
+        output.into_inner()
+    }
+
+    #[test]
+    fn uses_an_embedded_jpeg_only_when_it_is_large_enough() {
+        assert!(accept_embedded_jpeg(&jpeg(1600, 1067)).is_ok());
+        assert!(accept_embedded_jpeg(&jpeg(800, 1200)).is_ok());
+        assert!(matches!(
+            accept_embedded_jpeg(&jpeg(160, 120)),
+            Err(AppError::PreviewDecode)
+        ));
+        assert!(matches!(
+            accept_embedded_jpeg(b"not a jpeg"),
             Err(AppError::PreviewDecode)
         ));
     }
