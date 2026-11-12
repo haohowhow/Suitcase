@@ -2,6 +2,8 @@
 
 Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在这里。适合想了解整体结构、评估安全性、或者准备贡献代码的人读。
 
+恢复开发先读 [项目进度](PROJECT_STATUS.md)；接手任务、查找模块和确认验证边界见 [Agent 接手指南](AGENT_HANDOFF.md)。
+
 ## 目录
 
 - [顶层结构](#顶层结构)
@@ -114,9 +116,9 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 
 见 [src/README.md](../src/README.md) 里的目录职责。要点：
 
-- `App.tsx` 是唯一持有全局状态的组件（`authState`、`modalKind`、当前挂载点 / 目录、传输列表等）。React 19 + hooks，没有 Redux / Zustand 之类的外部状态库。
+- `App.tsx` 协调全局状态（登录、弹窗、当前挂载点 / 目录等）；设置、传输和同步逻辑分别抽取到 `hooks/useAppSettings.ts`、`hooks/useTransferManager.ts`、`hooks/useSyncManager.ts`。React 19 + hooks，没有 Redux / Zustand 之类的外部状态库。
 - `features/*/` 每个功能模块只导出 UI 组件和领域 hooks。跨模块通信通过 `App.tsx` 传 props 或事件回调，不允许 feature-to-feature 直接依赖。
-- `services/koofr.ts` 和 `services/publicLinks.ts` 是**唯一**允许调 `@tauri-apps/api` 的地方，所有命令都在这里包一层类型安全接口。
+- 业务 Tauri 命令只通过 `services/koofr.ts` 和 `services/publicLinks.ts` 的类型安全接口调用。当前 `components/TitleBar.tsx` 直接 import Tauri core / window API，仅执行原生窗口最小化、最大化和关闭；这是既有实现偏差，不作为新增业务 IPC 绕过 services 的依据。
 - 错误处理：`commandErrorMessage(error, fallback)` 拿安全消息，`isCommandErrorCode(error, code)` 判断错误码。
 
 ### Rust 后端 `src-tauri/src/`
@@ -211,7 +213,7 @@ src-tauri/src/
 
 `TransferManager` 维护一个 `HashMap<TransferId, TransferHandle>`，每个句柄包含：
 
-- 当前状态：`Running | Paused | Completed | Cancelled | Failed`
+- 当前状态：`Queued | Running | Retrying | Paused | Completed | Cancelled | Failed`
 - 已传输字节数、总字节数
 - 取消 signal（`tokio_util::sync::CancellationToken`）
 - 关联的 checkpoint（如果可恢复）
@@ -222,9 +224,9 @@ src-tauri/src/
 {
   transferId: string,
   direction: 'upload' | 'download',
-  state: 'running' | 'paused' | 'completed' | 'cancelled' | 'failed',
+  state: 'queued' | 'running' | 'retrying' | 'paused' | 'completed' | 'cancelled' | 'failed',
   bytesTransferred: number,
-  totalBytes: number,
+  totalBytes: number | null,
   splitProgress?: {
     completedParts: number,
     currentPart: number | null,
