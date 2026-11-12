@@ -2516,21 +2516,7 @@ impl SyncManager {
         })
         .await
         .map_err(|_| AppError::LocalData)??;
-        let mut baseline = BTreeMap::new();
-        for relative in final_local.entries.keys().chain(final_remote.keys()) {
-            let local = final_local.entries.get(relative);
-            let remote = final_remote.get(relative);
-            baseline
-                .entry(relative.clone())
-                .or_insert_with(|| SnapshotEntry {
-                    kind: local
-                        .map(|entry| entry.kind.clone())
-                        .or_else(|| remote.map(|entry| entry.kind.clone()))
-                        .unwrap_or_else(|| "file".to_owned()),
-                    local: local.map(|entry| entry.identity.clone()),
-                    remote: remote.map(|entry| entry.identity.clone()),
-                });
-        }
+        let baseline = merge_baseline(&pair.baseline, &final_local.entries, &final_remote);
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -2977,21 +2963,7 @@ impl SyncManager {
                 local_endpoint_stats(&final_local),
                 remote_endpoint_stats(&final_remote),
             );
-        let mut baseline = BTreeMap::new();
-        for relative in final_local.keys().chain(final_remote.keys()) {
-            let local_entry = final_local.get(relative);
-            let remote_entry = final_remote.get(relative);
-            baseline
-                .entry(relative.clone())
-                .or_insert_with(|| SnapshotEntry {
-                    kind: local_entry
-                        .map(|entry| entry.kind.clone())
-                        .or_else(|| remote_entry.map(|entry| entry.kind.clone()))
-                        .unwrap_or_else(|| "file".to_owned()),
-                    local: local_entry.map(|entry| entry.identity.clone()),
-                    remote: remote_entry.map(|entry| entry.identity.clone()),
-                });
-        }
+        let baseline = merge_baseline(&pair.baseline, &final_local, &final_remote);
         self.store.save_baseline(pair_id, &baseline, now_millis())?;
         telemetry
             .lock()
@@ -3842,6 +3814,42 @@ fn plan_actions(baseline: &BTreeMap<String, SnapshotEntry>, scan: &ScanResult) -
     actions
 }
 
+/// Builds the next three-way baseline from the post-sync scans.
+///
+/// A path is recorded only when both sides agree (same kind and, for files, same
+/// content). Anything that diverges — usually because it changed while the run was
+/// in progress — keeps its previous baseline entry (or stays absent), so the next
+/// scan still sees the change instead of silently accepting the divergence.
+fn merge_baseline(
+    previous: &BTreeMap<String, SnapshotEntry>,
+    local: &BTreeMap<String, LocalEntry>,
+    remote: &BTreeMap<String, RemoteEntry>,
+) -> BTreeMap<String, SnapshotEntry> {
+    let mut baseline = BTreeMap::new();
+    for relative in local.keys().chain(remote.keys()) {
+        if baseline.contains_key(relative) {
+            continue;
+        }
+        let agreed = match (local.get(relative), remote.get(relative)) {
+            (Some(local), Some(remote))
+                if local.kind == remote.kind
+                    && (local.kind == "dir" || same_content(&local.identity, &remote.identity)) =>
+            {
+                Some(SnapshotEntry {
+                    kind: local.kind.clone(),
+                    local: Some(local.identity.clone()),
+                    remote: Some(remote.identity.clone()),
+                })
+            }
+            _ => None,
+        };
+        if let Some(entry) = agreed.or_else(|| previous.get(relative).cloned()) {
+            baseline.insert(relative.clone(), entry);
+        }
+    }
+    baseline
+}
+
 fn coalesce_native_renames(actions: Vec<Action>) -> Vec<Action> {
     let mut used = vec![false; actions.len()];
     let mut moves = Vec::new();
@@ -3936,8 +3944,13 @@ fn plan_directory_action(
     if local_dir && remote_dir {
         return;
     }
+    // A directory without a usable two-sided baseline is new on the side where it
+    // exists. Only a directory that both sides previously agreed on can propagate a
+    // deletion; otherwise a freshly created folder would be planned as a delete.
+    let new_on_one_side =
+        initial || previous.is_none_or(|entry| entry.local.is_none() || entry.remote.is_none());
     if local_dir && !remote_dir {
-        if initial || previous.is_some_and(|entry| entry.remote.is_none()) {
+        if new_on_one_side {
             actions.push(Action::EnsureRemoteDir {
                 relative: relative.to_owned(),
             });
@@ -3948,7 +3961,7 @@ fn plan_directory_action(
             });
         }
     } else if remote_dir && !local_dir {
-        if initial || previous.is_some_and(|entry| entry.local.is_none()) {
+        if new_on_one_side {
             actions.push(Action::EnsureLocalDir {
                 relative: relative.to_owned(),
             });
@@ -4027,6 +4040,24 @@ async fn execute_action(
         }
         Action::DeleteLocal { relative, expected } => {
             let path = local_path(&pair.local_root, relative)?;
+            if let Some(outcome) = delete_local_directory_if_empty(&path)? {
+                return match outcome {
+                    LocalDirectoryDelete::Removed => Ok(0),
+                    // Local content that was not part of the remote deletion (new or
+                    // ignored files) wins: restore the remote folder instead of
+                    // throwing that content away or stalling on a permanent conflict.
+                    LocalDirectoryDelete::NotEmpty => {
+                        ensure_remote_directory_tree(
+                            &state.api,
+                            &pair.mount_id,
+                            &pair.remote_path,
+                            relative,
+                        )
+                        .await?;
+                        Ok(0)
+                    }
+                };
+            }
             let current = local_identity(&path)?;
             if current.as_ref() != Some(expected) {
                 return Err(AppError::Conflict);
@@ -4332,6 +4363,57 @@ fn local_path(root: &Path, relative: &str) -> Result<PathBuf, AppError> {
         return Err(AppError::InvalidInput("sync relative path"));
     }
     Ok(root.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR)))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LocalDirectoryDelete {
+    Removed,
+    NotEmpty,
+}
+
+/// Directory deletions are planned after every child action, deepest first, so by
+/// the time a directory itself is processed it should be empty. Directory mtimes
+/// change whenever children are removed, which is why they are not compared here.
+/// Returns `None` when the path is not a plain directory, so callers fall back to
+/// the file identity check.
+fn delete_local_directory_if_empty(path: &Path) -> Result<Option<LocalDirectoryDelete>, AppError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::Io(error)),
+    };
+    if !metadata.is_dir() {
+        return Ok(None);
+    }
+    if is_reparse_point(&metadata) {
+        return Err(AppError::InvalidInput("sync local directory"));
+    }
+    if fs::read_dir(path)?.next().is_some() {
+        return Ok(Some(LocalDirectoryDelete::NotEmpty));
+    }
+    fs::remove_dir(path)?;
+    Ok(Some(LocalDirectoryDelete::Removed))
+}
+
+async fn ensure_remote_directory_tree(
+    api: &KoofrApi,
+    mount_id: &MountId,
+    remote_root: &RemotePath,
+    relative: &str,
+) -> Result<(), AppError> {
+    let mut current = remote_root.clone();
+    for segment in relative.split('/') {
+        let name = RemoteName::parse(segment.to_owned())?;
+        let next = current.join(&name)?;
+        match api.file_info(mount_id, &next).await {
+            Ok(info) if is_directory(&info.entry_type) => {}
+            Ok(_) => return Err(AppError::Conflict),
+            Err(AppError::NotFound) => api.create_folder(mount_id, &current, &name).await?,
+            Err(error) => return Err(error),
+        }
+        current = next;
+    }
+    Ok(())
 }
 
 fn sync_temporary_path(target: &Path) -> PathBuf {
@@ -5288,5 +5370,193 @@ mod tests {
         telemetry.clear_active();
         assert_eq!(telemetry.public().2.completed_bytes, 100);
         assert_eq!(telemetry.public().2.bytes_per_second, 0);
+    }
+
+    fn file_baseline() -> BTreeMap<String, SnapshotEntry> {
+        BTreeMap::from([(
+            "a.txt".to_owned(),
+            SnapshotEntry {
+                kind: "file".to_owned(),
+                local: Some(identity("a", 1)),
+                remote: Some(identity("a", 1)),
+            },
+        )])
+    }
+
+    fn dir_identity(modified: i64) -> Identity {
+        Identity {
+            size: 0,
+            modified,
+            hash: String::new(),
+        }
+    }
+
+    fn local_file(relative: &str, hash: &str) -> (String, LocalEntry) {
+        (
+            relative.to_owned(),
+            LocalEntry {
+                kind: "file".to_owned(),
+                identity: identity(hash, 1),
+                path: PathBuf::from(relative),
+            },
+        )
+    }
+
+    fn remote_file(relative: &str, hash: &str) -> (String, RemoteEntry) {
+        (
+            relative.to_owned(),
+            RemoteEntry {
+                kind: "file".to_owned(),
+                identity: identity(hash, 1),
+                path: RemotePath::parse(format!("/root/{relative}")).unwrap(),
+            },
+        )
+    }
+
+    fn planned(actions: &[Action]) -> Vec<String> {
+        actions
+            .iter()
+            .map(|action| format!("{}:{}", action_name(action), action_relative(action)))
+            .collect()
+    }
+
+    #[test]
+    fn folder_created_locally_after_first_sync_is_created_remotely() {
+        let local = BTreeMap::from([(
+            "New folder".to_owned(),
+            LocalEntry {
+                kind: "dir".to_owned(),
+                identity: dir_identity(5),
+                path: PathBuf::from("New folder"),
+            },
+        )]);
+        let actions = plan_actions(
+            &file_baseline(),
+            &ScanResult {
+                local,
+                remote: BTreeMap::new(),
+            },
+        );
+        assert_eq!(planned(&actions), ["mkdir_remote:New folder"]);
+    }
+
+    #[test]
+    fn folder_created_remotely_after_first_sync_is_created_locally() {
+        let remote = BTreeMap::from([(
+            "Web folder".to_owned(),
+            RemoteEntry {
+                kind: "dir".to_owned(),
+                identity: dir_identity(5),
+                path: RemotePath::parse("/root/Web folder".to_owned()).unwrap(),
+            },
+        )]);
+        let actions = plan_actions(
+            &file_baseline(),
+            &ScanResult {
+                local: BTreeMap::new(),
+                remote,
+            },
+        );
+        assert_eq!(planned(&actions), ["mkdir_local:Web folder"]);
+    }
+
+    #[test]
+    fn folder_deleted_on_one_side_after_agreement_still_propagates() {
+        let mut baseline = file_baseline();
+        baseline.insert(
+            "docs".to_owned(),
+            SnapshotEntry {
+                kind: "dir".to_owned(),
+                local: Some(dir_identity(1)),
+                remote: Some(dir_identity(2)),
+            },
+        );
+        let local = BTreeMap::from([(
+            "docs".to_owned(),
+            LocalEntry {
+                kind: "dir".to_owned(),
+                identity: dir_identity(9),
+                path: PathBuf::from("docs"),
+            },
+        )]);
+        let actions = plan_actions(
+            &baseline,
+            &ScanResult {
+                local,
+                remote: BTreeMap::new(),
+            },
+        );
+        assert!(planned(&actions).contains(&"delete_local:docs".to_owned()));
+    }
+
+    #[test]
+    fn local_directory_delete_removes_only_empty_plain_directories() {
+        let root = std::env::temp_dir().join(format!("koofr-sync-dir-{}", uuid::Uuid::new_v4()));
+        let empty = root.join("empty");
+        let full = root.join("full");
+        fs::create_dir_all(&empty).unwrap();
+        fs::create_dir_all(&full).unwrap();
+        fs::write(full.join("keep.txt"), b"keep").unwrap();
+        fs::write(root.join("file.txt"), b"file").unwrap();
+
+        assert_eq!(
+            delete_local_directory_if_empty(&empty).unwrap(),
+            Some(LocalDirectoryDelete::Removed)
+        );
+        assert!(!empty.exists());
+        assert_eq!(
+            delete_local_directory_if_empty(&full).unwrap(),
+            Some(LocalDirectoryDelete::NotEmpty)
+        );
+        assert!(full.join("keep.txt").exists());
+        assert_eq!(
+            delete_local_directory_if_empty(&root.join("file.txt")).unwrap(),
+            None
+        );
+        assert_eq!(
+            delete_local_directory_if_empty(&root.join("missing")).unwrap(),
+            None
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn baseline_records_only_paths_where_both_sides_agree() {
+        let previous = file_baseline();
+        let local = BTreeMap::from([
+            local_file("a.txt", "edited-during-run"),
+            local_file("same.txt", "s"),
+            local_file("new-during-run.txt", "n"),
+        ]);
+        let remote = BTreeMap::from([remote_file("a.txt", "a"), remote_file("same.txt", "s")]);
+        let baseline = merge_baseline(&previous, &local, &remote);
+
+        assert_eq!(baseline.get("a.txt").unwrap().local, Some(identity("a", 1)));
+        assert_eq!(
+            baseline.get("same.txt").unwrap().remote,
+            Some(identity("s", 1))
+        );
+        assert!(!baseline.contains_key("new-during-run.txt"));
+
+        let actions = plan_actions(&baseline, &ScanResult { local, remote });
+        let planned = planned(&actions);
+        assert!(planned.contains(&"upload:a.txt".to_owned()));
+        assert!(planned.contains(&"upload:new-during-run.txt".to_owned()));
+        assert!(!planned.iter().any(|action| action.ends_with(":same.txt")));
+    }
+
+    #[test]
+    fn deletion_during_run_is_propagated_instead_of_resurrected() {
+        let previous = file_baseline();
+        let remote = BTreeMap::from([remote_file("a.txt", "a")]);
+        let baseline = merge_baseline(&previous, &BTreeMap::new(), &remote);
+        let actions = plan_actions(
+            &baseline,
+            &ScanResult {
+                local: BTreeMap::new(),
+                remote,
+            },
+        );
+        assert_eq!(planned(&actions), ["delete_remote:a.txt"]);
     }
 }
