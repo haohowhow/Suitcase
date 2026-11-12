@@ -484,19 +484,17 @@ pub fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri:
     }
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
+            // The tray icon and the hidden floating window keep the process alive,
+            // so letting only the main window close would leave an invisible app
+            // running. Without close-to-tray the close button quits the whole app.
+            api.prevent_close();
             let general =
                 tauri::async_runtime::block_on(app.state::<AppState>().settings.general());
             if general.close_to_tray {
-                api.prevent_close();
                 let _ = window.hide();
                 return;
             }
-            if general.confirm_quit_with_transfers
-                && app.state::<AppState>().transfers.active_count() > 0
-            {
-                api.prevent_close();
-                request_quit(app);
-            }
+            request_quit(app);
         }
         tauri::WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
             let general =
@@ -543,9 +541,9 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
         let confirmed = app
             .dialog()
             .message(if english {
-                "Transfers are still queued or running. Quit and cancel them?"
+                "Transfers are still queued or running. Quit anyway? Resumable transfers                  are paused and can be continued from the Transfers panel after you sign                  in again; folder downloads stop."
             } else {
-                "仍有排队或运行中的传输。要退出并取消这些任务吗？"
+                "仍有排队或运行中的传输。仍要退出吗？可续传的任务会暂停，再次登录后可在传输面板继续；文件夹下载会停止。"
             })
             .title(if english {
                 "Quit Koofr GUI"
@@ -559,9 +557,28 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
             return;
         }
     }
-    state.transfers.cancel_all();
+    state.transfers.pause_all();
     state.sync.stop_all();
-    app.exit(0);
+    // Give the paused transfers a moment to record where they stopped before the
+    // process ends; never block the UI thread for it.
+    for label in ["main", FLOATING_WINDOW_LABEL] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.hide();
+        }
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        if state
+            .transfers
+            .wait_until_idle(crate::commands::TRANSFER_STOP_GRACE)
+            .await
+        {
+            // The terminal events and history updates follow the ID release.
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        app.exit(0);
+    });
 }
 
 fn resolved_english(language: InterfaceLanguage) -> bool {

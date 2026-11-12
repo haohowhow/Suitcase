@@ -115,6 +115,9 @@ pub struct AppVersionInfo {
     license: &'static str,
 }
 
+/// How long signing out or quitting waits for paused transfers to save their state.
+pub const TRANSFER_STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 #[tauri::command]
 pub async fn connect_koofr(
     app: AppHandle,
@@ -123,8 +126,11 @@ pub async fn connect_koofr(
     app_password: String,
     remember_password: bool,
 ) -> CommandResult<SessionInfo> {
-    state.transfers.cancel_all();
+    // Switching accounts pauses rather than cancels: the previous account's
+    // resumable transfers keep their checkpoints and show up again on its next login.
+    state.transfers.pause_all();
     state.sync.stop_all();
+    state.transfers.wait_until_idle(TRANSFER_STOP_GRACE).await;
     state.local_access.clear();
     state.vault.reset().await;
     if let Some(sessions) = crate::stream_session::STREAM_SESSIONS.get() {
@@ -260,8 +266,11 @@ pub async fn restore_saved_login(
 
 #[tauri::command]
 pub async fn disconnect_koofr(state: State<'_, AppState>) -> CommandResult<()> {
-    state.transfers.cancel_all();
+    // Signing out (also the idle timeout) pauses transfers so they can be resumed
+    // after the next sign-in, and lets them save their state before the session ends.
+    state.transfers.pause_all();
     state.sync.stop_all();
+    state.transfers.wait_until_idle(TRANSFER_STOP_GRACE).await;
     state.vault.reset().await;
     state.api.disconnect().await;
     state.local_access.clear();

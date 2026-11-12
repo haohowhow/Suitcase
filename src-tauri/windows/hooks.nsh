@@ -1,4 +1,4 @@
-!macro NSIS_HOOK_PREUNINSTALL
+﻿!macro NSIS_HOOK_PREUNINSTALL
   ${If} $UpdateMode <> 1
     koofr_cleanup_retry:
     ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --unregister-sync-roots' $0

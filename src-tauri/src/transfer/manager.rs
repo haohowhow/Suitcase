@@ -166,7 +166,6 @@ impl TransferManager {
         self.bandwidth.finish(transfer_id);
     }
 
-    #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
         self.active().len()
     }
@@ -207,9 +206,28 @@ impl TransferManager {
             .is_some_and(|control| control.pause_requested.load(Ordering::Acquire))
     }
 
-    pub fn cancel_all(&self) {
+    /// Stops every running or queued transfer the way the pause button does, so
+    /// resumable ones keep their partial data and checkpoint. Used when the app
+    /// quits or the account signs out.
+    pub fn pause_all(&self) {
         for control in self.active().values() {
+            control.pause_requested.store(true, Ordering::Release);
             control.token.cancel();
+        }
+    }
+
+    /// Waits until every transfer has released its ID, or `limit` has passed.
+    /// Returns whether all of them stopped in time.
+    pub async fn wait_until_idle(&self, limit: std::time::Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + limit;
+        loop {
+            if self.active_count() == 0 {
+                return true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
 
@@ -288,6 +306,37 @@ mod tests {
         assert!(registration.token().is_cancelled());
         assert!(registration.finish());
         assert!(manager.register_scoped(&id).is_ok());
+    }
+
+    #[tokio::test]
+    async fn pause_all_marks_every_transfer_paused_and_waits_for_them() {
+        let manager = std::sync::Arc::new(TransferManager::default());
+        let first = uuid::Uuid::new_v4().to_string();
+        let second = uuid::Uuid::new_v4().to_string();
+        let first_token = manager.register(&first).expect("register first");
+        let second_token = manager.register(&second).expect("register second");
+
+        manager.pause_all();
+
+        assert!(first_token.is_cancelled() && second_token.is_cancelled());
+        assert!(manager.was_paused(&first) && manager.was_paused(&second));
+        assert!(
+            !manager
+                .wait_until_idle(std::time::Duration::from_millis(60))
+                .await
+        );
+        let finishing = manager.clone();
+        let (first_id, second_id) = (first.clone(), second.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            finishing.finish(&first_id);
+            finishing.finish(&second_id);
+        });
+        assert!(
+            manager
+                .wait_until_idle(std::time::Duration::from_secs(2))
+                .await
+        );
     }
 
     #[tokio::test]

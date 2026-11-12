@@ -89,7 +89,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--autostart"]),
+            Some(vec![autostart::LAUNCH_ARGUMENT]),
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -207,6 +207,16 @@ pub fn run() {
             let _ = stream_session::STREAM_SESSIONS
                 .set(stream_session::StreamSessionManager::default());
             desktop::setup(app)?;
+            // Started by Windows at sign-in: with close-to-tray on, stay in the tray
+            // instead of opening the main window on every boot.
+            let launched_at_login =
+                std::env::args_os().any(|argument| argument == autostart::LAUNCH_ARGUMENT);
+            if launched_at_login
+                && general.close_to_tray
+                && let Some(window) = app.get_webview_window("main")
+            {
+                let _ = window.hide();
+            }
             Ok(())
         })
         .on_window_event(desktop::handle_window_event)

@@ -7,6 +7,10 @@ use crate::error::AppError;
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
+/// Passed by the launch-at-login entry so start-up can tell it apart from a
+/// launch by the user.
+pub const LAUNCH_ARGUMENT: &str = "--autostart";
+
 pub fn initialize(app: AppHandle) {
     let _ = APP_HANDLE.set(app);
 }

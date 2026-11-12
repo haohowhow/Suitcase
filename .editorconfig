@@ -13,3 +13,8 @@ indent_size = 4
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.nsh]
+# makensis reads files without a BOM in the system ANSI code page, which
+# garbles the Chinese uninstall prompt. Tauri's own NSIS files carry a BOM too.
+charset = utf-8-bom
