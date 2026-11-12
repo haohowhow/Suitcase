@@ -87,6 +87,12 @@ pub fn cleanup_native_sync_roots_for_uninstall() -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be registered first. A second launch (a desktop shortcut while the
+        // app sits in the tray) focuses the running instance instead of starting a
+        // second one that would fight over the same state files and sync roots.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            desktop::show_main_window(app);
+        }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![autostart::LAUNCH_ARGUMENT]),
