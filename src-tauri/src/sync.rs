@@ -157,6 +157,15 @@ const REMOTE_SCAN_CONCURRENCY: usize = 4;
 const LOCAL_DEBOUNCE: Duration = Duration::from_secs(2);
 const SYNC_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 const NATIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_CONFLICT_RESCANS: u32 = 3;
+
+/// How a sync run ended when it did not fail outright.
+#[derive(Debug, PartialEq, Eq)]
+enum RunOutcome {
+    Completed,
+    /// A conditional operation saw newer state; the plan is stale.
+    Rescan,
+}
 
 pub fn cleanup_native_roots_for_uninstall(database_path: &Path) -> Result<(), AppError> {
     if !database_path.is_file() {
@@ -1067,20 +1076,44 @@ impl SyncStore {
         let transaction = connection
             .unchecked_transaction()
             .map_err(|_| AppError::LocalData)?;
-        transaction
+        // A persistent problem is retried on every scan; keep one open issue per
+        // path and code instead of adding a new row every minute.
+        let inserted = transaction
             .execute(
                 "INSERT INTO sync_issues (pair_id, relative_path, code, message, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                 SELECT ?1, ?2, ?3, ?4, ?5
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM sync_issues
+                     WHERE pair_id = ?1 AND relative_path = ?2 AND code = ?3 AND resolved = 0
+                 )",
                 params![pair_id, relative_path, code, message, now],
             )
             .map_err(|_| AppError::LocalData)?;
         transaction
             .execute(
-                "UPDATE sync_pairs SET issue_count = issue_count + 1, status = 'attention' WHERE id = ?1",
-                [pair_id],
+                "UPDATE sync_pairs SET issue_count = issue_count + ?2, status = 'attention' WHERE id = ?1",
+                params![pair_id, inserted as i64],
             )
             .map_err(|_| AppError::LocalData)?;
         transaction.commit().map_err(|_| AppError::LocalData)
+    }
+
+    /// Stores the agreed part of a run that also had failures. Unlike
+    /// `save_baseline`, open issues and the attention state stay untouched.
+    fn save_partial_baseline(
+        &self,
+        pair_id: &str,
+        baseline: &BTreeMap<String, SnapshotEntry>,
+    ) -> Result<(), AppError> {
+        let json = serde_json::to_string(baseline).map_err(|_| AppError::LocalData)?;
+        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
+        connection
+            .execute(
+                "UPDATE sync_pairs SET baseline_json = ?2 WHERE id = ?1",
+                params![pair_id, json],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        Ok(())
     }
 
     fn issues(&self, pair_id: &str) -> Result<Vec<SyncIssue>, AppError> {
@@ -1900,6 +1933,11 @@ impl SyncManager {
         entry = self.store.upsert_native_entry(entry)?;
 
         let transfer_id = uuid::Uuid::new_v4().to_string();
+        // Release the bandwidth limiter's per-transfer bucket on every exit path.
+        let _finish = FinishTransferOnDrop {
+            manager: &state.transfers,
+            transfer_id: &transfer_id,
+        };
         let _permit = state
             .transfers
             .acquire(TransferDirection::Download, cancel)
@@ -1911,6 +1949,7 @@ impl SyncManager {
         let mut offset = 0_i64;
         let mut total = 0_u64;
         let mut retries_completed = 0_u32;
+        let mut validator: Option<String> = None;
         'download: loop {
             let response_result = tokio::select! {
                 result = tokio::time::timeout(
@@ -1949,6 +1988,20 @@ impl SyncManager {
                 total = 0;
             } else if total > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
                 return Err(AppError::IncompleteTransfer);
+            }
+            // Bytes already handed to CfExecute cannot be taken back, so a resumed
+            // range must come from the same remote version. Fail before writing more
+            // when the server reports a different validator.
+            let current_validator = response_validator(&response);
+            if total > 0 {
+                if validator.is_some()
+                    && current_validator.is_some()
+                    && validator != current_validator
+                {
+                    return Err(AppError::Conflict);
+                }
+            } else {
+                validator = current_validator;
             }
             let mut stream = response.bytes_stream();
             loop {
@@ -2199,11 +2252,26 @@ impl SyncManager {
                         .store
                         .native_entry_for_local(&pair.id, relative)?
                         .ok_or(AppError::Conflict)?;
-                    if entry.identity != *expected || !state.in_sync {
+                    // Removing children earlier in this run updates the directory's
+                    // last-write time, which clears its in-sync flag under
+                    // TRACK_DIRECTORY_LAST_WRITE_TIME. Directories are protected by the
+                    // empty-only removal below instead.
+                    if entry.identity != *expected || (entry.kind != "dir" && !state.in_sync) {
                         return Err(AppError::Conflict);
                     }
                     if entry.kind == "dir" {
-                        fs::remove_dir_all(path)?;
+                        // Never remove a whole tree: ignored or not-yet-uploaded local
+                        // files inside it would be lost without a recycle bin copy.
+                        if remove_empty_directory(&path)? == LocalDirectoryDelete::NotEmpty {
+                            let state = app.state::<AppState>();
+                            ensure_remote_directory_tree(
+                                &state.api,
+                                &pair.mount_id,
+                                &pair.remote_path,
+                                relative,
+                            )
+                            .await?;
+                        }
                     } else {
                         fs::remove_file(path)?;
                     }
@@ -2250,9 +2318,9 @@ impl SyncManager {
         app: &AppHandle,
         pair_id: &str,
         cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
+    ) -> Result<RunOutcome, AppError> {
         let Some(pair) = self.store.pair(pair_id)? else {
-            return Ok(());
+            return Ok(RunOutcome::Completed);
         };
         let telemetry = self.telemetry_for(pair_id)?;
         if pair.paused {
@@ -2262,7 +2330,7 @@ impl SyncManager {
                 .map_err(|_| AppError::LocalData)?
                 .clear_active();
             self.emit_summary(app, pair_id)?;
-            return Ok(());
+            return Ok(RunOutcome::Completed);
         }
         self.store
             .update_progress(pair_id, "scanning", 0, 0, 0, 0, 0, 0, None, None)?;
@@ -2370,6 +2438,7 @@ impl SyncManager {
 
         let mut completed_items = 0_u64;
         let mut completed_bytes = 0_u64;
+        let mut had_failure = false;
         for (task_index, action) in actions.iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(AppError::Cancelled);
@@ -2426,7 +2495,7 @@ impl SyncManager {
                         None,
                     )?;
                     self.emit_summary(app, pair_id)?;
-                    return Ok(());
+                    return Ok(RunOutcome::Rescan);
                 }
                 Err(error @ AppError::Cancelled) => {
                     self.set_task_state(pair_id, task_index, "queued")?;
@@ -2444,20 +2513,13 @@ impl SyncManager {
                         error.log_code(),
                         "按需同步操作未完成，请检查后重试。",
                     )?;
-                    self.store.update_progress(
-                        pair_id,
-                        "attention",
-                        total_items.saturating_sub(completed_items),
-                        total_bytes.saturating_sub(completed_bytes),
-                        completed_items,
-                        total_items,
-                        completed_bytes,
-                        total_bytes,
-                        None,
-                        Some("sync_attention"),
-                    )?;
+                    telemetry
+                        .lock()
+                        .map_err(|_| AppError::LocalData)?
+                        .clear_active();
+                    had_failure = true;
                     self.emit_summary(app, pair_id)?;
-                    return Ok(());
+                    continue;
                 }
             }
             self.store.update_progress(
@@ -2524,15 +2586,38 @@ impl SyncManager {
                 local_endpoint_stats(&final_local.entries),
                 remote_endpoint_stats(&final_remote),
             );
-        self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        if had_failure {
+            self.store.save_partial_baseline(pair_id, &baseline)?;
+            self.store.update_progress(
+                pair_id,
+                "attention",
+                total_items.saturating_sub(completed_items),
+                total_bytes.saturating_sub(completed_bytes),
+                completed_items,
+                total_items,
+                completed_bytes,
+                total_bytes,
+                None,
+                Some("sync_attention"),
+            )?;
+        } else {
+            self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        }
         self.refresh_native_counts(pair_id)?;
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
             .clear_active();
         self.emit_summary(app, pair_id)?;
-        self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Idle);
-        Ok(())
+        self.set_native_provider_status(
+            pair_id,
+            if had_failure {
+                cloud_files::NativeProviderStatus::Error
+            } else {
+                cloud_files::NativeProviderStatus::Idle
+            },
+        );
+        Ok(RunOutcome::Completed)
     }
 
     fn run_native_pair_loop(
@@ -2546,14 +2631,20 @@ impl SyncManager {
             let mut remote_tick = tokio::time::interval(REMOTE_SCAN_INTERVAL);
             remote_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             remote_tick.tick().await;
-            let _ = self.run_native_once(&app, &pair_id, &cancel).await;
+            let mut conflict_rescans = 0_u32;
+            self.run_cycle(&app, &pair_id, &cancel, true, &wake, &mut conflict_rescans)
+                .await;
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
-                    _ = remote_tick.tick() => { let _ = self.run_native_once(&app, &pair_id, &cancel).await; },
+                    _ = remote_tick.tick() => {
+                        self.run_cycle(&app, &pair_id, &cancel, true, &wake, &mut conflict_rescans).await;
+                    },
                     _ = wake.notified() => {
                         tokio::time::sleep(LOCAL_DEBOUNCE).await;
-                        if !cancel.is_cancelled() { let _ = self.run_native_once(&app, &pair_id, &cancel).await; }
+                        if !cancel.is_cancelled() {
+                            self.run_cycle(&app, &pair_id, &cancel, true, &wake, &mut conflict_rescans).await;
+                        }
                     }
                 }
             }
@@ -2576,14 +2667,20 @@ impl SyncManager {
             remote_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             // Consume Tokio's immediate first tick so startup performs exactly one scan.
             remote_tick.tick().await;
-            let _ = self.run_once(&app, &pair_id, &cancel).await;
+            let mut conflict_rescans = 0_u32;
+            self.run_cycle(&app, &pair_id, &cancel, false, &wake, &mut conflict_rescans)
+                .await;
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
-                    _ = remote_tick.tick() => { let _ = self.run_once(&app, &pair_id, &cancel).await; },
+                    _ = remote_tick.tick() => {
+                        self.run_cycle(&app, &pair_id, &cancel, false, &wake, &mut conflict_rescans).await;
+                    },
                     _ = wake.notified() => {
                         tokio::time::sleep(LOCAL_DEBOUNCE).await;
-                        if !cancel.is_cancelled() { let _ = self.run_once(&app, &pair_id, &cancel).await; }
+                        if !cancel.is_cancelled() {
+                            self.run_cycle(&app, &pair_id, &cancel, false, &wake, &mut conflict_rescans).await;
+                        }
                     }
                 }
             }
@@ -2591,6 +2688,101 @@ impl SyncManager {
                 runtimes.remove(&pair_id);
             }
         })
+    }
+
+    async fn run_cycle(
+        &self,
+        app: &AppHandle,
+        pair_id: &str,
+        cancel: &CancellationToken,
+        native: bool,
+        wake: &Notify,
+        conflict_rescans: &mut u32,
+    ) {
+        let result = if native {
+            self.run_native_once(app, pair_id, cancel).await
+        } else {
+            self.run_once(app, pair_id, cancel).await
+        };
+        match result {
+            Ok(RunOutcome::Completed) => *conflict_rescans = 0,
+            Ok(RunOutcome::Rescan) => {
+                // A conditional operation found newer state. Rescan promptly, but
+                // bounded so a file that keeps changing cannot spin the scanner.
+                if *conflict_rescans < MAX_CONFLICT_RESCANS {
+                    *conflict_rescans += 1;
+                    wake.notify_one();
+                }
+            }
+            Err(error) => {
+                *conflict_rescans = 0;
+                self.record_run_failure(app, pair_id, native, &error);
+            }
+        }
+    }
+
+    /// Every failed run must leave a visible state behind; otherwise the pair
+    /// keeps showing "scanning" or "syncing" from the step that failed.
+    fn record_run_failure(&self, app: &AppHandle, pair_id: &str, native: bool, error: &AppError) {
+        if matches!(error, AppError::Cancelled) {
+            return;
+        }
+        let Ok(Some(pair)) = self.store.pair(pair_id) else {
+            return;
+        };
+        if let Ok(telemetry) = self.telemetry_for(pair_id)
+            && let Ok(mut telemetry) = telemetry.lock()
+        {
+            telemetry.clear_active();
+        }
+        let _ = self.clear_tasks(pair_id);
+        let offline = matches!(error, AppError::Network(_) | AppError::NotAuthenticated);
+        if offline {
+            if pair.status != "offline" {
+                let _ = self.store.update_progress(
+                    pair_id,
+                    "offline",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    Some(error.log_code()),
+                );
+            }
+        } else {
+            let _ = self.store.add_issue(
+                pair_id,
+                "",
+                error.log_code(),
+                "同步扫描未完成，请检查后重试。",
+            );
+            let _ = self.store.update_progress(
+                pair_id,
+                "attention",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                None,
+                Some(error.log_code()),
+            );
+        }
+        if native {
+            self.set_native_provider_status(
+                pair_id,
+                if offline {
+                    cloud_files::NativeProviderStatus::Offline
+                } else {
+                    cloud_files::NativeProviderStatus::Error
+                },
+            );
+        }
+        let _ = self.emit_summary(app, pair_id);
     }
 
     async fn scan_local_with_progress(
@@ -2664,9 +2856,9 @@ impl SyncManager {
         app: &AppHandle,
         pair_id: &str,
         cancel: &CancellationToken,
-    ) -> Result<(), AppError> {
+    ) -> Result<RunOutcome, AppError> {
         let Some(pair) = self.store.pair(pair_id)? else {
-            return Ok(());
+            return Ok(RunOutcome::Completed);
         };
         let telemetry = self.telemetry_for(pair_id)?;
         if pair.paused {
@@ -2675,7 +2867,7 @@ impl SyncManager {
                 .map_err(|_| AppError::LocalData)?
                 .clear_active();
             self.emit_summary(app, pair_id)?;
-            return Ok(());
+            return Ok(RunOutcome::Completed);
         }
         self.store
             .update_progress(pair_id, "scanning", 0, 0, 0, 0, 0, 0, None, None)?;
@@ -2715,7 +2907,7 @@ impl SyncManager {
                         Some("sync_root_unavailable"),
                     )?;
                     self.emit_summary(app, pair_id)?;
-                    return Ok(());
+                    return Ok(RunOutcome::Completed);
                 }
                 return Err(error);
             }
@@ -2888,7 +3080,7 @@ impl SyncManager {
                         None,
                     )?;
                     self.emit_summary(app, pair_id)?;
-                    return Ok(());
+                    return Ok(RunOutcome::Rescan);
                 }
                 Err(error @ AppError::Cancelled) => {
                     self.set_task_state(pair_id, task_index, "queued")?;
@@ -2919,23 +3111,10 @@ impl SyncManager {
             }
         }
 
-        if had_failure {
-            self.store.update_progress(
-                pair_id,
-                "attention",
-                total_items.saturating_sub(completed_items),
-                total_bytes.saturating_sub(completed_bytes),
-                completed_items,
-                total_items,
-                completed_bytes,
-                total_bytes,
-                None,
-                Some("sync_attention"),
-            )?;
-            self.emit_summary(app, pair_id)?;
-            return Ok(());
-        }
-
+        // Even when some actions failed, record what both sides now agree on. Failed
+        // paths still diverge, so `merge_baseline` keeps their previous entries and
+        // they are retried; without this a single stuck file would freeze the
+        // baseline forever and deletions would never propagate again.
         let final_local_root = pair.local_root.clone();
         let final_known = scan
             .local
@@ -2964,13 +3143,29 @@ impl SyncManager {
                 remote_endpoint_stats(&final_remote),
             );
         let baseline = merge_baseline(&pair.baseline, &final_local, &final_remote);
-        self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        if had_failure {
+            self.store.save_partial_baseline(pair_id, &baseline)?;
+            self.store.update_progress(
+                pair_id,
+                "attention",
+                total_items.saturating_sub(completed_items),
+                total_bytes.saturating_sub(completed_bytes),
+                completed_items,
+                total_items,
+                completed_bytes,
+                total_bytes,
+                None,
+                Some("sync_attention"),
+            )?;
+        } else {
+            self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        }
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
             .clear_active();
         self.emit_summary(app, pair_id)?;
-        Ok(())
+        Ok(RunOutcome::Completed)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3207,6 +3402,27 @@ fn remote_roots_overlap(
         || left == right
         || left.starts_with(&format!("{right}/"))
         || right.starts_with(&format!("{left}/"))
+}
+
+struct FinishTransferOnDrop<'a> {
+    manager: &'a TransferManager,
+    transfer_id: &'a str,
+}
+
+impl Drop for FinishTransferOnDrop<'_> {
+    fn drop(&mut self) {
+        self.manager.finish(self.transfer_id);
+    }
+}
+
+/// Version marker of a download response: the `ETag` when present,
+/// otherwise `Last-Modified`.
+fn response_validator(response: &reqwest::Response) -> Option<String> {
+    [reqwest::header::ETAG, reqwest::header::LAST_MODIFIED]
+        .iter()
+        .find_map(|name| response.headers().get(name))
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
 }
 
 fn aligned_native_chunk_length(buffered: usize) -> usize {
@@ -4239,9 +4455,11 @@ async fn sync_download(
 ) -> Result<u64, AppError> {
     let target = local_path(local_root, relative)?;
     validate_local_parent(local_root, &target)?;
-    if let Some(expected) = expected_local
-        && local_identity(&target)?.as_ref() != Some(expected)
-    {
+    let local_unchanged = match expected_local {
+        Some(expected) => local_identity(&target)?.as_ref() == Some(expected),
+        None => local_still_matches(&target, None)?,
+    };
+    if !local_unchanged {
         return Err(AppError::Conflict);
     }
     if let Some(parent) = target.parent() {
@@ -4324,6 +4542,11 @@ async fn sync_download(
             ),
         )
         .map_err(AppError::Io)?;
+        // The download can take a long time. If the local file was created, edited
+        // or removed meanwhile, replacing it would silently discard that change.
+        if !local_still_matches(&target, expected_local)? {
+            return Err(AppError::Conflict);
+        }
         let backup = if tokio::fs::try_exists(&target).await? {
             let backup = target.with_file_name(format!(".koofr-sync-old-{}", uuid::Uuid::new_v4()));
             tokio::fs::rename(&target, &backup).await?;
@@ -4388,11 +4611,7 @@ fn delete_local_directory_if_empty(path: &Path) -> Result<Option<LocalDirectoryD
     if is_reparse_point(&metadata) {
         return Err(AppError::InvalidInput("sync local directory"));
     }
-    if fs::read_dir(path)?.next().is_some() {
-        return Ok(Some(LocalDirectoryDelete::NotEmpty));
-    }
-    fs::remove_dir(path)?;
-    Ok(Some(LocalDirectoryDelete::Removed))
+    remove_empty_directory(path).map(Some)
 }
 
 async fn ensure_remote_directory_tree(
@@ -4414,6 +4633,41 @@ async fn ensure_remote_directory_tree(
         current = next;
     }
     Ok(())
+}
+
+/// Cheap re-check of the planned local state right before a download replaces it.
+/// `expected` was taken from metadata during the scan, so size plus mtime is enough
+/// to notice an edit without hashing the file a second time.
+fn local_still_matches(path: &Path, expected: Option<&Identity>) -> Result<bool, AppError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(AppError::Io(error)),
+    };
+    Ok(match (metadata, expected) {
+        (None, None) => true,
+        (None, Some(_)) | (Some(_), None) => false,
+        (Some(metadata), Some(expected)) => {
+            metadata.is_file()
+                && !is_reparse_point(&metadata)
+                && i64::try_from(metadata.len()).ok() == Some(expected.size)
+                && modified_millis(&metadata)? == expected.modified
+        }
+    })
+}
+
+/// Removes a directory only when it is empty. The non-empty check is done by the
+/// file system itself, so nothing created after the scan can be deleted with it,
+/// and a CFAPI placeholder directory is never enumerated (which would trigger a
+/// population callback).
+fn remove_empty_directory(path: &Path) -> Result<LocalDirectoryDelete, AppError> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(LocalDirectoryDelete::Removed),
+        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+            Ok(LocalDirectoryDelete::NotEmpty)
+        }
+        Err(error) => Err(AppError::Io(error)),
+    }
 }
 
 fn sync_temporary_path(target: &Path) -> PathBuf {
@@ -5543,6 +5797,94 @@ mod tests {
         assert!(planned.contains(&"upload:a.txt".to_owned()));
         assert!(planned.contains(&"upload:new-during-run.txt".to_owned()));
         assert!(!planned.iter().any(|action| action.ends_with(":same.txt")));
+    }
+
+    #[test]
+    fn download_replacement_requires_the_planned_local_state() {
+        let root = std::env::temp_dir().join(format!("koofr-sync-match-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("a.txt");
+
+        assert!(local_still_matches(&target, None).unwrap());
+
+        fs::write(&target, b"local").unwrap();
+        assert!(
+            !local_still_matches(&target, None).unwrap(),
+            "a file created during the download must not be overwritten"
+        );
+
+        let metadata = fs::metadata(&target).unwrap();
+        let planned = Identity {
+            size: metadata.len() as i64,
+            modified: modified_millis(&metadata).unwrap(),
+            hash: hash_file(&target).unwrap(),
+        };
+        assert!(local_still_matches(&target, Some(&planned)).unwrap());
+
+        fs::write(&target, b"edited during download").unwrap();
+        assert!(!local_still_matches(&target, Some(&planned)).unwrap());
+
+        fs::remove_file(&target).unwrap();
+        assert!(!local_still_matches(&target, Some(&planned)).unwrap());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn empty_directory_removal_never_deletes_content() {
+        let root = std::env::temp_dir().join(format!("koofr-sync-rmdir-{}", uuid::Uuid::new_v4()));
+        let ignored = root.join("folder");
+        fs::create_dir_all(&ignored).unwrap();
+        fs::write(ignored.join("cache.tmp"), b"ignored local data").unwrap();
+
+        assert_eq!(
+            remove_empty_directory(&ignored).unwrap(),
+            LocalDirectoryDelete::NotEmpty
+        );
+        assert!(ignored.join("cache.tmp").exists());
+
+        fs::remove_file(ignored.join("cache.tmp")).unwrap();
+        assert_eq!(
+            remove_empty_directory(&ignored).unwrap(),
+            LocalDirectoryDelete::Removed
+        );
+        assert!(!ignored.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn repeated_issues_are_deduplicated_and_partial_baselines_keep_them() {
+        let path = std::env::temp_dir().join(format!(
+            "koofr-sync-issues-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let store = SyncStore::open(path.clone()).unwrap();
+        store.insert_pair(&test_pair("pair-a", "owner-a")).unwrap();
+        for _ in 0..3 {
+            store
+                .add_issue("pair-a", "locked.txt", "io_error", "problem")
+                .unwrap();
+        }
+        store
+            .add_issue("pair-a", "other.txt", "io_error", "problem")
+            .unwrap();
+        assert_eq!(store.issues("pair-a").unwrap().len(), 2);
+        assert_eq!(store.pair("pair-a").unwrap().unwrap().issue_count, 2);
+
+        store
+            .save_partial_baseline("pair-a", &file_baseline())
+            .unwrap();
+        let pair = store.pair("pair-a").unwrap().unwrap();
+        assert_eq!(pair.status, "attention");
+        assert_eq!(pair.issue_count, 2);
+        assert!(pair.baseline.contains_key("a.txt"));
+        assert_eq!(store.issues("pair-a").unwrap().len(), 2);
+
+        store
+            .save_baseline("pair-a", &file_baseline(), now_millis())
+            .unwrap();
+        assert!(store.issues("pair-a").unwrap().is_empty());
+        drop(store);
+        let _ = fs::remove_file(path);
     }
 
     #[test]

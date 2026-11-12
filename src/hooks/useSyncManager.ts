@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { commandErrorMessage, koofr } from '../services/koofr'
 import type { SyncPairSummary, SyncStateEvent } from '../types/backend'
 
@@ -51,10 +51,16 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
   const [pairs, setPairs] = useState<SyncPairSummary[]>([])
   const [speedSamples, setSpeedSamples] = useState<SyncSpeedSample[]>([])
   const [completionVersion, setCompletionVersion] = useState(0)
+  // Last status seen per pair, kept outside React state so completion detection
+  // stays out of state updaters (StrictMode runs those twice) and is not fooled
+  // by several events arriving before the next render.
+  const lastStatusRef = useRef(new Map<string, string>())
 
   const refresh = useCallback(async () => {
     try {
-      setPairs(await koofr.listSyncPairs())
+      const nextPairs = await koofr.listSyncPairs()
+      lastStatusRef.current = new Map(nextPairs.map((pair) => [pair.id, pair.status]))
+      setPairs(nextPairs)
     } catch (error) {
       showNotice?.(commandErrorMessage(error, '无法读取同步配置'))
     }
@@ -62,6 +68,7 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
 
   useEffect(() => {
     if (authState !== 'signedIn') {
+      lastStatusRef.current = new Map()
       setPairs([])
       setSpeedSamples([])
       return
@@ -75,11 +82,12 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
     let unlisten: (() => void) | undefined
     void koofr.onSyncState((event) => {
       if (disposed) return
-      setPairs((current) => {
-        const previous = current.find((pair) => pair.id === event.pairId)
-        if (previous && previous.status !== 'idle' && event.status === 'idle') setCompletionVersion((version) => version + 1)
-        return current.map((pair) => pair.id === event.pairId ? mergeEvent(pair, event) : pair)
-      })
+      const previousStatus = lastStatusRef.current.get(event.pairId)
+      lastStatusRef.current.set(event.pairId, event.status)
+      if (previousStatus !== undefined && previousStatus !== 'idle' && event.status === 'idle') {
+        setCompletionVersion((version) => version + 1)
+      }
+      setPairs((current) => current.map((pair) => pair.id === event.pairId ? mergeEvent(pair, event) : pair))
       const recordedAt = Date.now()
       setSpeedSamples((current) => [
         ...current.filter((sample) => recordedAt - sample.recordedAt < 60_000),
@@ -99,11 +107,13 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
 
   const setPairPaused = useCallback(async (pairId: string, paused: boolean) => {
     await koofr.setSyncPairPaused(pairId, paused)
+    lastStatusRef.current.set(pairId, paused ? 'paused' : 'initializing')
     setPairs((current) => current.map((pair) => pair.id === pairId ? { ...pair, paused, status: paused ? 'paused' : 'initializing' } : pair))
   }, [])
   const runPairNow = useCallback(async (pairId: string) => { await koofr.runSyncPairNow(pairId) }, [])
   const removePair = useCallback(async (pairId: string) => {
     await koofr.removeSyncPair(pairId)
+    lastStatusRef.current.delete(pairId)
     setPairs((current) => current.filter((pair) => pair.id !== pairId))
   }, [])
 
