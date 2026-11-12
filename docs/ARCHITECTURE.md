@@ -2,6 +2,8 @@
 
 Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在这里。适合想了解整体结构、评估安全性、或者准备贡献代码的人读。
 
+恢复开发先读 [项目进度](PROJECT_STATUS.md)；接手任务、查找模块和确认验证边界见 [Agent 接手指南](AGENT_HANDOFF.md)。
+
 ## 目录
 
 - [顶层结构](#顶层结构)
@@ -114,9 +116,9 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
 
 见 [src/README.md](../src/README.md) 里的目录职责。要点：
 
-- `App.tsx` 是唯一持有全局状态的组件（`authState`、`modalKind`、当前挂载点 / 目录、传输列表等）。React 19 + hooks，没有 Redux / Zustand 之类的外部状态库。
+- `App.tsx` 协调全局状态（登录、弹窗、当前挂载点 / 目录等）；设置、传输和同步逻辑分别抽取到 `hooks/useAppSettings.ts`、`hooks/useTransferManager.ts`、`hooks/useSyncManager.ts`。React 19 + hooks，没有 Redux / Zustand 之类的外部状态库。
 - `features/*/` 每个功能模块只导出 UI 组件和领域 hooks。跨模块通信通过 `App.tsx` 传 props 或事件回调，不允许 feature-to-feature 直接依赖。
-- `services/koofr.ts` 和 `services/publicLinks.ts` 是**唯一**允许调 `@tauri-apps/api` 的地方，所有命令都在这里包一层类型安全接口。
+- 业务 Tauri 命令只通过 `services/koofr.ts` 和 `services/publicLinks.ts` 的类型安全接口调用。当前 `components/TitleBar.tsx` 直接 import Tauri core / window API，仅执行原生窗口最小化、最大化和关闭；这是既有实现偏差，不作为新增业务 IPC 绕过 services 的依据。
 - 错误处理：`commandErrorMessage(error, fallback)` 拿安全消息，`isCommandErrorCode(error, code)` 判断错误码。
 
 ### Rust 后端 `src-tauri/src/`
@@ -211,7 +213,7 @@ src-tauri/src/
 
 `TransferManager` 维护一个 `HashMap<TransferId, TransferHandle>`，每个句柄包含：
 
-- 当前状态：`Running | Paused | Completed | Cancelled | Failed`
+- 当前状态：`Queued | Running | Retrying | Paused | Completed | Cancelled | Failed`
 - 已传输字节数、总字节数
 - 取消 signal（`tokio_util::sync::CancellationToken`）
 - 关联的 checkpoint（如果可恢复）
@@ -222,9 +224,9 @@ src-tauri/src/
 {
   transferId: string,
   direction: 'upload' | 'download',
-  state: 'running' | 'paused' | 'completed' | 'cancelled' | 'failed',
+  state: 'queued' | 'running' | 'retrying' | 'paused' | 'completed' | 'cancelled' | 'failed',
   bytesTransferred: number,
-  totalBytes: number,
+  totalBytes: number | null,
   splitProgress?: {
     completedParts: number,
     currentPart: number | null,
@@ -394,11 +396,11 @@ pub enum AppError {
 
 同步范围限定为 Koofr 主存储中的普通目录；Rust 侧再次拒绝 Vault、共享 / 第三方挂载、非法路径以及本地或远端根目录重叠。每组配置只保存原生文件夹选择器签发的一次性授权后得到的绝对目录，并在每次扫描前重新检查目录存在、不是符号链接且仍为目录。
 
-`sync-state.sqlite3` 使用 WAL 和事务保存账户隔离的同步组、三方基线、问题及操作状态。首次同步只合并，不执行删除；之后仅在基线仍匹配时传播删除，远端使用 Koofr 条件删除进入回收站，本地使用 Windows 回收站，失败时保留文件。双侧修改保留远端原名，并给本地版本追加带 UTC 时间的冲突名；任何条件上传 / 删除冲突都会触发重新扫描而不是强制覆盖。
+`sync-state.sqlite3` 使用 WAL 和事务保存账户隔离的同步组、三方基线、问题及操作状态。首次同步只合并，不执行删除；之后仅在基线仍匹配时传播删除，远端使用 Koofr 条件删除进入回收站，本地使用 Windows 回收站，失败时保留文件。双侧修改保留远端原名，并给本地版本追加带 UTC 时间的冲突名；任何条件上传 / 删除冲突都会触发重新扫描而不是强制覆盖。一轮成功后，新基线只记录两端一致的条目（目录同为目录，文件内容相同）；同步期间发生分歧的条目保留上一轮基线，留给下一轮处理。只有两端都曾在基线中出现过的目录才会传播删除，基线中缺任一侧的目录一律视为新建；本地目录删除在子项处理后仅移除空目录（经典与按需同步一致），仍有本地内容时改为恢复远端目录。下载在替换本地文件前按大小与修改时间再次核对计划时的本地状态，不一致即转为冲突。条件冲突会立即触发重扫（连续最多 3 次，之后回到 60 秒周期）；部分操作失败时仍保存两端一致部分的基线并保留问题列表，同一路径与错误码只保留一条未解决问题；任何非取消的运行失败都会把同步组置为离线（网络 / 登录失效）或需要处理，并同步 Provider 状态。
 
 本地扫描跳过符号链接、重解析点、特殊文件、系统回收站目录和客户端临时项；普通隐藏文件参与同步。根目录 `.syncignore` 支持空行、注释、gitignore 风格 glob 与 `!` 反向包含，规则变化会通过监听触发完整重扫。同步操作复用传输并发闸门、限速、取消和网络错误重试，但单独写入同步操作日志，不进入手动传输恢复列表。
 
-Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` 使用固定 Provider GUID 注册部分填充同步根，目录首次展开通过 `FETCH_PLACEHOLDERS` 只列出当前层，文件打开通过 `FETCH_DATA` 完整水合。回调线程只复制路径、随机条目键和请求范围，再把工作投递到异步运行时；网络等待以 60 秒无进展超时保护，写入 `CfExecute` 的中间块按 4 KiB 对齐。
+Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` 使用固定 Provider GUID 注册部分填充同步根，目录首次展开通过 `FETCH_PLACEHOLDERS` 只列出当前层，文件打开通过 `FETCH_DATA` 完整水合。回调线程只复制路径、随机条目键和请求范围，再把工作投递到异步运行时；网络等待以 60 秒无进展超时保护，写入 `CfExecute` 的中间块按 4 KiB 对齐。续传时核对响应 `ETag`（无则 `Last-Modified`），版本变化即中止；由于数据已逐块交给 CFAPI，MD5 与长度校验只能在水合末尾报告失败，无法回滚已写入的块。
 
 占位符身份格式为 `KFG1:<UUID>`，不含账户、文件名或远端路径。`sync_entries` 表按账户所属同步组保存 UUID 到相对路径、远端路径、类型、大小、修改时间和 MD5 的映射。原生扫描先查询 CFAPI 状态：已同步占位符直接复用数据库身份且不打开 / 哈希；只有本地新增、修改或尚未转换的完整文件才读取内容。远端轮询只递归根目录和已经填充的目录，未访问目录在 Explorer 首次展开时读取最新内容。
 

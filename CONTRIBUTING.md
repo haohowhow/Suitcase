@@ -28,6 +28,8 @@
 
 在动手之前请确认：
 
+恢复开发或交给 agent 时，先看 [项目进度](docs/PROJECT_STATUS.md) 和 [Agent 接手指南](docs/AGENT_HANDOFF.md)。接手指南包含代码导航、安全限制、验证要求和任务模板；本地 `AGENTS.md` 等被忽略文件不随克隆分发，不要提交它们。
+
 1. 读过 [README.md](README.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 2. 搜过 [已有 Issue](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
 3. 涉及安全漏洞的**不要**开公开 Issue，走 [SECURITY.md](SECURITY.md) 的私密渠道。
@@ -177,6 +179,7 @@ Closes #42
 | 构建流程变化 | `docs/BUILDING.md` |
 | 发布流程变化 | `docs/RELEASING.md` |
 | 设计 token / UI 约定变化 | `DESIGN.md` |
+| 接手流程、安全约束或模块入口变化 | `docs/AGENT_HANDOFF.md`；阶段进度变化另更新 `docs/PROJECT_STATUS.md` |
 
 ## 不要提交的东西
 
@@ -197,6 +200,8 @@ Closes #42
 ## English version
 
 Thanks for your interest in improving Koofr-GUI. Short version of the rules:
+
+For a returning contributor or coding agent, read [Project status](docs/PROJECT_STATUS.md) and the [Agent handoff guide](docs/AGENT_HANDOFF.md) (Chinese). Local ignored instruction files are not distributed with a clone and must not be committed.
 
 1. **Search issues first**; do not file duplicates.
 2. **Security bugs go through [SECURITY.md](SECURITY.md), never public issues.**

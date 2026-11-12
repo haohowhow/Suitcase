@@ -13,6 +13,8 @@
 
 [English](README.en.md) · [下载安装包](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
+恢复开发或交接：先读 [项目进度与恢复工作](docs/PROJECT_STATUS.md)，再读 [Agent 接手指南](docs/AGENT_HANDOFF.md)。
+
 </div>
 
 ---

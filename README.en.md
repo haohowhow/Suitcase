@@ -13,6 +13,8 @@ Built with Tauri v2 + React + TypeScript + Rust. Aims to feel like a native file
 
 [中文](README.md) · [Download](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
+Returning to development or handing off: start with [Project status](docs/PROJECT_STATUS.md) and the [Agent handoff guide](docs/AGENT_HANDOFF.md) (both in Chinese).
+
 </div>
 
 ---
@@ -216,6 +218,7 @@ App data defaults to the current Windows user's local data directory (`identifie
 ├─ settings.json                # app settings
 ├─ transfer-checkpoints.json    # resumable transfer checkpoints
 ├─ download-history.json        # account-scoped download history, locations, and bounded speed samples
+├─ sync-state.sqlite3           # account-scoped sync pairs, placeholders, baselines, issues, and operations (WAL)
 ├─ cache/metadata-cache.json    # disk metadata cache
 └─ logs/koofr-gui*.jsonl       # redacted diagnostic logs
 ```
