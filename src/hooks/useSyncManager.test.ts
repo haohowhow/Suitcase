@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { StrictMode, createElement, type ReactNode } from 'react'
+import { StrictMode, createElement, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SyncPairSummary, SyncStateEvent } from '../types/backend'
 
@@ -63,5 +63,35 @@ describe('useSyncManager', () => {
       emit(eventFor('idle'))
     })
     expect(result.current.completionVersion).toBe(2)
+  })
+
+  it('stays idle between events instead of re-rendering every second', async () => {
+    vi.useFakeTimers()
+    try {
+      // Count committed renders: React may call the component once more before
+      // it bails out of an unchanged state, but it commits nothing in that case.
+      let commits = 0
+      const { result } = renderHook(() => {
+        useEffect(() => {
+          commits += 1
+        })
+        return useSyncManager('signedIn')
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(result.current.pairs).toHaveLength(1)
+      const settled = commits
+
+      // The sample clean-up timer ticks once a second. With no samples to expire
+      // it must not hand React a new array, or the whole app shell re-renders.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000)
+      })
+
+      expect(commits).toBe(settled)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -100,7 +100,12 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
   useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now()
-      setSpeedSamples((current) => current.filter((sample) => now - sample.recordedAt < 60_000))
+      setSpeedSamples((current) => {
+        const next = current.filter((sample) => now - sample.recordedAt < 60_000)
+        // Keep the same array when nothing expired. A fresh array every second
+        // re-rendered the whole app shell even while idle.
+        return next.length === current.length ? current : next
+      })
     }, 1000)
     return () => window.clearInterval(timer)
   }, [])

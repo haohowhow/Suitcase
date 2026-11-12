@@ -340,7 +340,7 @@ export const TransferPanel = memo(function TransferPanel({
             >
               <FileTypeIcon kind={fileKindForTransfer(item)} />
               <div className="transfer-item__content">
-                <strong title={item.name}>{item.name}</strong>
+                <strong translate="no" title={item.name}>{item.name}</strong>
                 <div className="transfer-item__meta">
                   <span>{stateLabels[item.state]}</span>
                   {splitProgressLabel(item) ? <span>{splitProgressLabel(item)}</span> : null}
@@ -413,7 +413,7 @@ export const TransferPanel = memo(function TransferPanel({
         <section className="transfer-detail" aria-label={`${selected.name} 详情`}>
           <div className="transfer-detail__title">
             <div>
-              <strong title={selected.name}>{selected.name}</strong>
+              <strong translate="no" title={selected.name}>{selected.name}</strong>
               <span>{stateLabels[selected.state]}</span>
             </div>
             <span>{Math.round(percentage(selected))}%</span>

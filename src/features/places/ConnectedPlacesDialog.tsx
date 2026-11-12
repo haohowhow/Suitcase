@@ -43,7 +43,7 @@ export function ConnectedPlacesDialog({ mounts, onClose }: ConnectedPlacesDialog
               </span>
               <span className="place-card__body">
                 <span className="place-card__title">
-                  <strong>{mount.name || provider.label}</strong>
+                  <strong translate={mount.name ? 'no' : undefined}>{mount.name || provider.label}</strong>
                   <small>{provider.label}</small>
                 </span>
                 <span className={`place-card__status${mount.online ? ' place-card__status--online' : ''}`}>

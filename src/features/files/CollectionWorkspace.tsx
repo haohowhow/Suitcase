@@ -291,9 +291,9 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               </button>
               <button className="file-name file-name--button" type="button" onClick={() => directory ? onOpenLocation(file) : toggleSelection(id)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
                 <FileTypeIcon kind={fileKind(file)} />
-                <strong>{file.name}</strong>
+                <strong translate="no">{file.name}</strong>
               </button>
-              <span className="collection-location">{direction ? <em>{direction}</em> : null}{locationLabel(file)}</span>
+              <span className="collection-location">{direction ? <em>{direction}</em> : null}<span translate="no">{locationLabel(file)}</span></span>
               <span>{formatModified(file.modified)}</span>
               <span>{directory ? '—' : formatBytes(file.size)}</span>
               {previewable ? (
@@ -323,9 +323,9 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               </button>
               <button className="file-name file-name--button" type="button" onClick={() => toggleSelection(item.versionId)}>
                 <FileTypeIcon kind={kind} />
-                <strong>{item.name}</strong>
+                <strong translate="no">{item.name}</strong>
               </button>
-              <span className="collection-location">{item.mountName || '存储位置'}{parentPath(item.path)}</span>
+              <span className="collection-location" translate="no">{item.mountName || '存储位置'}{parentPath(item.path)}</span>
               <span>{formatDeleted(item.deleted)}</span>
               <span>{formatBytes(item.size)}</span>
               <button className="row-action" type="button" aria-label={`恢复 ${item.name}`} disabled={busy} onClick={() => onRestore([item])}>

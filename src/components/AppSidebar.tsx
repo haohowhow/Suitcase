@@ -96,7 +96,7 @@ export const AppSidebar = memo(function AppSidebar({
 
       <div className="sidebar__footer">
         <div className="storage">
-          <span>{storageName || '存储空间'}</span>
+          <span translate={storageName ? 'no' : undefined}>{storageName || '存储空间'}</span>
           <small>
             {storageTotal !== null && storageTotal > 0
               ? `已使用 ${formatStorageMegabytes(storageUsed)} / ${formatStorageMegabytes(storageTotal)}`

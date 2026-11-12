@@ -123,7 +123,6 @@ function App() {
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null)
   const workspace = useKoofrWorkspace(authState === 'signedIn')
   const collections = useKoofrCollections(authState === 'signedIn', activeItem)
-  const workspaceLocation = useRef({ activeMountId: '', path: '/' })
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
   const sync = useSyncManager(authState, showNotice)
 
@@ -161,7 +160,8 @@ function App() {
     authState,
     settings,
     themeId,
-    workspace.refresh,
+    workspace.refreshCurrent,
+    workspace.refreshIfAt,
     showNotice,
     openDownloadDestination,
     sync,
@@ -187,20 +187,12 @@ function App() {
   const activeDownloadCount = countActiveDownloads(transfers)
   const activeTransferCount = transfers.filter((item) =>
     item.state === 'queued' || item.state === 'running' || item.state === 'retrying').length
+  // Read by the idle-logout timer without restarting it on every progress event.
+  const activeTransferCountRef = useRef(0)
 
   useEffect(() => {
-    workspaceLocation.current = {
-      activeMountId: workspace.activeMountId,
-      path: workspace.path,
-    }
-  }, [workspace.activeMountId, workspace.path])
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return
-    void koofr
-      .setTaskbarBadge(activeTransferCount, settings?.trayBadge ?? false)
-      .catch(() => {})
-  }, [activeTransferCount, settings?.trayBadge])
+    activeTransferCountRef.current = activeTransferCount
+  }, [activeTransferCount])
 
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('.app-shell')
@@ -315,6 +307,12 @@ function App() {
     ]
     events.forEach((event) => window.addEventListener(event, markActive, { passive: true }))
     const interval = window.setInterval(() => {
+      // A running transfer counts as activity: signing out would interrupt it,
+      // so the idle countdown only starts once the queue is empty.
+      if (activeTransferCountRef.current > 0) {
+        lastActive = Date.now()
+        return
+      }
       if (Date.now() - lastActive >= timeout && authState === 'signedIn') {
         void logout()
       }
@@ -420,7 +418,7 @@ function App() {
       const previewInfo = await koofr.prepareFilePreview(mountId, file.path)
       setFilePreview({ fileName: file.name, previewInfo, onDownload })
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法预览此文件，请下载后打开。'))
+      showNotice(commandErrorMessage(error, '无法预览此文件，请下载后打开。'))
     }
   }
 
@@ -433,23 +431,25 @@ function App() {
       const previewInfo = await koofr.prepareVaultPreview(repoId, entry.id)
       setFilePreview({ fileName: entry.name, previewInfo, onDownload })
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法预览此加密文件，请下载后打开。'))
+      showNotice(commandErrorMessage(error, '无法预览此加密文件，请下载后打开。'))
     }
   }
 
-  const closeFilePreview = () => {
+  // Stable while a preview is open, so unrelated app re-renders do not hand the
+  // modal new callbacks.
+  const closeFilePreview = useCallback(() => {
     if (filePreview) {
       koofr.closeFilePreview(filePreview.previewInfo.sessionId).catch(() => {})
     }
     setFilePreview(null)
-  }
+  }, [filePreview])
 
-  const downloadPreviewedFile = () => {
+  const downloadPreviewedFile = useCallback(() => {
     if (!filePreview) return
     const download = filePreview.onDownload
     closeFilePreview()
     download()
-  }
+  }, [closeFilePreview, filePreview])
 
   const openCreateFolder = () => {
     setModalInput('')

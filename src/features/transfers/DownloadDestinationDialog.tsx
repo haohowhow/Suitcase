@@ -66,7 +66,7 @@ export function DownloadDestinationDialog({
         <span className="download-dialog__icon"><Download aria-hidden="true" /></span>
         <span>
           <small>即将下载</small>
-          <strong title={fileName}>{fileName}</strong>
+          <strong translate="no" title={fileName}>{fileName}</strong>
         </span>
       </div>
       <div className="path-field modal-field--spaced">

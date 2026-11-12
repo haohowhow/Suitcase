@@ -102,7 +102,7 @@ export function MoveDestinationDialog({
         </span>
         <span>
           <small>移动目标</small>
-          <strong title={namesSummary}>{namesSummary}</strong>
+          <strong translate="no" title={namesSummary}>{namesSummary}</strong>
         </span>
       </div>
 
@@ -116,7 +116,7 @@ export function MoveDestinationDialog({
             onChange={(event) => navigateMount(event.target.value)}
           >
             {mounts.map((mount) => (
-              <option value={mount.id} key={mount.id}>{mount.name}</option>
+              <option translate="no" value={mount.id} key={mount.id}>{mount.name}</option>
             ))}
           </select>
 
@@ -133,6 +133,7 @@ export function MoveDestinationDialog({
               <span key={crumb.path}>
                 <span>/</span>
                 <button
+                  translate="no"
                   type="button"
                   disabled={crumb.path === currentPath || loading || busy}
                   onClick={() => navigate(crumb.path)}
@@ -145,7 +146,7 @@ export function MoveDestinationDialog({
         </div>
 
         <div className="move-dialog__current">
-          移动至 <strong>{currentMountName} / {crumbs.length > 0 ? crumbs.map((c) => c.label).join(' / ') : '根目录'}</strong>
+          移动至 <strong><bdi translate="no">{currentMountName}</bdi> / {crumbs.length > 0 ? <bdi translate="no">{crumbs.map((c) => c.label).join(' / ')}</bdi> : '根目录'}</strong>
         </div>
 
         {loading ? (
@@ -173,6 +174,7 @@ export function MoveDestinationDialog({
             {folders.map((folder) => (
               <button
                 key={folder.path}
+                translate="no"
                 type="button"
                 className="move-dialog__folder-row"
                 disabled={busy}

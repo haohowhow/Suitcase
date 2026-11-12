@@ -68,8 +68,8 @@ export function CreateShareLinkDialog({
         <div className="create-share-target">
           <span aria-hidden="true">{directory ? <Folder /> : <FileText />}</span>
           <span>
-            <strong>{file.name}</strong>
-            <small>{file.path}</small>
+            <strong translate="no">{file.name}</strong>
+            <small translate="no">{file.path}</small>
           </span>
         </div>
 

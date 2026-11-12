@@ -175,14 +175,14 @@ export const FileWorkspace = memo(function FileWorkspace({
             disabled={loading || mounts.length === 0}
             onChange={(event) => onMountChange(event.target.value)}
           >
-            {mounts.map((mount) => <option value={mount.id} key={mount.id}>{mount.name}</option>)}
+            {mounts.map((mount) => <option translate="no" value={mount.id} key={mount.id}>{mount.name}</option>)}
           </select>
           <span>/</span>
           <button type="button" onClick={() => onNavigate('/')} disabled={path === '/'}>根目录</button>
           {crumbs.map((crumb) => (
             <span className="breadcrumb__segment" key={crumb.path}>
               <span>/</span>
-              <button type="button" onClick={() => onNavigate(crumb.path)} disabled={crumb.path === path}>
+              <button translate="no" type="button" onClick={() => onNavigate(crumb.path)} disabled={crumb.path === path}>
                 {crumb.label}
               </button>
             </span>
@@ -229,7 +229,7 @@ export const FileWorkspace = memo(function FileWorkspace({
       </div>
 
       <header className="workspace__heading">
-        <h1>{directoryHeading(path, activeMount)}</h1>
+        <h1 translate={path === '/' && !activeMount?.name ? undefined : 'no'}>{directoryHeading(path, activeMount)}</h1>
         <p>{files.length} 个项目 · {loading ? '正在同步…' : syncedText}</p>
       </header>
 
@@ -307,7 +307,7 @@ export const FileWorkspace = memo(function FileWorkspace({
                 onClick={() => directory ? onNavigate(file.path) : toggleSelection(file.path)}
               >
                 <FileTypeIcon kind={kind} />
-                <strong>{file.name}</strong>
+                <strong translate="no">{file.name}</strong>
               </button>
               <span>我</span>
               <span>{formatModified(file.modified)}</span>

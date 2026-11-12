@@ -108,6 +108,26 @@ export function useKoofrWorkspace(enabled: boolean) {
     return loadDirectory(state.activeMountId, state.path, true)
   }, [loadDirectory, state.activeMountId, state.path])
 
+  // Long-running work (an upload, a resumed transfer) finishes after the user may
+  // have navigated elsewhere. These two read the location at call time instead of
+  // capturing it, so a late refresh never moves the view back to an old folder.
+  const locationRef = useRef({ activeMountId: state.activeMountId, path: state.path })
+  useEffect(() => {
+    locationRef.current = { activeMountId: state.activeMountId, path: state.path }
+  }, [state.activeMountId, state.path])
+
+  const refreshCurrent = useCallback(() => {
+    const { activeMountId, path } = locationRef.current
+    if (!activeMountId) return Promise.resolve()
+    return loadDirectory(activeMountId, path, true)
+  }, [loadDirectory])
+
+  const refreshIfAt = useCallback((mountId: string, path: string) => {
+    const current = locationRef.current
+    if (current.activeMountId !== mountId || current.path !== path) return Promise.resolve()
+    return loadDirectory(mountId, path, true)
+  }, [loadDirectory])
+
   useEffect(() => {
     if (enabled) {
       void initialize()
@@ -122,5 +142,7 @@ export function useKoofrWorkspace(enabled: boolean) {
     initialize,
     loadDirectory,
     refresh,
+    refreshCurrent,
+    refreshIfAt,
   }
 }

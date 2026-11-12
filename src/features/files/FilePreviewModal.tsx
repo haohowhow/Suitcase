@@ -19,6 +19,7 @@ import {
   type RenderTask,
 } from 'pdfjs-dist'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLatestRef } from '../../hooks/useLatestRef'
 import { koofr } from '../../services/koofr'
 import type { FilePreviewInfo, PreviewTextResult } from '../../types/backend'
 import { formatBytes } from './filePresentation'
@@ -152,7 +153,7 @@ export function FilePreviewModal({
       <div className="file-preview-container" onClick={(event) => event.stopPropagation()}>
         <header className="file-preview-header">
           <div>
-            <strong title={fileName}>{fileName}</strong>
+            <strong translate="no" title={fileName}>{fileName}</strong>
             <span>{formatBytes(previewInfo.fileSize)}</span>
           </div>
           <div className="file-preview-header-actions">
@@ -203,12 +204,11 @@ export function FilePreviewModal({
 function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
-  const onErrorRef = useRef(onError)
+  const onErrorRef = useLatestRef(onError)
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const [page, setPage] = useState(1)
   const [scale, setScale] = useState(1)
   const [loading, setLoading] = useState(true)
-  onErrorRef.current = onError
 
   useEffect(() => {
     let disposed = false
@@ -248,7 +248,7 @@ function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => v
       transport.abort()
       void task.destroy()
     }
-  }, [info.fileSize, info.sessionId])
+  }, [info.fileSize, info.sessionId, onErrorRef])
 
   useEffect(() => {
     if (!document || !canvasRef.current) return
@@ -271,7 +271,7 @@ function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => v
       cancelled = true
       renderTask?.cancel()
     }
-  }, [document, page, scale])
+  }, [document, onErrorRef, page, scale])
 
   const fitWidth = useCallback(async () => {
     if (!document || !viewportRef.current) return
@@ -304,13 +304,22 @@ function TextPreview({ info, onError }: { info: FilePreviewInfo; onError: () => 
   const [encoding, setEncoding] = useState('auto')
   const [result, setResult] = useState<PreviewTextResult | null>(null)
   const [wrap, setWrap] = useState(true)
+  const onErrorRef = useLatestRef(onError)
 
   useEffect(() => {
+    let disposed = false
     setResult(null)
     void koofr.readPreviewText(info.sessionId, encoding)
-      .then(setResult)
-      .catch(onError)
-  }, [encoding, info.sessionId, onError])
+      .then((next) => {
+        if (!disposed) setResult(next)
+      })
+      .catch(() => {
+        if (!disposed) onErrorRef.current()
+      })
+    return () => {
+      disposed = true
+    }
+  }, [encoding, info.sessionId, onErrorRef])
 
   return (
     <div className="text-preview">
@@ -328,7 +337,7 @@ function TextPreview({ info, onError }: { info: FilePreviewInfo; onError: () => 
       </div>
       {result?.truncated ? <p className="file-preview-warning">文件较大，仅显示前 5 MiB。</p> : null}
       {result?.hadDecodeErrors ? <p className="file-preview-warning">检测到无法按当前编码解码的字符。</p> : null}
-      {result ? <pre className={wrap ? 'text-preview-content text-preview-content--wrap' : 'text-preview-content'}>{result.text}</pre> : <p className="file-preview-loading">正在加载预览…</p>}
+      {result ? <pre translate="no" className={wrap ? 'text-preview-content text-preview-content--wrap' : 'text-preview-content'}>{result.text}</pre> : <p className="file-preview-loading">正在加载预览…</p>}
     </div>
   )
 }
@@ -346,10 +355,12 @@ function ImagePreview({
   const [scale, setScale] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [fit, setFit] = useState(true)
+  const onErrorRef = useLatestRef(onError)
 
   useEffect(() => {
     const controller = new AbortController()
     let objectUrl = ''
+    setUrl('')
     const load = async () => {
       const bytes = await fetchAll(info, controller.signal)
       let blob: Blob
@@ -366,15 +377,14 @@ function ImagePreview({
       objectUrl = URL.createObjectURL(blob)
       setUrl(objectUrl)
     }
-    void load().catch((error) => {
-      if (!controller.signal.aborted) onError()
-      void error
+    void load().catch(() => {
+      if (!controller.signal.aborted) onErrorRef.current()
     })
     return () => {
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [info, onError])
+  }, [info, onErrorRef])
 
   return (
     <div className="image-preview">

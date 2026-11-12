@@ -144,6 +144,17 @@ const enUs: Record<string, string> = {
 const zhCn = Object.fromEntries(Object.entries(enUs).map(([zh, en]) => [en, zh]))
 const translatedAttributes = ['aria-label', 'placeholder', 'title'] as const
 
+// File names, paths and other account data are marked with the standard
+// `translate="no"` attribute. Translation works on whole-string matches, so
+// without this a folder called "Download" or "设置" would be shown under its
+// dictionary translation instead of its real name.
+const USER_CONTENT_SELECTOR = '[translate="no"]'
+
+function isUserContent(node: Node) {
+  const element = node instanceof Element ? node : node.parentElement
+  return Boolean(element?.closest(USER_CONTENT_SELECTOR))
+}
+
 export function resolvedLanguage(language: InterfaceLanguage): 'zh-CN' | 'en-US' {
   if (language === 'zhCn') return 'zh-CN'
   if (language === 'enUs') return 'en-US'
@@ -163,18 +174,24 @@ export function installRuntimeTranslations(
     const content = value.trim()
     return resource[content] ? `${leading}${resource[content]}${trailing}` : value
   }
-  const translateNode = (node: Node) => {
+  const translateSubtree = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE && node.textContent) {
       const translated = translateText(node.textContent)
       if (translated !== node.textContent) node.textContent = translated
       return
     }
     if (!(node instanceof HTMLElement)) return
+    if (node.matches(USER_CONTENT_SELECTOR)) return
     for (const attribute of translatedAttributes) {
       const value = node.getAttribute(attribute)
       if (value && resource[value]) node.setAttribute(attribute, resource[value])
     }
-    for (const child of node.childNodes) translateNode(child)
+    for (const child of node.childNodes) translateSubtree(child)
+  }
+  // Mutations can land anywhere, so the entry point checks the ancestors once;
+  // the walk below then only has to look at each element itself.
+  const translateNode = (node: Node) => {
+    if (!isUserContent(node)) translateSubtree(node)
   }
   translateNode(root)
   const observer = new MutationObserver((mutations) => {

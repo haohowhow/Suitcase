@@ -67,7 +67,7 @@ export function SplitUploadDialog({
           <span><Archive aria-hidden="true" /></span>
           <span>
             <small>待上传文件</small>
-            <strong>{fileName}</strong>
+            <strong translate="no">{fileName}</strong>
           </span>
         </div>
         <p>

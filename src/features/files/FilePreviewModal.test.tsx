@@ -235,6 +235,75 @@ describe('FilePreviewModal', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps the loaded text when the modal parent rerenders', async () => {
+    const read = vi.spyOn(koofr, 'readPreviewText').mockResolvedValue({
+      text: 'Download',
+      encoding: 'UTF-8',
+      truncated: false,
+      hadDecodeErrors: false,
+    })
+    const textInfo: FilePreviewInfo = {
+      ...video,
+      kind: 'text',
+      contentType: 'text/plain',
+      decoder: 'text',
+      limits: { maxBytes: null, textBytes: 5 * 1024 * 1024, maxPixels: null },
+    }
+    const rendered = render(
+      <FilePreviewModal previewInfo={textInfo} fileName="notes.txt" onClose={vi.fn()} onDownload={vi.fn()} />,
+    )
+    expect(await screen.findByText('Download')).not.toBeNull()
+
+    // The app shell re-renders on every transfer or sync event and passes new
+    // callbacks each time. That must not fetch the text again.
+    rendered.rerender(
+      <FilePreviewModal previewInfo={textInfo} fileName="notes.txt" onClose={vi.fn()} onDownload={vi.fn()} />,
+    )
+
+    expect(read).toHaveBeenCalledOnce()
+    expect(screen.queryByText('正在加载预览…')).toBeNull()
+    expect(screen.getByText('Download')).not.toBeNull()
+    read.mockRestore()
+  })
+
+  it('keeps an image download running when the modal parent rerenders', async () => {
+    let finishDownload: (response: Response) => void = () => {}
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => new Promise<Response>((resolve) => {
+        finishDownload = resolve
+      }),
+    )
+    const createObjectURL = vi.fn(() => 'blob:preview')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    const imageInfo: FilePreviewInfo = {
+      ...video,
+      fileSize: 3,
+      kind: 'image',
+      contentType: 'image/png',
+      limits: { maxBytes: 100 * 1024 * 1024, textBytes: null, maxPixels: 80_000_000 },
+    }
+    const rendered = render(
+      <FilePreviewModal previewInfo={imageInfo} fileName="photo.png" onClose={vi.fn()} onDownload={vi.fn()} />,
+    )
+
+    // Re-render while the bytes are still in flight.
+    rendered.rerender(
+      <FilePreviewModal previewInfo={imageInfo} fileName="photo.png" onClose={vi.fn()} onDownload={vi.fn()} />,
+    )
+    finishDownload(new Response(new Uint8Array([1, 2, 3]), {
+      status: 206,
+      headers: { 'Content-Range': 'bytes 0-2/3' },
+    }))
+
+    expect(await screen.findByRole('img', { name: 'photo.png' })).not.toBeNull()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    rendered.unmount()
+    fetchMock.mockRestore()
+  })
+
   it('removes active content and external resources from SVG', () => {
     const safe = sanitizeSvgForPreview(`
       <svg xmlns="http://www.w3.org/2000/svg">

@@ -329,7 +329,7 @@ export function VaultDialog({
               {vaults.map((vault) => (
                 <article className="vault-card" key={vault.id}>
                   <div>
-                    <strong>{vault.name}</strong>
+                    <strong translate="no">{vault.name}</strong>
                     <span>{vault.locked ? '已锁定' : `已解锁 · ${Math.round(vault.autoLockSeconds / 60)} 分钟无操作后自动锁定`}</span>
                   </div>
                   <div className="vault-card__actions">
@@ -390,7 +390,7 @@ export function VaultDialog({
                 {directory.breadcrumbs.map((crumb, index) => (
                   <span key={crumb.id}>
                     {index > 0 ? <i>/</i> : null}
-                    <button type="button" disabled={busy || crumb.id === directory.directoryId} onClick={() => void openDirectory(directory.repoId, crumb.id)}>
+                    <button translate="no" type="button" disabled={busy || crumb.id === directory.directoryId} onClick={() => void openDirectory(directory.repoId, crumb.id)}>
                       {crumb.name}
                     </button>
                   </span>
@@ -407,7 +407,7 @@ export function VaultDialog({
 
             {relocation ? (
               <div className="vault-relocation">
-                <span>选择目标文件夹：{relocation.entry.name}</span>
+                <span>选择目标文件夹：<bdi translate="no">{relocation.entry.name}</bdi></span>
                 <button className="primary-button" type="button" disabled={busy} onClick={() => void completeRelocation()}>
                   {relocation.isMove ? <FolderInput size={15} /> : <Copy size={15} />}
                   {relocation.isMove ? '移动到此处' : '复制到此处'}
@@ -508,7 +508,7 @@ export function VaultDialog({
                     }}
                   >
                     {entry.entryType === 'dir' ? <Folder size={22} /> : <File size={22} />}
-                    <span className="vault-file-row__name">{entry.name}</span>
+                    <span className="vault-file-row__name" translate="no">{entry.name}</span>
                     <span>{entry.entryType === 'dir' ? '文件夹' : formatBytes(entry.size)}</span>
                     <span>{formatModified(entry.modified)}</span>
                   </button>

@@ -86,7 +86,7 @@ export function ShareLinksDialog({ mounts, onClose }: ShareLinksDialogProps) {
           <label>
             存储位置
             <select value={mountId} onChange={(event) => setMountId(event.target.value)} disabled={busy}>
-              {mounts.map((mount) => <option key={mount.id} value={mount.id}>{mount.name}</option>)}
+              {mounts.map((mount) => <option translate="no" key={mount.id} value={mount.id}>{mount.name}</option>)}
             </select>
           </label>
           <button className="secondary-button" type="button" disabled={loading || busy || !mountId} onClick={() => void loadLinks()}>
@@ -129,7 +129,7 @@ function LinkGroup({ title, emptyText, icon, links, busy, confirmingId, copiedId
       ) : links.map((link) => (
         <article className="share-link-card" key={`${link.kind}-${link.id}`}>
           <span className="share-link-card__details">
-            <strong>{link.name || link.path}</strong>
+            <strong translate="no">{link.name || link.path}</strong>
             <small>{link.path} · 已访问 {link.counter} 次{link.hasPassword ? ' · 受密码保护' : ''}</small>
             <input aria-label={`${link.name || link.path} 的链接地址`} value={link.shortUrl || link.url} readOnly onFocus={(event) => event.currentTarget.select()} />
           </span>
