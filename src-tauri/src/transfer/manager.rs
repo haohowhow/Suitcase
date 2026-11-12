@@ -97,7 +97,42 @@ impl Drop for DynamicPermit {
     }
 }
 
+/// An active transfer ID. Dropping it releases the ID, so an early `?` return can
+/// no longer leave a transfer that can never be registered, paused or resumed again.
+pub struct TransferRegistration<'a> {
+    manager: &'a TransferManager,
+    transfer_id: String,
+    token: CancellationToken,
+}
+
+impl TransferRegistration<'_> {
+    pub fn token(&self) -> &CancellationToken {
+        &self.token
+    }
+
+    /// Releases the ID and reports whether the user asked to pause it. Call it
+    /// before the terminal event goes out: the UI may resume the same ID at once.
+    pub fn finish(self) -> bool {
+        self.manager.was_paused(&self.transfer_id)
+    }
+}
+
+impl Drop for TransferRegistration<'_> {
+    fn drop(&mut self) {
+        self.manager.finish(&self.transfer_id);
+    }
+}
+
 impl TransferManager {
+    pub fn register_scoped(&self, transfer_id: &str) -> Result<TransferRegistration<'_>, AppError> {
+        let token = self.register(transfer_id)?;
+        Ok(TransferRegistration {
+            manager: self,
+            transfer_id: transfer_id.to_owned(),
+            token,
+        })
+    }
+
     pub fn register(&self, transfer_id: &str) -> Result<CancellationToken, AppError> {
         validate_transfer_id(transfer_id)?;
         let mut active = self.active();
@@ -134,6 +169,10 @@ impl TransferManager {
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
         self.active().len()
+    }
+
+    pub fn is_active(&self, transfer_id: &str) -> bool {
+        self.active().contains_key(transfer_id)
     }
 
     pub fn cancel(&self, transfer_id: &str) -> Result<bool, AppError> {
@@ -231,6 +270,24 @@ mod tests {
         assert!(!manager.was_paused(&id));
         manager.finish(&id);
         assert!(!manager.cancel(&id).expect("cancel missing transfer"));
+    }
+
+    #[test]
+    fn dropped_registration_releases_the_transfer_id() {
+        let manager = TransferManager::default();
+        let id = uuid::Uuid::new_v4().to_string();
+        let early_return = || -> Result<(), crate::error::AppError> {
+            let _registration = manager.register_scoped(&id)?;
+            Err(crate::error::AppError::LocalData)
+        };
+        assert!(early_return().is_err());
+        assert_eq!(manager.active_count(), 0);
+
+        let registration = manager.register_scoped(&id).expect("register again");
+        assert!(manager.pause(&id).expect("pause transfer"));
+        assert!(registration.token().is_cancelled());
+        assert!(registration.finish());
+        assert!(manager.register_scoped(&id).is_ok());
     }
 
     #[tokio::test]

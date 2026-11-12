@@ -1,9 +1,13 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::error::AppError;
+use crate::{error::AppError, file_ops::local_path_key};
 
 use super::{
     SplitProgress, TransferDirection, checkpoint_snapshot::snapshot, split_package::SplitPart,
@@ -68,6 +72,8 @@ pub struct VaultUploadCheckpoint {
     pub local_path: PathBuf,
     pub expected_size: u64,
     pub modified_millis: u128,
+    #[serde(default)]
+    pub retained_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -80,6 +86,8 @@ pub struct UploadCheckpoint {
     pub local_path: PathBuf,
     pub expected_size: u64,
     pub modified_millis: u128,
+    #[serde(default)]
+    pub retained_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,6 +103,8 @@ pub struct SplitUploadCheckpoint {
     pub modified_millis: u128,
     pub chunk_size: u64,
     pub completed_chunks: Vec<SplitPart>,
+    #[serde(default)]
+    pub retained_at: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -133,6 +143,51 @@ impl TransferCheckpoint {
             Self::Download(checkpoint) => checkpoint.resume_allowed,
             Self::VaultDownload(checkpoint) => checkpoint.resume_allowed,
             _ => true,
+        }
+    }
+
+    /// When the transfer last stopped without finishing; `0` while it is running
+    /// or was paused by the user before any failure.
+    fn retained_at(&self) -> u64 {
+        match self {
+            Self::Download(checkpoint) => checkpoint.retained_at,
+            Self::VaultDownload(checkpoint) => checkpoint.retained_at,
+            Self::VaultUpload(checkpoint) => checkpoint.retained_at,
+            Self::SplitUpload(checkpoint) => checkpoint.retained_at,
+            Self::Upload(checkpoint) => checkpoint.retained_at,
+        }
+    }
+
+    fn set_retained_at(&mut self, retained_at: u64) {
+        match self {
+            Self::Download(checkpoint) => checkpoint.retained_at = retained_at,
+            Self::VaultDownload(checkpoint) => checkpoint.retained_at = retained_at,
+            Self::VaultUpload(checkpoint) => checkpoint.retained_at = retained_at,
+            Self::SplitUpload(checkpoint) => checkpoint.retained_at = retained_at,
+            Self::Upload(checkpoint) => checkpoint.retained_at = retained_at,
+        }
+    }
+
+    /// An upload that can only start again from zero. Its checkpoint holds the
+    /// request and no transferred data, so dropping it loses nothing but a shortcut.
+    fn is_restart_only_upload(&self) -> bool {
+        matches!(self, Self::Upload(_) | Self::VaultUpload(_))
+    }
+
+    fn is_upload(&self) -> bool {
+        matches!(
+            self,
+            Self::Upload(_) | Self::VaultUpload(_) | Self::SplitUpload(_)
+        )
+    }
+
+    /// The final local file a download will publish, which no other download may
+    /// be given while this one can still finish.
+    fn download_target(&self) -> Option<&Path> {
+        match self {
+            Self::Download(checkpoint) => Some(&checkpoint.local_path),
+            Self::VaultDownload(checkpoint) => Some(&checkpoint.local_path),
+            _ => None,
         }
     }
 
@@ -186,18 +241,30 @@ impl Default for StoredCheckpoints {
 pub struct TransferCheckpointStore {
     path: PathBuf,
     state: Arc<RwLock<StoredCheckpoints>>,
+    persist_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl TransferCheckpointStore {
     pub fn load(path: PathBuf) -> Self {
-        let state = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<StoredCheckpoints>(&bytes).ok())
-            .filter(|stored| stored.version == CHECKPOINT_VERSION)
-            .unwrap_or_default();
+        let mut state = crate::atomic_file::read_json_or_quarantine::<StoredCheckpoints, _>(
+            &path,
+            "transfer_checkpoints",
+            |stored| stored.version == CHECKPOINT_VERSION,
+        )
+        .unwrap_or_default();
+        // Nothing is running at start-up. Uploads saved by a version that did not
+        // track this, or interrupted by a crash, would otherwise look active forever
+        // and could never be chosen when room has to be made.
+        let now = now_millis();
+        for checkpoint in state.checkpoints.values_mut() {
+            if checkpoint.is_upload() && checkpoint.retained_at() == 0 {
+                checkpoint.set_retained_at(now);
+            }
+        }
         Self {
             path,
             state: Arc::new(RwLock::new(state)),
+            persist_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -209,7 +276,22 @@ impl TransferCheckpointStore {
             if state.checkpoints.len() >= MAX_CHECKPOINTS
                 && !state.checkpoints.contains_key(&transfer_id)
             {
-                return Err(AppError::LocalData);
+                // Make room instead of refusing every new transfer: drop the oldest
+                // stopped upload that would have to start from zero anyway.
+                let evicted = state
+                    .checkpoints
+                    .iter()
+                    .filter(|(_, stored)| {
+                        stored.is_restart_only_upload() && stored.retained_at() > 0
+                    })
+                    .min_by_key(|(_, stored)| stored.retained_at())
+                    .map(|(id, _)| id.clone());
+                match evicted {
+                    Some(id) => {
+                        state.checkpoints.remove(&id);
+                    }
+                    None => return Err(AppError::LocalData),
+                }
             }
             state.checkpoints.insert(transfer_id, checkpoint);
         }
@@ -257,9 +339,26 @@ impl TransferCheckpointStore {
             .collect::<Vec<_>>();
         let mut snapshots = Vec::with_capacity(checkpoints.len());
         for checkpoint in checkpoints {
-            snapshots.push(snapshot(checkpoint).await?);
+            // One unreadable partial file (a removed drive, a changed permission)
+            // must not hide every other resumable transfer.
+            if let Ok(resumable) = snapshot(checkpoint).await {
+                snapshots.push(resumable);
+            }
         }
         Ok(snapshots)
+    }
+
+    /// Final file names that unfinished downloads will publish, as comparison keys
+    /// from [`local_path_key`]. A new download must not be given one of them.
+    pub async fn reserved_download_targets(&self) -> HashSet<String> {
+        self.state
+            .read()
+            .await
+            .checkpoints
+            .values()
+            .filter_map(TransferCheckpoint::download_target)
+            .map(local_path_key)
+            .collect()
     }
 
     pub async fn mark_active(&self, transfer_id: &str) -> Result<(), AppError> {
@@ -271,13 +370,7 @@ impl TransferCheckpointStore {
         transfer_id: &str,
         resume_allowed: bool,
     ) -> Result<(), AppError> {
-        let retained_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .try_into()
-            .unwrap_or(u64::MAX);
-        self.update_retention(transfer_id, resume_allowed, retained_at)
+        self.update_retention(transfer_id, resume_allowed, now_millis())
             .await
     }
 
@@ -297,26 +390,20 @@ impl TransferCheckpointStore {
             match checkpoint {
                 TransferCheckpoint::Download(checkpoint) => {
                     checkpoint.resume_allowed = resume_allowed;
-                    checkpoint.retained_at = retained_at;
                 }
                 TransferCheckpoint::VaultDownload(checkpoint) => {
                     checkpoint.resume_allowed = resume_allowed;
-                    checkpoint.retained_at = retained_at;
                 }
-                _ => return Ok(()),
+                // Uploads can always be tried again; only their age is tracked.
+                _ => {}
             }
+            checkpoint.set_retained_at(retained_at);
         }
         self.persist().await
     }
 
     pub async fn cleanup_expired(&self, keep_days: u32) -> Result<usize, AppError> {
-        let now: u64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .try_into()
-            .unwrap_or(u64::MAX);
-        let cutoff = now.saturating_sub(u64::from(keep_days) * 86_400_000);
+        let cutoff = now_millis().saturating_sub(u64::from(keep_days) * 86_400_000);
         let candidates = self
             .state
             .read()
@@ -357,25 +444,25 @@ impl TransferCheckpointStore {
     }
 
     async fn persist(&self) -> Result<(), AppError> {
+        // Several transfers start, checkpoint and finish at the same moment. The
+        // snapshot is taken under the same lock that orders the writes, so they
+        // cannot interleave and an older snapshot can never land last.
+        let _guard = self.persist_lock.lock().await;
         let payload = serde_json::to_vec_pretty(&*self.state.read().await)
             .map_err(|_| AppError::LocalData)?;
-        let parent = self.path.parent().ok_or(AppError::LocalData)?;
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        let temporary = self.path.with_extension("json.tmp");
-        tokio::fs::write(&temporary, payload)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        if tokio::fs::try_exists(&self.path).await.unwrap_or(false) {
-            tokio::fs::remove_file(&self.path)
-                .await
-                .map_err(|_| AppError::LocalData)?;
-        }
-        tokio::fs::rename(temporary, &self.path)
+        crate::atomic_file::write_atomic_async(self.path.clone(), payload)
             .await
             .map_err(|_| AppError::LocalData)
     }
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 fn validate_transfer_id(transfer_id: &str) -> Result<(), AppError> {

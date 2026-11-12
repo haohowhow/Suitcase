@@ -150,14 +150,8 @@ fn load_locator(path: &Path) -> Option<StoredLocator> {
 
 fn persist_locator(path: &Path, locator: &StoredLocator) -> Result<(), AppError> {
     let payload = serde_json::to_vec_pretty(locator).map_err(|_| AppError::LocalData)?;
-    let temporary = path.with_extension("json.tmp");
     reject_unsafe_file(path)?;
-    reject_unsafe_file(&temporary)?;
-    fs::write(&temporary, payload).map_err(|_| AppError::LocalData)?;
-    if path.exists() {
-        fs::remove_file(path).map_err(|_| AppError::LocalData)?;
-    }
-    fs::rename(temporary, path).map_err(|_| AppError::LocalData)
+    crate::atomic_file::write_atomic(path, &payload).map_err(|_| AppError::LocalData)
 }
 
 fn apply_pending_change(locator_path: &Path, locator: &mut StoredLocator) -> Result<(), AppError> {

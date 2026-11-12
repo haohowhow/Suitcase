@@ -12,7 +12,7 @@ use super::{
     TransferResult, TransferState,
     checkpoint::{SplitUploadCheckpoint, TransferCheckpoint, TransferCheckpointStore},
     emit_progress_with_split, emit_terminal,
-    manager::TransferManager,
+    manager::{TransferManager, TransferRegistration},
     normalize_interruption, should_retry_network,
     split_package::{
         SplitManifest, SplitPart, package_directory_name, part_file_name, validate_part_bytes,
@@ -74,12 +74,15 @@ pub async fn upload_split(
         modified_millis: modified_millis(&metadata)?,
         chunk_size: part_bytes,
         completed_chunks: Vec::new(),
+        retained_at: 0,
     };
     runtime
         .checkpoints
         .insert(TransferCheckpoint::SplitUpload(checkpoint.clone()))
         .await?;
-    let cancel = runtime.manager.register(&checkpoint.transfer_id)?;
+    let manager = runtime.manager;
+    let registration = manager.register_scoped(&checkpoint.transfer_id)?;
+    let cancel = registration.token().clone();
     let preparation = prepare_new_package(
         &runtime,
         &cancel,
@@ -91,8 +94,7 @@ pub async fn upload_split(
     )
     .await;
     if let Err(error) = preparation {
-        let paused = runtime.manager.was_paused(&checkpoint.transfer_id);
-        runtime.manager.finish(&checkpoint.transfer_id);
+        let paused = registration.finish();
         let result = normalize_interruption(Err(error), paused);
         if matches!(
             &result,
@@ -109,7 +111,7 @@ pub async fn upload_split(
         );
         return result;
     }
-    run_registered(runtime, checkpoint, cancel).await
+    run_registered(runtime, checkpoint, registration).await
 }
 
 pub async fn resume_split_upload(
@@ -134,15 +136,17 @@ async fn run(
     runtime: SplitTransferRuntime<'_>,
     checkpoint: SplitUploadCheckpoint,
 ) -> Result<TransferResult, AppError> {
-    let cancel = runtime.manager.register(&checkpoint.transfer_id)?;
-    run_registered(runtime, checkpoint, cancel).await
+    let manager = runtime.manager;
+    let registration = manager.register_scoped(&checkpoint.transfer_id)?;
+    run_registered(runtime, checkpoint, registration).await
 }
 
 async fn run_registered(
     runtime: SplitTransferRuntime<'_>,
     mut checkpoint: SplitUploadCheckpoint,
-    cancel: CancellationToken,
+    registration: TransferRegistration<'_>,
 ) -> Result<TransferResult, AppError> {
+    let cancel = registration.token().clone();
     emit_progress_with_split(
         &runtime.app,
         &checkpoint.transfer_id,
@@ -159,8 +163,8 @@ async fn run_registered(
     {
         Ok(permit) => permit,
         Err(error) => {
-            runtime.manager.finish(&checkpoint.transfer_id);
-            let result = Err(error);
+            let paused = registration.finish();
+            let result = normalize_interruption(Err(error), paused);
             emit_terminal(
                 &runtime.app,
                 &checkpoint.transfer_id,
@@ -171,6 +175,10 @@ async fn run_registered(
             return result;
         }
     };
+    let _ = runtime
+        .checkpoints
+        .mark_active(&checkpoint.transfer_id)
+        .await;
     let mut retries_completed = 0_u32;
     let result = loop {
         let result = run_inner(&runtime, &cancel, &mut checkpoint).await;
@@ -194,8 +202,7 @@ async fn run_registered(
             break Err(error);
         }
     };
-    let paused = runtime.manager.was_paused(&checkpoint.transfer_id);
-    runtime.manager.finish(&checkpoint.transfer_id);
+    let paused = registration.finish();
     let committed = checkpoint
         .completed_chunks
         .iter()
@@ -203,13 +210,22 @@ async fn run_registered(
         .sum();
     let result = match result {
         Ok(result) => {
-            runtime.checkpoints.remove(&checkpoint.transfer_id).await?;
+            let _ = runtime.checkpoints.remove(&checkpoint.transfer_id).await;
             Ok(result)
         }
         Err(AppError::InvalidInput(reason)) => Err(AppError::InvalidInput(reason)),
         Err(AppError::Conflict) => Err(AppError::Conflict),
         Err(AppError::Forbidden) => Err(AppError::Forbidden),
-        other => normalize_interruption(other, paused),
+        other => {
+            let result = normalize_interruption(other, paused);
+            if !matches!(result, Err(AppError::TransferPaused)) {
+                let _ = runtime
+                    .checkpoints
+                    .mark_failed(&checkpoint.transfer_id, true)
+                    .await;
+            }
+            result
+        }
     };
     emit_terminal(
         &runtime.app,
@@ -333,6 +349,7 @@ async fn run_inner(
             path: checkpoint.package_path.clone(),
         }),
         integrity_status: super::IntegrityStatus::NotRequested,
+        local_path: None,
     })
 }
 

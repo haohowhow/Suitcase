@@ -7,7 +7,6 @@ use std::{
     },
 };
 
-use futures_util::StreamExt;
 use tauri::{AppHandle, Manager};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -104,7 +103,8 @@ pub async fn download_folder(
     context: FolderDownloadContext<'_>,
     request: FolderDownloadRequest,
 ) -> Result<TransferResult, AppError> {
-    let cancel = context.manager.register(&request.transfer_id)?;
+    let registration = context.manager.register_scoped(&request.transfer_id)?;
+    let cancel = registration.token().clone();
     emit_progress(
         &context.app,
         &request.transfer_id,
@@ -120,8 +120,11 @@ pub async fn download_folder(
     {
         Ok(permit) => permit,
         Err(error) => {
-            context.manager.finish(&request.transfer_id);
-            let result = Err(error);
+            let paused = registration.finish();
+            let result = match error {
+                AppError::Cancelled if paused => Err(AppError::TransferPaused),
+                other => Err(other),
+            };
             emit_terminal(
                 &context.app,
                 &request.transfer_id,
@@ -187,8 +190,7 @@ pub async fn download_folder(
             break Err(error);
         }
     };
-    let paused = context.manager.was_paused(&request.transfer_id);
-    context.manager.finish(&request.transfer_id);
+    let paused = registration.finish();
     let result = match result {
         Err(AppError::Cancelled) if paused => Err(AppError::TransferPaused),
         other => other,
@@ -240,7 +242,8 @@ where
         tokio::fs::create_dir(&staging).await?;
         let result = self.run_staged(remote_path, transfer_id, &staging).await;
         if let Err(error) = result {
-            tokio::fs::remove_dir_all(&staging).await?;
+            // Report why the download stopped, not a later clean-up problem.
+            let _ = tokio::fs::remove_dir_all(&staging).await;
             return Err(error);
         }
         result
@@ -261,12 +264,17 @@ where
         let (transferred, integrity_status) =
             self.download_files(&manifest, staging, transfer_id).await?;
         self.ensure_active()?;
-        tokio::fs::rename(staging, self.target.as_path()).await?;
+        let published = crate::file_ops::publish_without_overwrite(
+            staging.to_path_buf(),
+            self.target.as_path().to_path_buf(),
+        )
+        .await?;
         Ok(TransferResult {
             transfer_id: transfer_id.to_owned(),
             bytes_transferred: transferred,
             file: None,
             integrity_status,
+            local_path: Some(published),
         })
     }
 
@@ -357,11 +365,11 @@ where
             let file_start = transferred;
             loop {
                 let next = tokio::select! {
-                    item = stream.next() => item,
+                    item = crate::koofr_api::next_body_chunk(&mut stream) => item?,
                     () = self.cancel.cancelled() => return Err(AppError::Cancelled),
                 };
                 match next {
-                    Some(Ok(chunk)) => {
+                    Some(chunk) => {
                         self.manager
                             .throttle(transfer_id, chunk.len(), self.cancel)
                             .await?;
@@ -371,7 +379,6 @@ where
                             .ok_or(AppError::IncompleteTransfer)?;
                         (self.progress)(transferred, Some(manifest.total_bytes));
                     }
-                    Some(Err(error)) => return Err(AppError::Network(error)),
                     None => break,
                 }
             }

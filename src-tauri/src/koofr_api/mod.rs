@@ -27,6 +27,28 @@ pub use public_links::{PublicLink, PublicLinkKind};
 pub use vault::{VaultRepo, VaultRepoCreate};
 
 const USER_AGENT: &str = concat!("Koofr-GUI/", env!("CARGO_PKG_VERSION"));
+/// Upper bound for a whole metadata request (listing, rename, delete, ...). Without
+/// it a connection that stops answering would hang the caller forever.
+const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long a content request may wait for the response headers, and how long a
+/// response body may go without delivering any bytes.
+pub const BODY_STALL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Reads the next chunk of a response body, failing with
+/// [`AppError::NetworkStalled`] when nothing arrives for [`BODY_STALL_TIMEOUT`].
+pub async fn next_body_chunk<S, T>(stream: &mut S) -> Result<Option<T>, AppError>
+where
+    S: futures_util::Stream<Item = Result<T, reqwest::Error>> + Unpin,
+{
+    use futures_util::StreamExt;
+
+    match tokio::time::timeout(BODY_STALL_TIMEOUT, stream.next()).await {
+        Err(_) => Err(AppError::NetworkStalled),
+        Ok(None) => Ok(None),
+        Ok(Some(Ok(chunk))) => Ok(Some(chunk)),
+        Ok(Some(Err(error))) => Err(AppError::Network(error)),
+    }
+}
 
 #[derive(Debug)]
 struct Session {
@@ -60,6 +82,7 @@ impl KoofrApi {
         let client = Client::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(15))
+            .tcp_keepalive(Duration::from_secs(30))
             .build()
             .map_err(|_| AppError::Initialization)?;
         Ok(Self {
@@ -85,6 +108,7 @@ impl KoofrApi {
         let response = self
             .client
             .post(url)
+            .timeout(METADATA_TIMEOUT)
             .json(&Credentials { email, password })
             .send()
             .await?;
@@ -549,8 +573,10 @@ impl KoofrApi {
             .file_name(file_name.as_str().to_owned())
             .mime_str("application/octet-stream")?;
         let form = reqwest::multipart::Form::new().part("file", part);
+        // No total timeout: a large upload legitimately takes hours. Callers watch
+        // the upload's own progress instead.
         let response = self
-            .authenticated_request(Method::POST, url)
+            .content_request(Method::POST, url)
             .await?
             .multipart(form)
             .send()
@@ -575,15 +601,31 @@ impl KoofrApi {
     ) -> Result<Response, AppError> {
         let mut url = self.content_mount_endpoint(mount_id, &["files", "get"])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
-        let mut request = self.authenticated_request(Method::GET, url).await?;
+        let mut request = self.content_request(Method::GET, url).await?;
         if offset > 0 {
             request = request.header(header::RANGE, format!("bytes={offset}-"));
         }
-        let response = request.send().await?;
+        // Only the wait for the headers is bounded here; the body is read with
+        // `next_body_chunk`, which bounds each gap between chunks instead.
+        let response = tokio::time::timeout(BODY_STALL_TIMEOUT, request.send())
+            .await
+            .map_err(|_| AppError::NetworkStalled)??;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::PARTIAL_CONTENT])
     }
 
     async fn authenticated_request(
+        &self,
+        method: Method,
+        url: Url,
+    ) -> Result<reqwest::RequestBuilder, AppError> {
+        Ok(self
+            .content_request(method, url)
+            .await?
+            .timeout(METADATA_TIMEOUT))
+    }
+
+    /// A request whose body can be arbitrarily large, so it gets no total timeout.
+    async fn content_request(
         &self,
         method: Method,
         url: Url,
@@ -701,6 +743,17 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(!first.contains("person@example.com"));
+    }
+
+    #[test]
+    fn fallback_account_scope_matches_the_value_stored_by_earlier_versions() {
+        // Sync pairs, checkpoints and download history are keyed by this value. If
+        // the standard library ever changes `DefaultHasher`, existing data would be
+        // orphaned silently; this test makes that change visible instead.
+        assert_eq!(
+            account_scope("person@example.com", None),
+            "email:4a54d01d10ec1c35"
+        );
     }
 
     #[tokio::test]

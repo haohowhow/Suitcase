@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chardetng::EncodingDetector;
 use encoding_rs::Encoding;
-use futures_util::{AsyncReadExt, StreamExt, io::Cursor};
+use futures_util::{AsyncReadExt, io::Cursor};
 use serde::Serialize;
 use tauri::State;
 use zeroize::Zeroizing;
@@ -553,8 +553,7 @@ async fn download_limited(
     let response = api.download_response(mount_id, remote_path).await?;
     let mut stream = response.bytes_stream();
     let mut output = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
+    while let Some(chunk) = crate::koofr_api::next_body_chunk(&mut stream).await? {
         if output.len().saturating_add(chunk.len()) as u64 > limit {
             return Err(AppError::PreviewTooLarge);
         }
@@ -573,10 +572,9 @@ async fn download_prefix(
     let mut stream = response.bytes_stream();
     let mut output = Vec::with_capacity(limit);
     while output.len() < limit {
-        let Some(chunk) = stream.next().await else {
+        let Some(chunk) = crate::koofr_api::next_body_chunk(&mut stream).await? else {
             break;
         };
-        let chunk = chunk?;
         let take = (limit - output.len()).min(chunk.len());
         output.extend_from_slice(&chunk[..take]);
     }

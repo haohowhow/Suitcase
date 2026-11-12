@@ -43,6 +43,7 @@ impl Default for StoredCache {
 pub struct MetadataCache {
     path: Arc<RwLock<PathBuf>>,
     state: Arc<RwLock<StoredCache>>,
+    persist_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl MetadataCache {
@@ -61,6 +62,7 @@ impl MetadataCache {
         Self {
             path: Arc::new(RwLock::new(path)),
             state: Arc::new(RwLock::new(state)),
+            persist_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -164,25 +166,14 @@ impl MetadataCache {
     }
 
     async fn persist(&self) -> Result<(), AppError> {
+        // Listings for several folders are cached concurrently. Serialise the writes
+        // and take the snapshot under the same lock so the newest one lands last.
+        let _guard = self.persist_lock.lock().await;
         let payload =
             serde_json::to_vec(&*self.state.read().await).map_err(|_| AppError::LocalData)?;
         let path = self.path.read().await.clone();
-        let parent = path.parent().ok_or(AppError::LocalData)?;
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        let temporary = path.with_extension("json.tmp");
         reject_unsafe_file(&path).await?;
-        reject_unsafe_file(&temporary).await?;
-        tokio::fs::write(&temporary, payload)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-            tokio::fs::remove_file(&path)
-                .await
-                .map_err(|_| AppError::LocalData)?;
-        }
-        tokio::fs::rename(temporary, path)
+        crate::atomic_file::write_atomic_async(path, payload)
             .await
             .map_err(|_| AppError::LocalData)
     }

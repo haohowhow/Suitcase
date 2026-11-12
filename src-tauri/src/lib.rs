@@ -1,3 +1,4 @@
+mod atomic_file;
 mod autostart;
 mod cloud_files;
 mod commands;
@@ -191,6 +192,18 @@ pub fn run() {
                 work_directory,
                 sync,
             });
+            // Stores load before the logger exists; report any unreadable state file
+            // that was set aside so the loss is visible in diagnostics.
+            for store in atomic_file::take_quarantine_reports() {
+                let mut fields = serde_json::Map::new();
+                fields.insert("store".to_owned(), serde_json::Value::from(store));
+                app.state::<AppState>().logger.warn(
+                    "storage",
+                    "state_file_quarantined",
+                    None,
+                    fields,
+                );
+            }
             let _ = stream_session::STREAM_SESSIONS
                 .set(stream_session::StreamSessionManager::default());
             desktop::setup(app)?;
@@ -337,17 +350,18 @@ async fn handle_stream_request(
 
     let range_header = request.headers().get("range").and_then(|v| v.to_str().ok());
 
-    let (start, end) = match parse_range_header(range_header, session.file_size) {
+    let requested = match parse_range_header(range_header, session.file_size) {
         Some((s, e)) => cap_range(s, e, session.file_size),
-        None => {
-            if range_header.is_some() {
-                return error_response(
-                    tauri::http::StatusCode::RANGE_NOT_SATISFIABLE,
-                    "range not satisfiable",
-                );
-            }
-            cap_range(0, session.file_size.saturating_sub(1), session.file_size)
-        }
+        None if range_header.is_some() => None,
+        None => cap_range(0, session.file_size.saturating_sub(1), session.file_size),
+    };
+    // An empty file has no byte to serve; answering instead of indexing past the
+    // end keeps the preview handler from panicking.
+    let Some((start, end)) = requested else {
+        return error_response(
+            tauri::http::StatusCode::RANGE_NOT_SATISFIABLE,
+            "range not satisfiable",
+        );
     };
 
     let needed = (end - start + 1) as usize;
@@ -417,15 +431,13 @@ async fn read_stream_bytes(
     skip: usize,
     needed: usize,
 ) -> Result<Vec<u8>, error::AppError> {
-    use futures_util::StreamExt;
-
     let mut stream = response.bytes_stream();
     let mut buf = Vec::with_capacity(needed);
     let mut skipped = 0usize;
 
     while buf.len() < needed {
-        match stream.next().await {
-            Some(Ok(chunk)) => {
+        match koofr_api::next_body_chunk(&mut stream).await? {
+            Some(chunk) => {
                 let mut remaining = chunk.as_ref();
 
                 if skipped < skip {
@@ -440,7 +452,6 @@ async fn read_stream_bytes(
                 let to_read = (needed - buf.len()).min(remaining.len());
                 buf.extend_from_slice(&remaining[..to_read]);
             }
-            Some(Err(e)) => return Err(error::AppError::Network(e)),
             None => break,
         }
     }

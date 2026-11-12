@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::TryStreamExt;
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::{
@@ -15,8 +15,11 @@ use tokio_util::{
 use crate::{
     crypto::VaultCipher,
     error::AppError,
-    file_ops::{LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath},
-    koofr_api::{FileInfo, KoofrApi},
+    file_ops::{
+        LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath,
+        publish_without_overwrite,
+    },
+    koofr_api::{FileInfo, KoofrApi, next_body_chunk},
     vault_core::VaultManager,
 };
 
@@ -27,10 +30,11 @@ use super::{
     manager::TransferManager,
     model::{
         NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferResult, TransferState,
-        emit_progress, emit_terminal, normalize_interruption, should_retry_network,
-        wait_for_network_retry,
+        UPLOAD_STALL_LIMIT, emit_progress, emit_terminal, normalize_interruption,
+        should_retry_network, stall_watchdog, wait_for_network_retry,
     },
     range::{ResponseMode, response_mode},
+    upload::settle_upload_checkpoint,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -59,6 +63,7 @@ pub async fn upload_vault_file(
             local_path: local_path.as_path().to_path_buf(),
             expected_size: plain_size,
             modified_millis: super::upload::modified_millis(&metadata)?,
+            retained_at: 0,
         }))
         .await?;
     run_vault_upload(
@@ -132,7 +137,8 @@ async fn run_vault_upload(
     let encrypted_size = VaultCipher::encrypted_size(plain_size)?;
     let plain_name = RemoteName::parse(local_path.file_name()?)?;
     let encrypted_name = RemoteName::parse(cipher.encrypt_name(plain_name.as_str()))?;
-    let cancel = manager.register(&transfer_id)?;
+    let registration = manager.register_scoped(&transfer_id)?;
+    let cancel = registration.token().clone();
     emit_progress(
         &app,
         &transfer_id,
@@ -144,12 +150,14 @@ async fn run_vault_upload(
     let _permit = match manager.acquire(TransferDirection::Upload, &cancel).await {
         Ok(permit) => permit,
         Err(error) => {
-            manager.finish(&transfer_id);
-            let result = Err(error);
+            let paused = registration.finish();
+            let result =
+                settle_upload_checkpoint(checkpoints, &transfer_id, Err(error), paused).await;
             emit_terminal(&app, &transfer_id, TransferDirection::Upload, 0, &result);
             return result;
         }
     };
+    let _ = checkpoints.mark_active(&transfer_id).await;
     let progress = Arc::new(AtomicU64::new(0));
     let mut retries_completed = 0;
     let result = loop {
@@ -189,15 +197,8 @@ async fn run_vault_upload(
             break Err(error);
         }
     };
-    let paused = manager.was_paused(&transfer_id);
-    manager.finish(&transfer_id);
-    let result = match result {
-        Ok(result) => {
-            checkpoints.remove(&transfer_id).await?;
-            Ok(result)
-        }
-        other => normalize_interruption(other, paused),
-    };
+    let paused = registration.finish();
+    let result = settle_upload_checkpoint(checkpoints, &transfer_id, result, paused).await;
     emit_terminal(
         &app,
         &transfer_id,
@@ -273,6 +274,7 @@ async fn upload_once(
             result?;
         }
         () = cancel.cancelled() => return Err(AppError::Cancelled),
+        error = stall_watchdog(&encrypted_progress, UPLOAD_STALL_LIMIT) => return Err(error),
     }
     progress.store(plain_size, Ordering::Relaxed);
     Ok(TransferResult {
@@ -280,6 +282,7 @@ async fn upload_once(
         bytes_transferred: plain_size,
         file: None,
         integrity_status: super::IntegrityStatus::NotRequested,
+        local_path: None,
     })
 }
 
@@ -367,9 +370,10 @@ async fn run_vault_download(
 ) -> Result<TransferResult, AppError> {
     validate_paths(&checkpoint).await?;
     let transfer_id = checkpoint.transfer_id.clone();
-    let cancel = manager.register(&transfer_id)?;
     let initial_encrypted = partial_length(&checkpoint).await?;
     let initial_plain = decrypted_total(initial_encrypted).unwrap_or(0);
+    let registration = manager.register_scoped(&transfer_id)?;
+    let cancel = registration.token().clone();
     emit_progress(
         &app,
         &transfer_id,
@@ -378,24 +382,9 @@ async fn run_vault_download(
         initial_plain,
         decrypted_total(checkpoint.expected_size).ok(),
     );
-    let _permit = match manager.acquire(TransferDirection::Download, &cancel).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            manager.finish(&transfer_id);
-            let result = Err(error);
-            emit_terminal(
-                &app,
-                &transfer_id,
-                TransferDirection::Download,
-                initial_plain,
-                &result,
-            );
-            return result;
-        }
-    };
-    checkpoints.mark_active(&transfer_id).await?;
+    let permit = manager.acquire(TransferDirection::Download, &cancel).await;
     let encrypted_progress = Arc::new(AtomicU64::new(initial_encrypted));
-    let plain_progress = Arc::new(AtomicU64::new(0));
+    let plain_progress = Arc::new(AtomicU64::new(initial_plain));
     let verify_hash = app
         .state::<crate::AppState>()
         .settings
@@ -403,54 +392,69 @@ async fn run_vault_download(
         .await
         .verify_hash_after_download;
     let mut retries_completed = 0;
-    let result = loop {
-        let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
-            Ok(()) => {
-                let total_plain = VaultCipher::decrypted_size(
-                    i64::try_from(checkpoint.expected_size).map_err(|_| AppError::VaultCrypto)?,
-                )
-                .and_then(|size| u64::try_from(size).map_err(|_| AppError::VaultCrypto))?;
-                download_once(
-                    &app,
-                    api,
-                    &cancel,
-                    &checkpoint,
-                    cipher.clone(),
-                    encrypted_progress.clone(),
-                    plain_progress.clone(),
-                    total_plain,
-                    verify_hash,
-                )
-                .await
-            }
-            Err(error) => Err(error),
-        };
-        if !should_retry_network(&result, retry_policy, retries_completed) {
-            break result;
-        }
-        retries_completed = retries_completed.saturating_add(1);
-        let total_plain = decrypted_total(checkpoint.expected_size).unwrap_or(0);
-        if let Err(error) = wait_for_network_retry(NetworkRetryRequest {
-            app: &app,
-            cancel: &cancel,
-            transfer_id: &transfer_id,
-            direction: TransferDirection::Download,
-            retry_attempt: retries_completed,
-            bytes_transferred: plain_progress.load(Ordering::Relaxed),
-            total_bytes: Some(total_plain),
-            split_progress: None,
-            policy: retry_policy,
-        })
-        .await
-        {
-            break Err(error);
-        }
+    let started = match permit {
+        Ok(permit) => checkpoints.mark_active(&transfer_id).await.map(|()| permit),
+        Err(error) => Err(error),
     };
-    let paused = manager.was_paused(&transfer_id);
-    manager.finish(&transfer_id);
+    let result = match started {
+        Err(error) => Err(error),
+        Ok(_permit) => loop {
+            let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
+                Ok(()) => {
+                    let total_plain = VaultCipher::decrypted_size(
+                        i64::try_from(checkpoint.expected_size)
+                            .map_err(|_| AppError::VaultCrypto)?,
+                    )
+                    .and_then(|size| u64::try_from(size).map_err(|_| AppError::VaultCrypto))?;
+                    download_once(
+                        &app,
+                        api,
+                        &cancel,
+                        &checkpoint,
+                        cipher.clone(),
+                        encrypted_progress.clone(),
+                        plain_progress.clone(),
+                        total_plain,
+                        verify_hash,
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            if !should_retry_network(&result, retry_policy, retries_completed) {
+                break result;
+            }
+            retries_completed = retries_completed.saturating_add(1);
+            let total_plain = decrypted_total(checkpoint.expected_size).unwrap_or(0);
+            if let Err(error) = wait_for_network_retry(NetworkRetryRequest {
+                app: &app,
+                cancel: &cancel,
+                transfer_id: &transfer_id,
+                direction: TransferDirection::Download,
+                retry_attempt: retries_completed,
+                bytes_transferred: plain_progress.load(Ordering::Relaxed),
+                total_bytes: Some(total_plain),
+                split_progress: None,
+                policy: retry_policy,
+            })
+            .await
+            {
+                break Err(error);
+            }
+        },
+    };
+    let paused = registration.finish();
     let result = match result {
         Ok(result) => {
-            checkpoints.remove(&transfer_id).await?;
+            let _ = checkpoints.remove(&transfer_id).await;
+            if let Some(path) = &result.local_path
+                && *path != checkpoint.local_path
+            {
+                let _ = app
+                    .state::<crate::AppState>()
+                    .download_history
+                    .set_local_path(&transfer_id, path);
+            }
             Ok(result)
         }
         Err(error @ AppError::VaultCrypto) => {
@@ -467,10 +471,10 @@ async fn run_vault_download(
                 }
                 Err(AppError::TransferPaused) => {}
                 Err(AppError::Integrity) => {
-                    checkpoints.mark_failed(&transfer_id, false).await?;
+                    let _ = checkpoints.mark_failed(&transfer_id, false).await;
                 }
                 Err(_) => {
-                    checkpoints.mark_failed(&transfer_id, true).await?;
+                    let _ = checkpoints.mark_failed(&transfer_id, true).await;
                 }
                 Ok(_) => {}
             }
@@ -570,11 +574,11 @@ async fn download_once(
         let mut stream = response.bytes_stream();
         loop {
             let next = tokio::select! {
-                item = stream.next() => item,
+                item = next_body_chunk(&mut stream) => item?,
                 () = cancel.cancelled() => return Err(AppError::Cancelled),
             };
             match next {
-                Some(Ok(chunk)) => {
+                Some(chunk) => {
                     app.state::<crate::AppState>()
                         .transfers
                         .throttle(&checkpoint.transfer_id, chunk.len(), cancel)
@@ -593,7 +597,6 @@ async fn download_once(
                         Some(total_plain),
                     );
                 }
-                Some(Err(error)) => return Err(AppError::Network(error)),
                 None => break,
             }
         }
@@ -610,13 +613,14 @@ async fn download_once(
         verify_hash,
     )
     .await?;
-    decrypt_to_destination(checkpoint, cipher, cancel, total_plain).await?;
+    let published = decrypt_to_destination(checkpoint, cipher, cancel, total_plain).await?;
     plain_progress.store(total_plain, Ordering::Relaxed);
     Ok(TransferResult {
         transfer_id: checkpoint.transfer_id.clone(),
         bytes_transferred: total_plain,
         file: None,
         integrity_status,
+        local_path: Some(published),
     })
 }
 
@@ -625,7 +629,7 @@ async fn decrypt_to_destination(
     cipher: Arc<VaultCipher>,
     cancel: &CancellationToken,
     expected_plain: u64,
-) -> Result<(), AppError> {
+) -> Result<std::path::PathBuf, AppError> {
     let file_name = checkpoint
         .local_path
         .file_name()
@@ -666,9 +670,12 @@ async fn decrypt_to_destination(
         output.flush().await?;
         output.sync_all().await?;
         drop(output);
-        tokio::fs::remove_file(&checkpoint.partial_path).await?;
-        tokio::fs::rename(&temporary, &checkpoint.local_path).await?;
-        Ok(())
+        // Publish the plaintext first: if that fails, the downloaded ciphertext is
+        // still there and the transfer can be resumed without fetching it again.
+        let published =
+            publish_without_overwrite(temporary.clone(), checkpoint.local_path.clone()).await?;
+        let _ = tokio::fs::remove_file(&checkpoint.partial_path).await;
+        Ok(published)
     }
     .await;
     if result.is_err() {

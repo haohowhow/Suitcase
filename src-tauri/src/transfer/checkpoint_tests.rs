@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::transfer::split_package::SplitPart;
 
 use super::{
-    DownloadCheckpoint, RecoveryKind, SplitUploadCheckpoint, TransferCheckpoint,
+    DownloadCheckpoint, MAX_CHECKPOINTS, RecoveryKind, SplitUploadCheckpoint, TransferCheckpoint,
     TransferCheckpointStore, UploadCheckpoint,
 };
 
@@ -42,6 +42,7 @@ async fn persists_download_offsets_and_upload_restart_semantics() {
             local_path: PathBuf::from(r"C:\files\large.bin"),
             expected_size: 256,
             modified_millis: 84,
+            retained_at: 0,
         }))
         .await
         .expect("save upload checkpoint");
@@ -97,6 +98,7 @@ async fn reports_only_committed_chunks_for_resumable_uploads() {
                 SplitPart::new(0, 64, "hash-0".to_owned()),
                 SplitPart::new(1, 64, "hash-1".to_owned()),
             ],
+            retained_at: 0,
         }))
         .await
         .expect("save chunk upload checkpoint");
@@ -121,4 +123,91 @@ async fn reports_only_committed_chunks_for_resumable_uploads() {
     assert_eq!(split_progress.total_parts, 4);
 
     std::fs::remove_dir_all(directory).expect("remove chunk test directory");
+}
+
+fn upload_checkpoint(transfer_id: String) -> TransferCheckpoint {
+    TransferCheckpoint::Upload(UploadCheckpoint {
+        transfer_id,
+        owner_id: "user-1".to_owned(),
+        mount_id: "mount_1".to_owned(),
+        remote_directory: "/".to_owned(),
+        local_path: PathBuf::from(r"C:\files\report.pdf"),
+        expected_size: 1,
+        modified_millis: 1,
+        retained_at: 0,
+    })
+}
+
+#[tokio::test]
+async fn a_full_store_evicts_the_oldest_stopped_upload_instead_of_failing() {
+    // Given
+    let directory = std::env::temp_dir().join(format!("koofr-evict-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).expect("create test directory");
+    let store = TransferCheckpointStore::load(directory.join("transfers.json"));
+    let ids = (0..MAX_CHECKPOINTS)
+        .map(|_| uuid::Uuid::new_v4().to_string())
+        .collect::<Vec<_>>();
+    for id in &ids {
+        store
+            .insert(upload_checkpoint(id.clone()))
+            .await
+            .expect("fill store");
+    }
+    // Only the first upload has stopped; the rest are still running.
+    store
+        .mark_failed(&ids[0], true)
+        .await
+        .expect("stop first upload");
+
+    // When
+    let newcomer = uuid::Uuid::new_v4().to_string();
+    store
+        .insert(upload_checkpoint(newcomer.clone()))
+        .await
+        .expect("insert into a full store");
+
+    // Then
+    assert!(store.get(&ids[0]).await.is_err());
+    assert!(store.get(&ids[1]).await.is_ok());
+    assert!(store.get(&newcomer).await.is_ok());
+    // With nothing stopped left to evict, the store refuses rather than dropping
+    // a running transfer.
+    assert!(
+        store
+            .insert(upload_checkpoint(uuid::Uuid::new_v4().to_string()))
+            .await
+            .is_err()
+    );
+    std::fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[tokio::test]
+async fn unfinished_downloads_reserve_their_target_name() {
+    let directory = std::env::temp_dir().join(format!("koofr-reserve-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).expect("create test directory");
+    let store = TransferCheckpointStore::load(directory.join("transfers.json"));
+    let target = directory.join("Report.PDF");
+    store
+        .insert(TransferCheckpoint::Download(DownloadCheckpoint {
+            transfer_id: uuid::Uuid::new_v4().to_string(),
+            owner_id: "user-1".to_owned(),
+            mount_id: "mount_1".to_owned(),
+            remote_path: "/Report.PDF".to_owned(),
+            local_path: target.clone(),
+            partial_path: directory.join(".Report.PDF.koofr-part"),
+            expected_size: 0,
+            remote_hash: String::new(),
+            remote_modified: 0,
+            resume_allowed: true,
+            retained_at: 0,
+        }))
+        .await
+        .expect("save download checkpoint");
+
+    let reserved = store.reserved_download_targets().await;
+
+    assert!(reserved.contains(&crate::file_ops::local_path_key(
+        &directory.join("report.pdf")
+    )));
+    std::fs::remove_dir_all(directory).expect("remove test directory");
 }

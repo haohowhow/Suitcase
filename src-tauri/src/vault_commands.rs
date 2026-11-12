@@ -239,6 +239,7 @@ pub async fn download_vault_file(
     )
     .await
     .map_err(CommandError::from)?;
+    let completed_path = result.local_path.clone().unwrap_or(completed_path);
     state
         .local_access
         .remember_download(&transfer_id, completed_path)

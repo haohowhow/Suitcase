@@ -28,7 +28,7 @@ pub async fn list_download_history(
         .collect::<BTreeMap<_, _>>();
     state
         .download_history
-        .reconcile_interrupted(&owner_id, &resumable)
+        .reconcile_interrupted(&owner_id, &resumable, |id| state.transfers.is_active(id))
         .map_err(CommandError::from)?;
     state
         .download_history
@@ -78,7 +78,7 @@ pub async fn resume_transfer(
     )
     .await
     .map_err(CommandError::from)?;
-    if let Some(path) = outcome.completed_path {
+    if let Some(path) = outcome.result.local_path.clone().or(outcome.completed_path) {
         state
             .local_access
             .remember_download(&transfer_id, path)

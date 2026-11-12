@@ -123,6 +123,12 @@ pub async fn download_folder(
     )
     .await
     .map_err(CommandError::from)?;
+    if let Some(path) = &result.local_path
+        && *path != completed_path
+    {
+        let _ = state.download_history.set_local_path(&transfer_id, path);
+    }
+    let completed_path = result.local_path.clone().unwrap_or(completed_path);
     state
         .local_access
         .remember_download(&transfer_id, completed_path)

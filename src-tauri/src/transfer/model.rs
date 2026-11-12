@@ -147,6 +147,10 @@ pub struct TransferResult {
     pub bytes_transferred: u64,
     pub file: Option<FileInfo>,
     pub integrity_status: IntegrityStatus,
+    /// Where a finished download landed. It differs from the chosen target when
+    /// that name was taken meanwhile. Never sent to the WebView.
+    #[serde(skip)]
+    pub local_path: Option<std::path::PathBuf>,
 }
 
 pub fn emit_progress(
@@ -276,6 +280,30 @@ pub fn normalize_interruption<T>(
     }
 }
 
+/// How long an upload may go without sending a single byte before it counts as a
+/// dead connection. Uploads have no total timeout because large files take hours.
+pub const UPLOAD_STALL_LIMIT: Duration = Duration::from_secs(5 * 60);
+const STALL_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Resolves with [`AppError::NetworkStalled`] once `progress` has not changed for
+/// `limit`. Race it against the transfer; it never resolves while bytes move.
+pub async fn stall_watchdog(progress: &std::sync::atomic::AtomicU64, limit: Duration) -> AppError {
+    use std::sync::atomic::Ordering;
+
+    let mut last = progress.load(Ordering::Relaxed);
+    let mut since = tokio::time::Instant::now();
+    loop {
+        tokio::time::sleep(STALL_CHECK_INTERVAL).await;
+        let current = progress.load(Ordering::Relaxed);
+        if current != last {
+            last = current;
+            since = tokio::time::Instant::now();
+        } else if since.elapsed() >= limit {
+            return AppError::NetworkStalled;
+        }
+    }
+}
+
 pub fn should_retry_network<T>(
     result: &Result<T, AppError>,
     policy: NetworkRetryPolicy,
@@ -285,7 +313,7 @@ pub fn should_retry_network<T>(
         Some(limit) => retries_completed < limit,
         None => true,
     };
-    policy.enabled() && within_limit && matches!(result, Err(AppError::Network(_)))
+    policy.enabled() && within_limit && matches!(result, Err(error) if error.is_network())
 }
 
 pub struct NetworkRetryRequest<'a> {
@@ -412,6 +440,36 @@ mod tests {
             &result,
             NetworkRetryPolicy::new(true, None, 5),
             u32::MAX
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stall_watchdog_fires_only_when_progress_stops() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        };
+        use std::time::Duration;
+
+        let progress = Arc::new(AtomicU64::new(0));
+        let ticker = progress.clone();
+        let moving = tokio::spawn(async move {
+            for _ in 0..20 {
+                tokio::time::sleep(Duration::from_secs(4)).await;
+                ticker.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        let started = tokio::time::Instant::now();
+        let error = super::stall_watchdog(&progress, Duration::from_secs(30)).await;
+        moving.await.expect("progress task");
+
+        assert!(matches!(error, AppError::NetworkStalled));
+        // 80 s of steady progress, then 30 s of silence.
+        assert!(started.elapsed() >= Duration::from_secs(110));
+        assert!(should_retry_network(
+            &Err::<(), _>(AppError::NetworkStalled),
+            NetworkRetryPolicy::new(true, Some(1), 5),
+            0
         ));
     }
 

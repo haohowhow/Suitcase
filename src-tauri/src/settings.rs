@@ -364,6 +364,7 @@ impl Default for StoredSettings {
 pub struct SettingsStore {
     path: PathBuf,
     state: Arc<RwLock<StoredSettings>>,
+    persist_lock: Arc<tokio::sync::Mutex<()>>,
     initial_cache_mode: CacheMode,
     defaults: SettingsDefaults,
     initial_cache_directory: PathBuf,
@@ -372,11 +373,12 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn load(path: PathBuf, defaults: SettingsDefaults) -> Self {
-        let mut state = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<StoredSettings>(&bytes).ok())
-            .filter(|settings| settings.version == SETTINGS_VERSION)
-            .unwrap_or_default();
+        let mut state = crate::atomic_file::read_json_or_quarantine::<StoredSettings, _>(
+            &path,
+            "settings",
+            |settings| settings.version == SETTINGS_VERSION,
+        )
+        .unwrap_or_default();
         if state
             .network_retry_limit
             .is_some_and(|limit| !(1..=10_000).contains(&limit))
@@ -433,6 +435,7 @@ impl SettingsStore {
             initial_cache_directory,
             initial_log_config,
             state: Arc::new(RwLock::new(state)),
+            persist_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -858,22 +861,12 @@ impl SettingsStore {
     }
 
     async fn persist(&self) -> Result<(), AppError> {
+        // The snapshot is taken under the same lock that orders the writes, so two
+        // updates cannot interleave and an older snapshot can never land last.
+        let _guard = self.persist_lock.lock().await;
         let payload = serde_json::to_vec_pretty(&*self.state.read().await)
             .map_err(|_| AppError::LocalData)?;
-        let parent = self.path.parent().ok_or(AppError::LocalData)?;
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        let temporary = self.path.with_extension("json.tmp");
-        tokio::fs::write(&temporary, payload)
-            .await
-            .map_err(|_| AppError::LocalData)?;
-        if tokio::fs::try_exists(&self.path).await.unwrap_or(false) {
-            tokio::fs::remove_file(&self.path)
-                .await
-                .map_err(|_| AppError::LocalData)?;
-        }
-        tokio::fs::rename(temporary, &self.path)
+        crate::atomic_file::write_atomic_async(self.path.clone(), payload)
             .await
             .map_err(|_| AppError::LocalData)
     }

@@ -3,15 +3,14 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use futures_util::StreamExt;
 use tauri::{AppHandle, Manager};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     error::AppError,
-    file_ops::{LocalDownloadPath, MountId, RemotePath},
-    koofr_api::{FileInfo, KoofrApi},
+    file_ops::{LocalDownloadPath, MountId, RemotePath, publish_without_overwrite},
+    koofr_api::{FileInfo, KoofrApi, next_body_chunk},
 };
 
 use super::{
@@ -84,8 +83,9 @@ async fn run_download(
 ) -> Result<TransferResult, AppError> {
     let transfer_id = checkpoint.transfer_id.clone();
     validate_checkpoint_paths(&checkpoint).await?;
-    let cancel = manager.register(&transfer_id)?;
     let initial_progress = partial_length(&checkpoint).await?;
+    let registration = manager.register_scoped(&transfer_id)?;
+    let cancel = registration.token().clone();
     emit_progress(
         &app,
         &transfer_id,
@@ -94,22 +94,7 @@ async fn run_download(
         initial_progress,
         Some(checkpoint.expected_size),
     );
-    let _permit = match manager.acquire(TransferDirection::Download, &cancel).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            manager.finish(&transfer_id);
-            let result = Err(error);
-            emit_terminal(
-                &app,
-                &transfer_id,
-                TransferDirection::Download,
-                initial_progress,
-                &result,
-            );
-            return result;
-        }
-    };
-    checkpoints.mark_active(&transfer_id).await?;
+    let permit = manager.acquire(TransferDirection::Download, &cancel).await;
     let progress = Arc::new(AtomicU64::new(initial_progress));
     let verify_hash = app
         .state::<crate::AppState>()
@@ -118,46 +103,62 @@ async fn run_download(
         .await
         .verify_hash_after_download;
     let mut retries_completed = 0_u32;
-    let result = loop {
-        let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
-            Ok(()) => {
-                download_inner(
-                    &app,
-                    api,
-                    &cancel,
-                    &checkpoint,
-                    progress.clone(),
-                    verify_hash,
-                )
-                .await
-            }
-            Err(error) => Err(error),
-        };
-        if !should_retry_network(&result, retry_policy, retries_completed) {
-            break result;
-        }
-        retries_completed = retries_completed.saturating_add(1);
-        if let Err(error) = wait_for_network_retry(NetworkRetryRequest {
-            app: &app,
-            cancel: &cancel,
-            transfer_id: &transfer_id,
-            direction: TransferDirection::Download,
-            retry_attempt: retries_completed,
-            bytes_transferred: progress.load(Ordering::Relaxed),
-            total_bytes: Some(checkpoint.expected_size),
-            split_progress: None,
-            policy: retry_policy,
-        })
-        .await
-        {
-            break Err(error);
-        }
+    let started = match permit {
+        Ok(permit) => checkpoints.mark_active(&transfer_id).await.map(|()| permit),
+        Err(error) => Err(error),
     };
-    let paused = manager.was_paused(&transfer_id);
-    manager.finish(&transfer_id);
+    let result = match started {
+        Err(error) => Err(error),
+        Ok(_permit) => loop {
+            let result = match refresh_remote(api, checkpoints, &mut checkpoint).await {
+                Ok(()) => {
+                    download_inner(
+                        &app,
+                        api,
+                        &cancel,
+                        &checkpoint,
+                        progress.clone(),
+                        verify_hash,
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            if !should_retry_network(&result, retry_policy, retries_completed) {
+                break result;
+            }
+            retries_completed = retries_completed.saturating_add(1);
+            if let Err(error) = wait_for_network_retry(NetworkRetryRequest {
+                app: &app,
+                cancel: &cancel,
+                transfer_id: &transfer_id,
+                direction: TransferDirection::Download,
+                retry_attempt: retries_completed,
+                bytes_transferred: progress.load(Ordering::Relaxed),
+                total_bytes: Some(checkpoint.expected_size),
+                split_progress: None,
+                policy: retry_policy,
+            })
+            .await
+            {
+                break Err(error);
+            }
+        },
+    };
+    let paused = registration.finish();
+    // Bookkeeping failures below must not swallow the terminal event: the file
+    // is already published or the partial data is already kept by then.
     let result = match result {
         Ok(result) => {
-            checkpoints.remove(&transfer_id).await?;
+            let _ = checkpoints.remove(&transfer_id).await;
+            if let Some(path) = &result.local_path
+                && *path != checkpoint.local_path
+            {
+                let _ = app
+                    .state::<crate::AppState>()
+                    .download_history
+                    .set_local_path(&transfer_id, path);
+            }
             Ok(result)
         }
         other => {
@@ -169,10 +170,10 @@ async fn run_download(
                 }
                 Err(AppError::TransferPaused) => {}
                 Err(AppError::Integrity) => {
-                    checkpoints.mark_failed(&transfer_id, false).await?;
+                    let _ = checkpoints.mark_failed(&transfer_id, false).await;
                 }
                 Err(_) => {
-                    checkpoints.mark_failed(&transfer_id, true).await?;
+                    let _ = checkpoints.mark_failed(&transfer_id, true).await;
                 }
                 Ok(_) => {}
             }
@@ -238,12 +239,17 @@ async fn download_inner(
             verify_hash,
         )
         .await?;
-        tokio::fs::rename(&checkpoint.partial_path, &checkpoint.local_path).await?;
+        let published = publish_without_overwrite(
+            checkpoint.partial_path.clone(),
+            checkpoint.local_path.clone(),
+        )
+        .await?;
         return Ok(TransferResult {
             transfer_id: checkpoint.transfer_id.clone(),
             bytes_transferred: offset,
             file: None,
             integrity_status,
+            local_path: Some(published),
         });
     }
     let response = tokio::select! {
@@ -275,11 +281,11 @@ async fn download_inner(
     let mut transferred = transferred;
     loop {
         let next = tokio::select! {
-            item = stream.next() => item,
+            item = next_body_chunk(&mut stream) => item?,
             () = cancel.cancelled() => return Err(AppError::Cancelled),
         };
         match next {
-            Some(Ok(chunk)) => {
+            Some(chunk) => {
                 app.state::<crate::AppState>()
                     .transfers
                     .throttle(&checkpoint.transfer_id, chunk.len(), cancel)
@@ -296,7 +302,6 @@ async fn download_inner(
                     Some(checkpoint.expected_size),
                 );
             }
-            Some(Err(error)) => return Err(AppError::Network(error)),
             None => break,
         }
     }
@@ -313,12 +318,17 @@ async fn download_inner(
         verify_hash,
     )
     .await?;
-    tokio::fs::rename(&checkpoint.partial_path, &checkpoint.local_path).await?;
+    let published = publish_without_overwrite(
+        checkpoint.partial_path.clone(),
+        checkpoint.local_path.clone(),
+    )
+    .await?;
     Ok(TransferResult {
         transfer_id: checkpoint.transfer_id.clone(),
         bytes_transferred: transferred,
         file: None,
         integrity_status,
+        local_path: Some(published),
     })
 }
 

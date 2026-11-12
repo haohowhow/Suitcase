@@ -90,6 +90,7 @@ pub(super) async fn upload_next_part(
             size,
         ) => { result?; }
         () = cancel.cancelled() => return Err(AppError::Cancelled),
+        error = super::stall_watchdog(&streamed, super::UPLOAD_STALL_LIMIT) => return Err(error),
     }
 
     let digest = match hasher.lock() {

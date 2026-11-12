@@ -41,6 +41,9 @@ pub enum AppError {
     RemoteStatus { status: StatusCode },
     #[error("network request failed")]
     Network(#[source] reqwest::Error),
+    /// The connection stayed open but no data moved for too long.
+    #[error("network transfer stalled")]
+    NetworkStalled,
     #[error("local file operation failed")]
     Io(#[source] io::Error),
     #[error("remote response could not be decoded")]
@@ -78,6 +81,11 @@ impl From<io::Error> for AppError {
 }
 
 impl AppError {
+    /// A failure of the connection itself, which trying again later may fix.
+    pub const fn is_network(&self) -> bool {
+        matches!(self, Self::Network(_) | Self::NetworkStalled)
+    }
+
     pub fn from_status(status: StatusCode) -> Self {
         match status {
             StatusCode::UNAUTHORIZED => Self::NotAuthenticated,
@@ -107,6 +115,7 @@ impl AppError {
             Self::DuplicateTransfer => "duplicate_transfer",
             Self::RemoteStatus { .. } => "remote_error",
             Self::Network(_) => "network_error",
+            Self::NetworkStalled => "network_stalled",
             Self::Io(_) => "local_io_error",
             Self::Decode(_) => "invalid_response",
             Self::Initialization => "initialization_error",
@@ -224,7 +233,7 @@ impl From<AppError> for CommandError {
             AppError::RemoteStatus { .. } => {
                 Self::new("remote_error", "Koofr 暂时无法完成此操作。")
             }
-            AppError::Network(_) => {
+            AppError::Network(_) | AppError::NetworkStalled => {
                 Self::new("network_error", "无法连接 Koofr，请检查网络后重试。")
             }
             AppError::Io(_) => Self::new("local_io_error", "无法读取或写入所选的本地文件。"),

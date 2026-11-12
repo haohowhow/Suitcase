@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -151,7 +154,14 @@ impl LocalUploadPath {
 pub struct LocalDownloadPath(PathBuf);
 
 impl LocalDownloadPath {
-    pub async fn from_parent(parent: PathBuf, name: &RemoteName) -> Result<Self, AppError> {
+    /// Picks the first free name in `parent`, numbering it when the name is taken
+    /// on disk or reserved by an unfinished download or a not yet used grant.
+    /// `reserved` holds [`local_path_key`]s.
+    pub async fn from_parent_avoiding(
+        parent: PathBuf,
+        name: &RemoteName,
+        reserved: &HashSet<String>,
+    ) -> Result<Self, AppError> {
         if !parent.is_absolute() {
             return Err(AppError::InvalidInput("local download parent"));
         }
@@ -167,7 +177,9 @@ impl LocalDownloadPath {
                 numbered_file_name(&preferred, index)
             };
             let target = parent.join(candidate);
-            if !tokio::fs::try_exists(&target).await? {
+            if !reserved.contains(&local_path_key(&target))
+                && !tokio::fs::try_exists(&target).await?
+            {
                 return Self::from_selected(target).await;
             }
         }
@@ -212,7 +224,81 @@ impl LocalDownloadPath {
     }
 }
 
-fn numbered_file_name(preferred: &str, index: u64) -> String {
+/// A comparison key for a local path. Windows file names are case-insensitive,
+/// so two downloads into `Report.pdf` and `report.pdf` would collide.
+pub fn local_path_key(path: &Path) -> String {
+    path.to_string_lossy().replace('/', "\\").to_lowercase()
+}
+
+const MAX_PUBLISH_ATTEMPTS: u64 = 1000;
+
+/// Moves a finished temporary file to `target` without ever replacing an existing
+/// file. When something took the name while the download ran, the next free
+/// numbered name is used instead. Returns the path the file now has.
+pub async fn publish_without_overwrite(
+    source: PathBuf,
+    target: PathBuf,
+) -> Result<PathBuf, AppError> {
+    tokio::task::spawn_blocking(move || publish_without_overwrite_blocking(&source, &target))
+        .await
+        .map_err(|_| AppError::LocalData)?
+}
+
+fn publish_without_overwrite_blocking(source: &Path, target: &Path) -> Result<PathBuf, AppError> {
+    let parent = target
+        .parent()
+        .ok_or(AppError::InvalidInput("local download parent"))?;
+    let preferred = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(AppError::InvalidInput("local download file name"))?;
+    for index in 1..=MAX_PUBLISH_ATTEMPTS {
+        let candidate = if index == 1 {
+            target.to_path_buf()
+        } else {
+            parent.join(numbered_file_name(preferred, index))
+        };
+        match rename_without_replace(source, &candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(AppError::Conflict)
+}
+
+#[cfg(windows)]
+fn rename_without_replace(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
+
+    let wide = |path: &Path| {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<u16>>()
+    };
+    let source = wide(source);
+    let target = wide(target);
+    // Without MOVEFILE_REPLACE_EXISTING the call fails with ERROR_ALREADY_EXISTS
+    // instead of replacing a file that appeared after the name was chosen.
+    // SAFETY: both buffers are NUL-terminated UTF-16 strings that outlive the call.
+    let moved = unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_WRITE_THROUGH) };
+    if moved == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn rename_without_replace(source: &Path, target: &Path) -> std::io::Result<()> {
+    // A hard link fails with AlreadyExists instead of replacing the target.
+    std::fs::hard_link(source, target)?;
+    std::fs::remove_file(source)
+}
+
+pub fn numbered_file_name(preferred: &str, index: u64) -> String {
     let path = Path::new(preferred);
     let stem = path
         .file_stem()
@@ -268,7 +354,12 @@ pub fn safe_suggested_file_name(name: &RemoteName) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDownloadPath, MountId, RemoteName, RemotePath, safe_suggested_file_name};
+    use std::collections::HashSet;
+
+    use super::{
+        LocalDownloadPath, MountId, RemoteName, RemotePath, local_path_key,
+        publish_without_overwrite, safe_suggested_file_name,
+    };
 
     #[test]
     fn validates_mount_identifiers() {
@@ -328,12 +419,62 @@ mod tests {
         let name = RemoteName::parse("report.pdf".to_owned()).expect("valid remote name");
 
         // When
-        let target = LocalDownloadPath::from_parent(directory.clone(), &name)
-            .await
-            .expect("choose available target");
+        let target =
+            LocalDownloadPath::from_parent_avoiding(directory.clone(), &name, &HashSet::new())
+                .await
+                .expect("choose available target");
 
         // Then
         assert_eq!(target.as_path(), directory.join("report (2).pdf"));
+        std::fs::remove_dir_all(directory).expect("remove downloads directory");
+    }
+
+    #[tokio::test]
+    async fn skips_names_reserved_by_unfinished_downloads() {
+        // Given
+        let directory =
+            std::env::temp_dir().join(format!("koofr-reserved-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create downloads directory");
+        let name = RemoteName::parse("Report.pdf".to_owned()).expect("valid remote name");
+        let reserved = HashSet::from([local_path_key(&directory.join("report.pdf"))]);
+
+        // When
+        let target = LocalDownloadPath::from_parent_avoiding(directory.clone(), &name, &reserved)
+            .await
+            .expect("choose unreserved target");
+
+        // Then
+        assert_eq!(target.as_path(), directory.join("Report (2).pdf"));
+        std::fs::remove_dir_all(directory).expect("remove downloads directory");
+    }
+
+    #[tokio::test]
+    async fn publishing_never_replaces_a_file_that_appeared_meanwhile() {
+        // Given
+        let directory =
+            std::env::temp_dir().join(format!("koofr-publish-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create downloads directory");
+        let target = directory.join("photo.jpg");
+        std::fs::write(&target, b"first download").expect("write first file");
+        let partial = directory.join(".photo.jpg.koofr-part");
+        std::fs::write(&partial, b"second download").expect("write partial file");
+
+        // When
+        let published = publish_without_overwrite(partial.clone(), target.clone())
+            .await
+            .expect("publish second file");
+
+        // Then
+        assert_eq!(published, directory.join("photo (2).jpg"));
+        assert_eq!(
+            std::fs::read(&target).expect("read first"),
+            b"first download"
+        );
+        assert_eq!(
+            std::fs::read(&published).expect("read second"),
+            b"second download"
+        );
+        assert!(!partial.exists());
         std::fs::remove_dir_all(directory).expect("remove downloads directory");
     }
 }

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Mutex,
+};
 
 use serde::Serialize;
 
@@ -129,6 +133,20 @@ impl LocalAccessManager {
                 Err(AppError::InvalidInput("sync directory path grant"))
             }
         }
+    }
+
+    /// Files that handed-out but not yet started download grants will create, as
+    /// [`crate::file_ops::local_path_key`]s.
+    pub fn pending_download_targets(&self) -> HashSet<String> {
+        self.grants
+            .lock()
+            .expect("local path grant store poisoned")
+            .values()
+            .filter_map(|grant| match grant {
+                LocalPathGrant::Download(path) => Some(crate::file_ops::local_path_key(path)),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn remember_download(&self, transfer_id: &str, path: PathBuf) -> Result<(), AppError> {

@@ -161,9 +161,17 @@ pub fn parse_range_header(header: Option<&str>, file_size: u64) -> Option<(u64, 
 
 pub const STREAM_CHUNK_SIZE: u64 = 2 * 1024 * 1024;
 
-pub fn cap_range(start: u64, end: u64, file_size: u64) -> (u64, u64) {
-    let capped_end = end.min(start + STREAM_CHUNK_SIZE - 1).min(file_size - 1);
-    (start, capped_end)
+/// Limits a requested byte range to one stream chunk and to the file. Returns
+/// `None` when no byte can be served: an empty file or a start past the end.
+pub fn cap_range(start: u64, end: u64, file_size: u64) -> Option<(u64, u64)> {
+    let last = file_size.checked_sub(1)?;
+    if start > last || end < start {
+        return None;
+    }
+    let capped_end = end
+        .min(start.saturating_add(STREAM_CHUNK_SIZE - 1))
+        .min(last);
+    Some((start, capped_end))
 }
 
 #[cfg(test)]
@@ -216,7 +224,9 @@ mod tests {
             Some((9990, 9999))
         );
         assert!(parse_range_header(Some("bytes=10000-"), 10_000).is_none());
-        let (start, end) = cap_range(0, 9_999_999, 10_000_000);
+        assert_eq!(cap_range(0, 0, 0), None);
+        assert_eq!(cap_range(10, 20, 10), None);
+        let (start, end) = cap_range(0, 9_999_999, 10_000_000).expect("servable range");
         assert_eq!(start, 0);
         assert_eq!(end, STREAM_CHUNK_SIZE - 1);
     }

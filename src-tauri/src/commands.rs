@@ -8,7 +8,7 @@ use crate::{
     download_history::{DownloadLocalKind, NewDownloadHistoryItem},
     error::{AppError, CommandError},
     file_ops::{
-        LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath,
+        LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath, local_path_key,
         safe_suggested_file_name,
     },
     koofr_api::{FileInfo, LocatedFile, Mount, SessionInfo, TrashList},
@@ -393,25 +393,19 @@ pub async fn prepare_download_location(
     let parent = PathBuf::from(download_directory);
     let strategy =
         conflict_strategy.unwrap_or(state.settings.download_behavior().await.conflict_strategy);
+    // Names that running or paused downloads, or grants not used yet, will publish
+    // count as taken: two downloads of the same file must not share a target.
+    let mut reserved = state.transfer_checkpoints.reserved_download_targets().await;
+    reserved.extend(state.local_access.pending_download_targets());
     let preferred = parent.join(safe_suggested_file_name(&name));
-    let exists = tokio::fs::try_exists(&preferred).await.unwrap_or(false);
-    let target = if exists {
-        match strategy {
-            DownloadConflictStrategy::Ask => {
-                return Err(CommandError::from(AppError::Conflict));
-            }
-            DownloadConflictStrategy::Skip => {
-                return Err(CommandError::from(AppError::Conflict));
-            }
-            DownloadConflictStrategy::Rename => LocalDownloadPath::from_parent(parent, &name)
-                .await
-                .map_err(CommandError::from)?,
-        }
-    } else {
-        LocalDownloadPath::from_parent(parent, &name)
-            .await
-            .map_err(CommandError::from)?
-    };
+    let exists = reserved.contains(&local_path_key(&preferred))
+        || tokio::fs::try_exists(&preferred).await.unwrap_or(false);
+    if exists && strategy != DownloadConflictStrategy::Rename {
+        return Err(CommandError::from(AppError::Conflict));
+    }
+    let target = LocalDownloadPath::from_parent_avoiding(parent, &name, &reserved)
+        .await
+        .map_err(CommandError::from)?;
     state
         .local_access
         .grant_download(target.as_path().to_path_buf())
@@ -1269,6 +1263,7 @@ pub async fn download_file(
     )
     .await
     .map_err(CommandError::from)?;
+    let completed_path = result.local_path.clone().unwrap_or(completed_path);
     state
         .local_access
         .remember_download(&transfer_id, completed_path)

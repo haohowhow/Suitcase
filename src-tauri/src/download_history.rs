@@ -123,11 +123,12 @@ pub struct DownloadHistoryStore {
 
 impl DownloadHistoryStore {
     pub fn load(path: PathBuf) -> Self {
-        let state = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<StoredDownloadHistory>(&bytes).ok())
-            .filter(|stored| stored.version == HISTORY_VERSION)
-            .unwrap_or_default();
+        let state = crate::atomic_file::read_json_or_quarantine::<StoredDownloadHistory, _>(
+            &path,
+            "download_history",
+            |stored| stored.version == HISTORY_VERSION,
+        )
+        .unwrap_or_default();
         Self {
             path,
             state: Mutex::new(state),
@@ -214,6 +215,21 @@ impl DownloadHistoryStore {
         }
     }
 
+    /// Records where a download was actually published. The name can differ from
+    /// the planned one when another file took it while the transfer was running.
+    pub fn set_local_path(&self, transfer_id: &str, local_path: &Path) -> Result<(), AppError> {
+        validate_transfer_id(transfer_id)?;
+        let mut state = self.state();
+        let Some(item) = state.items.get_mut(transfer_id) else {
+            return Ok(());
+        };
+        if item.local_path == local_path {
+            return Ok(());
+        }
+        item.local_path = local_path.to_path_buf();
+        self.persist(&state)
+    }
+
     pub fn set_policy(&self, keep_days: u32, keep_count: u32) -> Result<usize, AppError> {
         *lock_mutex(&self.policy) = (keep_days, keep_count);
         let mut state = self.state();
@@ -243,25 +259,34 @@ impl DownloadHistoryStore {
         &self,
         owner_id: &str,
         resumable: &BTreeMap<String, RecoveryKind>,
+        is_active: impl Fn(&str) -> bool,
     ) -> Result<(), AppError> {
         validate_owner_id(owner_id)?;
         let mut state = self.state();
         let mut changed = false;
         for item in state.items.values_mut().filter(|item| {
             item.owner_id == owner_id
+                && !is_active(&item.transfer_id)
                 && matches!(
                     item.state,
-                    TransferState::Queued | TransferState::Running | TransferState::Retrying
+                    TransferState::Queued
+                        | TransferState::Running
+                        | TransferState::Retrying
+                        | TransferState::Paused
                 )
         }) {
-            if let Some(recovery_kind) = resumable.get(&item.transfer_id) {
-                item.state = TransferState::Paused;
-                item.recovery_kind = Some(*recovery_kind);
-            } else {
-                item.state = TransferState::Failed;
-                item.recovery_kind = None;
+            // A paused entry without a checkpoint (a folder download, or one whose
+            // checkpoint is gone) can never be resumed. Leaving it paused would keep
+            // it in the list for good, because only finished entries can be cleared.
+            let (next_state, next_recovery) = match resumable.get(&item.transfer_id) {
+                Some(recovery_kind) => (TransferState::Paused, Some(*recovery_kind)),
+                None => (TransferState::Failed, None),
+            };
+            if item.state != next_state || item.recovery_kind != next_recovery {
+                item.state = next_state;
+                item.recovery_kind = next_recovery;
+                changed = true;
             }
-            changed = true;
         }
         if changed {
             self.persist(&state)?;
@@ -311,15 +336,9 @@ impl DownloadHistoryStore {
     }
 
     fn persist(&self, state: &StoredDownloadHistory) -> Result<(), AppError> {
+        // Callers hold the state lock, which also serialises these writes.
         let payload = serde_json::to_vec_pretty(state).map_err(|_| AppError::LocalData)?;
-        let parent = self.path.parent().ok_or(AppError::LocalData)?;
-        std::fs::create_dir_all(parent).map_err(|_| AppError::LocalData)?;
-        let temporary = self.path.with_extension("json.tmp");
-        std::fs::write(&temporary, payload).map_err(|_| AppError::LocalData)?;
-        if self.path.exists() {
-            std::fs::remove_file(&self.path).map_err(|_| AppError::LocalData)?;
-        }
-        std::fs::rename(temporary, &self.path).map_err(|_| AppError::LocalData)
+        crate::atomic_file::write_atomic(&self.path, &payload).map_err(|_| AppError::LocalData)
     }
 
     fn state(&self) -> MutexGuard<'_, StoredDownloadHistory> {
@@ -484,7 +503,7 @@ mod tests {
         let resumable = BTreeMap::from([(resumable_id.clone(), RecoveryKind::ByteResume)]);
 
         store
-            .reconcile_interrupted("owner-a", &resumable)
+            .reconcile_interrupted("owner-a", &resumable, |_| false)
             .expect("reconcile history");
         let items = store.list("owner-a").expect("list history");
         let resumable_item = items
@@ -516,6 +535,47 @@ mod tests {
                 .is_empty()
         );
 
+        std::fs::remove_dir_all(directory).expect("remove history directory");
+    }
+
+    #[test]
+    fn a_paused_entry_without_checkpoint_becomes_clearable_but_running_ones_stay() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-download-history-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create history directory");
+        let store = DownloadHistoryStore::load(directory.join("history.json"));
+        let paused_folder = uuid::Uuid::new_v4().to_string();
+        let running = uuid::Uuid::new_v4().to_string();
+        for transfer_id in [&paused_folder, &running] {
+            store
+                .start(NewDownloadHistoryItem {
+                    transfer_id,
+                    owner_id: "owner-a",
+                    name: "Photos",
+                    remote_path: "/Photos",
+                    local_path: &directory.join("Photos"),
+                    local_kind: DownloadLocalKind::Folder,
+                    recovery_kind: None,
+                })
+                .expect("start history");
+        }
+        store.record_progress(&paused_folder, TransferState::Paused, 10, None);
+        store.record_progress(&running, TransferState::Running, 10, None);
+
+        store
+            .reconcile_interrupted("owner-a", &BTreeMap::new(), |id| id == running)
+            .expect("reconcile history");
+
+        let items = store.list("owner-a").expect("list history");
+        let state_of = |id: &str| {
+            items
+                .iter()
+                .find(|item| item.transfer_id == id)
+                .map(|item| item.state)
+        };
+        assert_eq!(state_of(&paused_folder), Some(TransferState::Failed));
+        assert_eq!(state_of(&running), Some(TransferState::Running));
+        assert_eq!(store.clear_finished("owner-a").expect("clear"), 1);
         std::fs::remove_dir_all(directory).expect("remove history directory");
     }
 }

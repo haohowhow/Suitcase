@@ -57,7 +57,7 @@ pub async fn handle_native_callback(
         let (pair, entry) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
-                let offline = matches!(error, AppError::Network(_) | AppError::NotAuthenticated);
+                let offline = error.is_network() || matches!(error, AppError::NotAuthenticated);
                 manager.set_native_provider_status(
                     &pair_id,
                     if offline {
@@ -96,7 +96,7 @@ pub async fn handle_native_callback(
                 .set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Idle),
             Err(error) => manager.set_native_provider_status(
                 &pair_id,
-                if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+                if error.is_network() || matches!(error, AppError::NotAuthenticated) {
                     cloud_files::NativeProviderStatus::Offline
                 } else {
                     cloud_files::NativeProviderStatus::Error
@@ -123,7 +123,7 @@ pub async fn handle_native_callback(
     if let Err(error) = result {
         manager.set_native_provider_status(
             &pair_id,
-            if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+            if error.is_network() || matches!(error, AppError::NotAuthenticated) {
                 cloud_files::NativeProviderStatus::Offline
             } else {
                 cloud_files::NativeProviderStatus::Error
@@ -143,7 +143,7 @@ pub async fn handle_native_callback(
         };
         if cancel.is_cancelled() || matches!(error, AppError::Cancelled) {
             cloud_files::complete_cancelled(operation);
-        } else if matches!(error, AppError::Network(_) | AppError::NotAuthenticated) {
+        } else if error.is_network() || matches!(error, AppError::NotAuthenticated) {
             cloud_files::complete_network_error(operation);
         } else {
             cloud_files::complete_unsuccessful(operation);
@@ -2365,7 +2365,11 @@ impl SyncManager {
         .await
         {
             Ok(remote) => remote,
-            Err(error @ (AppError::Network(_) | AppError::NotAuthenticated)) => {
+            Err(
+                error @ (AppError::Network(_)
+                | AppError::NetworkStalled
+                | AppError::NotAuthenticated),
+            ) => {
                 self.set_native_provider_status(
                     pair_id,
                     cloud_files::NativeProviderStatus::Offline,
@@ -2459,7 +2463,11 @@ impl SyncManager {
                         .map_err(|_| AppError::LocalData)?
                         .complete_action(direction.0, direction.1, direction.2, direction.3);
                 }
-                Err(error @ (AppError::Network(_) | AppError::NotAuthenticated)) => {
+                Err(
+                    error @ (AppError::Network(_)
+                    | AppError::NetworkStalled
+                    | AppError::NotAuthenticated),
+                ) => {
                     self.set_task_state(pair_id, task_index, "waiting")?;
                     self.set_native_provider_status(
                         pair_id,
@@ -2736,7 +2744,7 @@ impl SyncManager {
             telemetry.clear_active();
         }
         let _ = self.clear_tasks(pair_id);
-        let offline = matches!(error, AppError::Network(_) | AppError::NotAuthenticated);
+        let offline = error.is_network() || matches!(error, AppError::NotAuthenticated);
         if offline {
             if pair.status != "offline" {
                 let _ = self.store.update_progress(
@@ -2930,7 +2938,7 @@ impl SyncManager {
             .await
         {
             Ok(remote) => remote,
-            Err(error @ AppError::Network(_)) => {
+            Err(error @ (AppError::Network(_) | AppError::NetworkStalled)) => {
                 self.store.update_progress(
                     pair_id,
                     "offline",
@@ -3038,7 +3046,7 @@ impl SyncManager {
                     )?;
                     self.emit_summary(app, pair_id)?;
                 }
-                Err(error @ AppError::Network(_)) => {
+                Err(error @ (AppError::Network(_) | AppError::NetworkStalled)) => {
                     self.set_task_state(pair_id, task_index, "waiting")?;
                     telemetry
                         .lock()
@@ -4377,25 +4385,16 @@ async fn sync_upload(
     let metadata = tokio::fs::metadata(local_path).await?;
     let total = metadata.len();
     let transfer_id = uuid::Uuid::new_v4().to_string();
-    let _registration = manager.register(&transfer_id)?;
-    let _permit = match manager.acquire(TransferDirection::Upload, cancel).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            manager.finish(&transfer_id);
-            return Err(error);
-        }
-    };
-    let file = match tokio::fs::File::open(local_path).await {
-        Ok(file) => file,
-        Err(error) => {
-            manager.finish(&transfer_id);
-            return Err(error.into());
-        }
-    };
+    // Released on every exit path, including the early returns below.
+    let _registration = manager.register_scoped(&transfer_id)?;
+    let _permit = manager.acquire(TransferDirection::Upload, cancel).await?;
+    let file = tokio::fs::File::open(local_path).await?;
     let app_for_stream = app.clone();
     let transfer_id_for_stream = transfer_id.clone();
     let cancel_for_stream = cancel.clone();
     let telemetry_for_stream = telemetry.clone();
+    let sent = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let sent_for_stream = sent.clone();
     let stream = ReaderStream::new(file)
         .map_err(|error| std::io::Error::other(error.to_string()))
         .and_then(move |chunk| {
@@ -4403,6 +4402,7 @@ async fn sync_upload(
             let transfer_id = transfer_id_for_stream.clone();
             let cancel = cancel_for_stream.clone();
             let telemetry = telemetry_for_stream.clone();
+            let sent = sent_for_stream.clone();
             async move {
                 app.state::<AppState>()
                     .transfers
@@ -4412,6 +4412,7 @@ async fn sync_upload(
                 if let Ok(mut telemetry) = telemetry.lock() {
                     telemetry.record(true, chunk.len() as u64);
                 }
+                sent.fetch_add(chunk.len() as u64, std::sync::atomic::Ordering::Relaxed);
                 Ok(chunk)
             }
         });
@@ -4436,8 +4437,8 @@ async fn sync_upload(
     let result = tokio::select! {
         result = api.upload_conditional(mount_id, &directory, &name, body, total, expected, modified) => result,
         () = cancel.cancelled() => Err(AppError::Cancelled),
+        error = crate::transfer::stall_watchdog(&sent, crate::transfer::UPLOAD_STALL_LIMIT) => Err(error),
     };
-    manager.finish(&transfer_id);
     result.map(|_| total)
 }
 
@@ -4467,13 +4468,12 @@ async fn sync_download(
     }
     let temporary = sync_temporary_path(&target);
     let transfer_id = uuid::Uuid::new_v4().to_string();
-    let _permit = match manager.acquire(TransferDirection::Download, cancel).await {
-        Ok(permit) => permit,
-        Err(error) => {
-            manager.finish(&transfer_id);
-            return Err(error);
-        }
+    // Release the bandwidth limiter's per-transfer bucket on every exit path.
+    let _finish = FinishTransferOnDrop {
+        manager,
+        transfer_id: &transfer_id,
     };
+    let _permit = manager.acquire(TransferDirection::Download, cancel).await?;
     let result = async {
         let mut offset = match tokio::fs::metadata(&temporary).await {
             Ok(metadata) if metadata.is_file() => metadata.len(),
@@ -4515,10 +4515,9 @@ async fn sync_download(
         let mut bytes = offset;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = tokio::select! {
-            item = stream.next() => item,
+            item = crate::koofr_api::next_body_chunk(&mut stream) => item?,
             () = cancel.cancelled() => return Err(AppError::Cancelled),
         } {
-            let chunk = chunk.map_err(AppError::Network)?;
             manager.throttle(&transfer_id, chunk.len(), cancel).await?;
             file.write_all(&chunk).await?;
             if let Ok(mut telemetry) = telemetry.lock() {
@@ -4572,7 +4571,6 @@ async fn sync_download(
     {
         let _ = tokio::fs::remove_file(&temporary).await;
     }
-    manager.finish(&transfer_id);
     result
 }
 

@@ -21,8 +21,8 @@ use super::{
     manager::TransferManager,
     model::{
         NetworkRetryPolicy, NetworkRetryRequest, TransferDirection, TransferResult, TransferState,
-        emit_progress, emit_terminal, normalize_interruption, should_retry_network,
-        wait_for_network_retry,
+        UPLOAD_STALL_LIMIT, emit_progress, emit_terminal, normalize_interruption,
+        should_retry_network, stall_watchdog, wait_for_network_retry,
     },
 };
 
@@ -49,6 +49,7 @@ pub async fn upload(
             local_path: local_path.as_path().to_path_buf(),
             expected_size: metadata.len(),
             modified_millis: modified_millis(&metadata)?,
+            retained_at: 0,
         }))
         .await?;
     run_upload(
@@ -110,7 +111,8 @@ async fn run_upload(
     local_path: LocalUploadPath,
 ) -> Result<TransferResult, AppError> {
     let total = tokio::fs::metadata(local_path.as_path()).await?.len();
-    let cancel = manager.register(&transfer_id)?;
+    let registration = manager.register_scoped(&transfer_id)?;
+    let cancel = registration.token().clone();
     emit_progress(
         &app,
         &transfer_id,
@@ -122,12 +124,15 @@ async fn run_upload(
     let _permit = match manager.acquire(TransferDirection::Upload, &cancel).await {
         Ok(permit) => permit,
         Err(error) => {
-            manager.finish(&transfer_id);
-            let result = Err(error);
+            let paused = registration.finish();
+            let result =
+                settle_upload_checkpoint(checkpoints, &transfer_id, Err(error), paused).await;
             emit_terminal(&app, &transfer_id, TransferDirection::Upload, 0, &result);
             return result;
         }
     };
+    // A running upload must not be evicted to make room for another checkpoint.
+    let _ = checkpoints.mark_active(&transfer_id).await;
     let progress = Arc::new(AtomicU64::new(0));
     let mut retries_completed = 0_u32;
     let result = loop {
@@ -163,15 +168,8 @@ async fn run_upload(
             break Err(error);
         }
     };
-    let paused = manager.was_paused(&transfer_id);
-    manager.finish(&transfer_id);
-    let result = match result {
-        Ok(result) => {
-            checkpoints.remove(&transfer_id).await?;
-            Ok(result)
-        }
-        other => normalize_interruption(other, paused),
-    };
+    let paused = registration.finish();
+    let result = settle_upload_checkpoint(checkpoints, &transfer_id, result, paused).await;
     emit_terminal(
         &app,
         &transfer_id,
@@ -207,6 +205,7 @@ async fn upload_inner(
         0,
         Some(total),
     );
+    let watched_progress = progress.clone();
     let stream = ReaderStream::new(file).and_then(move |chunk| {
         let app = app_for_stream.clone();
         let transfer_id = id_for_stream.clone();
@@ -234,13 +233,51 @@ async fn upload_inner(
     let file_info = tokio::select! {
         result = api.upload(&mount_id, &directory, &file_name, body, total) => result?,
         () = cancel.cancelled() => return Err(AppError::Cancelled),
+        error = stall_watchdog(&watched_progress, UPLOAD_STALL_LIMIT) => return Err(error),
     };
     Ok(TransferResult {
         transfer_id: transfer_id.to_owned(),
         bytes_transferred: total,
         file: Some(file_info),
         integrity_status: super::IntegrityStatus::NotRequested,
+        local_path: None,
     })
+}
+
+/// Decides what happens to the checkpoint of a whole-file upload once it stops.
+/// Only a pause or a failure that trying again could fix keeps it: a cancelled
+/// upload must not come back after a restart, and one the server refused will be
+/// refused again.
+pub(super) async fn settle_upload_checkpoint(
+    checkpoints: &TransferCheckpointStore,
+    transfer_id: &str,
+    result: Result<TransferResult, AppError>,
+    paused: bool,
+) -> Result<TransferResult, AppError> {
+    let result = normalize_interruption(result, paused);
+    match &result {
+        Err(AppError::TransferPaused) => {
+            let _ = checkpoints.mark_failed(transfer_id, true).await;
+        }
+        Err(error) if keeps_upload_checkpoint(error) => {
+            let _ = checkpoints.mark_failed(transfer_id, true).await;
+        }
+        Ok(_) | Err(_) => {
+            let _ = checkpoints.remove(transfer_id).await;
+        }
+    }
+    result
+}
+
+fn keeps_upload_checkpoint(error: &AppError) -> bool {
+    !matches!(
+        error,
+        AppError::Cancelled
+            | AppError::InvalidInput(_)
+            | AppError::Conflict
+            | AppError::Forbidden
+            | AppError::NotFound
+    )
 }
 
 pub(super) fn modified_millis(metadata: &std::fs::Metadata) -> Result<u128, AppError> {
@@ -253,4 +290,55 @@ pub(super) fn modified_millis(metadata: &std::fs::Metadata) -> Result<u128, AppE
 
 async fn account_owner(api: &KoofrApi) -> Result<String, AppError> {
     api.recovery_scope().await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::settle_upload_checkpoint;
+    use crate::{
+        error::AppError,
+        transfer::checkpoint::{TransferCheckpoint, TransferCheckpointStore, UploadCheckpoint},
+    };
+
+    async fn store_with_upload(directory: &std::path::Path) -> (TransferCheckpointStore, String) {
+        let store = TransferCheckpointStore::load(directory.join("transfers.json"));
+        let transfer_id = uuid::Uuid::new_v4().to_string();
+        store
+            .insert(TransferCheckpoint::Upload(UploadCheckpoint {
+                transfer_id: transfer_id.clone(),
+                owner_id: "user-1".to_owned(),
+                mount_id: "mount_1".to_owned(),
+                remote_directory: "/".to_owned(),
+                local_path: PathBuf::from(r"C:\files\report.pdf"),
+                expected_size: 1,
+                modified_millis: 1,
+                retained_at: 0,
+            }))
+            .await
+            .expect("save upload checkpoint");
+        (store, transfer_id)
+    }
+
+    #[tokio::test]
+    async fn only_pauses_and_retryable_failures_keep_an_upload_checkpoint() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-upload-settle-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create test directory");
+        let cases = [
+            (Err(AppError::Cancelled), true, true),
+            (Err(AppError::Cancelled), false, false),
+            (Err(AppError::NetworkStalled), false, true),
+            (Err(AppError::Forbidden), false, false),
+            (Err(AppError::Conflict), false, false),
+            (Err(AppError::NotFound), false, false),
+        ];
+        for (result, paused, kept) in cases {
+            let (store, transfer_id) = store_with_upload(&directory).await;
+            let _ = settle_upload_checkpoint(&store, &transfer_id, result, paused).await;
+            assert_eq!(store.get(&transfer_id).await.is_ok(), kept);
+        }
+        std::fs::remove_dir_all(directory).expect("remove test directory");
+    }
 }
