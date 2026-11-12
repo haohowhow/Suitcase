@@ -96,12 +96,12 @@ Koofr-GUI 的整体架构、数据流、传输恢复设计和安全边界都在�
   │
   ▼
 [Rust tokio task] transfer::download
-  │  1. HEAD → 获取 size / etag / modified
-  │  2. 打开 .koofr-part-<transferId> 临时文件
+  │  1. files/info → 获取 size / hash / modified
+  │  2. 打开 .<name>.koofr-part-<transferId> 临时文件
   │  3. 写入 TransferCheckpointStore（transfer-checkpoints.json）
-  │  4. 边下边写：reqwest stream → tokio::fs::File
+  │  4. 边下边写：reqwest stream → tokio::fs::File（每块 60 秒无数据视为网络卡住）
   │  5. 每 N 字节 emit "koofr://transfer-progress" 事件（不含文件名）
-  │  6. 完成：校验大小、rename 到最终名（同级重名加序号）
+  │  6. 完成：校验大小与哈希，不替换地发布到最终名（名称被占用时加序号）
   │  7. remove checkpoint
   │
   ▼
@@ -170,8 +170,15 @@ src-tauri/src/
 - 成功后 Rust 内存保留单会话令牌（session token）。**永远不发到前端**。
 - `remember=true` 时，密码通过 `keyring-core` + `windows-native-keyring-store` 写入 Windows 凭据管理器，服务名为 `Koofr-GUI`，账号名为邮箱地址。
 - 下次启动时 `restore_saved_login()` 从凭据管理器读回密码，重新走一次 `/token`。
-- `disconnect_koofr()` 主动断开：取消所有传输、清会话令牌缓冲区（`zeroize`）、清 LocalAccessManager 里未消费的授权。
+- `disconnect_koofr()` 主动断开（含空闲自动登出）：把所有传输按“暂停”停止并最多等待 3 秒让它们保存状态，停止同步循环，清会话令牌缓冲区（`zeroize`）、清 LocalAccessManager 里未消费的授权。可续传任务保留分片和 checkpoint，同一账户再次登录后可继续。`connect_koofr()` 切换账户时同样先暂停。
 - 进程退出时同样 zeroize。
+
+### 进程生命周期
+
+- 应用通过 `tauri-plugin-single-instance` 单实例运行。再次启动只唤起已有主窗口，避免两个进程同时写设置、检查点、历史与同步根。卸载时的 `--unregister-sync-roots` 清理入口在插件之前处理并直接退出。
+- 主窗口关闭：开启“关闭到托盘”时只隐藏；否则走与托盘“退出”相同的流程，不会只关窗口而留下后台进程。
+- 退出流程：有活动传输且开启确认时先弹窗；随后暂停全部传输、停止同步，隐藏窗口并最多等待 3 秒让传输释放，再结束进程。
+- 由开机自启动（`--autostart` 参数）启动且开启“关闭到托盘”时，启动后只驻留托盘。
 
 ### Koofr Vault
 
@@ -244,17 +251,17 @@ src-tauri/src/
 
 `transfer::download` 实现步骤：
 
-1. `HEAD` 请求拿 `Content-Length`、`ETag`、`Last-Modified`。
-2. 检查同级是否已有目标文件：有就加序号（`file (1).ext`）。
-3. 打开 `.koofr-part-<transferId>` 临时文件（O_CREAT | O_RDWR）。
+1. `files/info` 拿远端大小、哈希和修改时间。
+2. 选择目标名时（`prepare_download_location`）跳过已存在的文件，以及仍在进行或已暂停的下载、已分配但尚未开始的授权将要使用的名称（Windows 大小写不敏感比较），需要时加序号（`file (2).ext`）。
+3. 打开 `.<name>.koofr-part-<transferId>` 临时文件（O_CREAT | O_RDWR）。
 4. 写入 `DownloadCheckpoint`（含 mountId、remotePath、expected_size、remote_hash、remote_modified、local_path、partial_path）到 `transfer-checkpoints.json`。
 5. 用 `reqwest` 打 `GET` 请求，把 body 流写到临时文件。
 6. **中断恢复**：应用重启后 `list_resumable_transfers()` 从 checkpoint 重建可恢复项。用户点"继续"时：
-   - HEAD 再拉一次，比对 size / etag / modified。
+   - 再取一次 `files/info`，比对大小、哈希和修改时间。
    - 如果匹配：发 `Range: bytes=<offset>-` 请求，追加写。
    - 如果服务端忽略 Range（返回 200 而不是 206）：安全截断临时文件，从头重下。
    - 如果服务端文件变了（etag / modified 不匹配）：标记为 `Failed`，用户需要重开下载。
-7. 完成后 rename `.koofr-part-*` → 最终文件名，删除 checkpoint。
+7. 完成后用不替换目标的移动（Windows `MoveFileExW` 不带 `MOVEFILE_REPLACE_EXISTING`）发布到最终文件名；若下载期间该名称被占用，则改用下一个带序号的名称，实际路径写回下载历史。随后删除 checkpoint。
 
 支持文件：`transfer/download.rs`、`transfer/part.rs`、`transfer/checkpoint.rs`。
 
@@ -274,7 +281,7 @@ src-tauri/src/
    - 写入 `SplitUploadCheckpoint`（含 `completed_chunks: Vec<SplitPart>`）到 `transfer-checkpoints.json`。
 5. 全部完成后再上传：
    - `README.txt`（中英双语，说明这个文件夹是什么、怎么还原）
-   - `restore.bat`（Windows：`copy /b part-000.bin+part-001.bin+... target.bin`）
+   - `restore.cmd`（Windows：`copy /b /y part-*.bin "<输出文件>"`）
    - `restore.sh`（POSIX：`cat part-*.bin > target.bin`）
 6. 删除 checkpoint。
 
@@ -289,16 +296,16 @@ src-tauri/src/
 `folder_download.rs` 实现：
 
 1. 通过 Koofr API 递归列出目标文件夹的所有子项，构建清单。
-2. 在下载父目录下建**临时目录** `.koofr-folder-<transferId>/`，暂存所有内容。
-3. 每个文件走单文件下载路径（可以中途取消）。
-4. 全部完成后 rename 临时目录 → 最终目录名（同级重名加序号）。
-5. **失败或取消时清理整个临时目录**，不留半成品。
+2. 在下载父目录下建**临时目录** `.<name>.koofr-part-<随机 UUID>/`，暂存所有内容。
+3. 逐个文件流式写入暂存目录（可以中途取消）。
+4. 全部完成后以不替换目标的方式把暂存目录发布为最终目录名（名称被占用时加序号）。
+5. **失败或取消时清理整个临时目录**，不留半成品；清理本身失败时仍报告原始错误。
 
-文件夹下载**不做**磁盘 checkpoint（重启后无法续传整个文件夹），因为 Koofr 目录清单可能已变；重新开始比"部分恢复导致混淆"更安全。已下载单个文件的字节 checkpoint 仍然保留。
+文件夹下载**不做**磁盘 checkpoint（重启后无法续传整个文件夹），因为 Koofr 目录清单可能已变；重新开始比"部分恢复导致混淆"更安全。暂停文件夹下载等同于停止，下载历史中这类“已暂停”记录在下次校正时转为失败，可以清除。
 
 ### 网络错误自动恢复
 
-设置中的 `autoRetryNetworkErrors` 只匹配 `AppError::Network`（前端错误码 `network_error`）。`networkRetryLimit` 表示初次请求失败后的最大重试次数，`null` 表示无限；`networkRetryIntervalSeconds` 是每次重试前使用的固定等待时间。等待期间会发出 `Retrying` 状态，暂停和取消仍由同一个 `CancellationToken` 控制。
+设置中的 `autoRetryNetworkErrors` 只匹配网络类错误（`AppError::is_network()`：`AppError::Network` 与 `AppError::NetworkStalled`，前端错误码都是 `network_error`）。`networkRetryLimit` 表示初次请求失败后的最大重试次数，`null` 表示无限；`networkRetryIntervalSeconds` 是每次重试前使用的固定等待时间。等待期间会发出 `Retrying` 状态，暂停和取消仍由同一个 `CancellationToken` 控制。
 
 - 单文件下载重新读取临时文件长度并使用 HTTP Range 从已落盘偏移继续。
 - 分卷上传重新核对远端完整分卷，从最后一个已确认分卷继续。
@@ -306,6 +313,13 @@ src-tauri/src/
 - 文件夹下载会清理本次失败的暂存树后，从头重建目录下载。
 - 权限、冲突、本地 I/O、HTTP 状态和内容完整性错误不会触发该策略。
 - 每次调度重试都会写入脱敏日志事件 `network_retry_scheduled`，仅包含传输 ID、方向、次数和延迟。
+
+超时边界（避免卡死的连接让调用方永久等待）：
+
+- 元数据请求（列目录、`files/info`、重命名、删除、登录等）整体 60 秒超时。
+- 内容请求（上传 / 下载 / 预览）没有整体超时；下载与预览等待响应头最多 60 秒，响应体相邻两块之间超过 60 秒无数据即返回 `NetworkStalled`。
+- 普通、Vault 和分卷上传以及同步上传在 5 分钟内没有任何上传进度时返回 `NetworkStalled`。
+- 客户端启用 30 秒 TCP keepalive。按需水合保留自己的 60 秒无进展超时。
 
 ### 应用工作目录
 
@@ -446,6 +460,8 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 
 ## 本地数据布局
 
+上述 JSON 文件（设置、传输检查点、下载历史、元数据缓存、工作目录定位记录）每次写入都使用独立的 `.<uuid>.tmp` 临时文件，`sync_all` 后一次性替换目标；同一存储的写入由互斥锁串行化。读取时无法解析或版本不认识的文件会被改名为 `<原名>.corrupt-<毫秒时间戳>` 保留，并在诊断日志记录 `state_file_quarantined`（只含存储类别），然后以默认值继续。
+
 ```
 <应用工作目录>\
 ├─ settings.json                # AppSettings（下载、缓存和日志策略等）
@@ -465,9 +481,9 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 
 **下载临时文件**（在用户配置的下载目录下）：
 
-- `.koofr-part-<transferId>`：普通单文件下载暂存；Vault 下载时保存完整密文，同样按传输 ID 隔离。
-- `.<name>.koofr-vault-plain-<transferId>`：Vault 完整认证后的短期明文暂存；成功后原子改为最终文件名，失败时清理。
-- `.koofr-folder-<transferId>/`：文件夹下载暂存目录。
+- `.<name>.koofr-part-<transferId>`：普通单文件下载暂存；Vault 下载时保存完整密文，同样按传输 ID 隔离。
+- `.<name>.koofr-vault-plain-<transferId>`：Vault 完整认证后的短期明文暂存；成功后不替换地发布为最终文件名，再删除密文分片；失败时清理。
+- `.<name>.koofr-part-<随机 UUID>/`：文件夹下载暂存目录。
 
 清理 / 卸载应用时，这三处都不会自动删除，需要用户手动处理。
 

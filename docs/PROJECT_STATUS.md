@@ -19,6 +19,7 @@
 | 2026-08-06，2.5.0 | 经典双向同步、冲突副本、`.syncignore`、SQLite 状态与同步详情 | 提交 `a3b3114`；`src-tauri/src/sync.rs` |
 | 2026-08-21，2.6.0 | Windows Cloud Files API 按需同步预览、经典到按需迁移、同步根卸载清理及删除协调 | 发布准备提交 `99e5baf`，合并 `ea66c7f`；`cloud_files.rs` |
 | 2026-10-12，Unreleased | 迁至自建 Forgejo、更新应用入口与贡献模板、改为本机构建并上传 Release 草稿 | 最后提交 `7ede2af`；[迁移记录](FORGEJO_MIGRATION.md) |
+| 2026-11-12～13，Unreleased | 同步可靠性修复；全面代码审查后的缺陷整顿：预览重载、界面误译用户文件名、同名下载覆盖、状态文件原子写、检查点生命周期、传输 ID 泄漏、网络卡死超时、退出 / 登出改为暂停、单实例、Vault 句柄、RAW 内嵌预览 | `main` 上的 `33c41f8`～`1805c63`；分支 `fix/review-hardening`；[CHANGELOG](../CHANGELOG.md) |
 
 版本日期与功能归属按 CHANGELOG / 提交记录整理，不代表已重新核验原始 Release 页面或安装包。
 
@@ -36,7 +37,7 @@
 
 ## 当前停在什么位置
 
-- 本地 `main` 跟踪 `origin/main`；`develop` 停在 2.6.0 发布准备，`gitbutler/workspace` 是保留的旧工作分支。新工作先检查当前分支与工作区，不复用旧工作分支发布。
+- 本地 `main` 跟踪 `origin/main`，含尚未推送的同步可靠性修复。审查整顿在本地分支 `fix/review-hardening` 上分批提交，尚未合并回 `main`、未推送。`develop` 停在 2.6.0 发布准备，`gitbutler/workspace` 是保留的旧工作分支。新工作先检查当前分支与工作区，不复用旧工作分支发布。
 - `origin` 指向 Forgejo，`github-old` 保留旧 GitHub 地址。获取与发布流程见 [BUILDING](BUILDING.md) / [RELEASING](RELEASING.md)。
 - 迁移变更仍在 CHANGELOG 的 `Unreleased` 中，三个版本源仍是 2.6.0。不要把现在的 HEAD 当成 `v2.6.0` 原提交，或为了通过发布校验移动标签。
 - [2026-10-12 迁移记录](FORGEJO_MIGRATION.md) 记载 22 个历史 Release 为重建草稿，只有四个版本找回了来源未确认的安装包候选；未构建 / 发布新正式包。当日检查结果是历史记录，不是本轮远端复查。
@@ -52,13 +53,15 @@
 
 人工验收重点：用一次性测试文件确认首轮合并、单侧修改 / 删除、双侧冲突和重启恢复；按需模式另验目录展开、在线文件打开、固定 / 释放空间、资源管理器删除不长时间挂起、暂停 / 离线、迁移失败回滚，以及解除注册和卸载不影响其他 Provider。此清单供用户手动执行，本轮未执行，不授权 agent 操作真实账户。
 
-## 本轮验证（2026-11-12）
+## 本轮验证（2026-11-13，分支 `fix/review-hardening`）
 
-本轮只调整文档和本地代理说明，不修改产品代码、凭据、同步根或真实 Koofr 内容。
+本轮修改了前端与 Rust 产品代码（见 CHANGELOG `Unreleased`），没有动凭据、真实同步根或真实 Koofr 内容，也没有改 Vault 加密格式与密钥流程。
 
-- `npm run check`：通过。ESLint、18 个测试文件 / 91 项 Vitest、TypeScript + Vite 生产构建、Rust fmt、Clippy，以及 123 项 Rust 测试全部通过；1 项会修改临时 CFAPI 同步根的集成测试按默认配置跳过。
+- `npm run check`：通过。ESLint、21 个测试文件 / 102 项 Vitest、TypeScript + Vite 生产构建、Rust fmt、Clippy，以及 150 项 Rust 测试全部通过；1 项会修改临时 CFAPI 同步根的集成测试按默认配置跳过。
+- 本机环境变量 `NoDefaultCurrentDirectoryInExePath=1` 会让 `cmd` 不从当前目录查找 `restore.cmd`，导致 `windows_restore_script_reassembles_raw_parts_with_builtin_copy` 失败；这是环境问题而非代码缺陷。本轮在去掉该变量的环境里运行检查。
 - Vite 提示部分产物超过 500 kB（主包、PDF / HEIC 解码相关资源），构建成功；本轮没有调整拆包策略。
-- 桌面 GUI、真实账户往返、安装与卸载：未执行，需要人工在本机验证。
+- 新增依赖 `tauri-plugin-single-instance` 2.4.5（2.5.x 需要 Rust 1.90，高于项目基线 1.88）。
+- 桌面 GUI、真实账户往返、安装与卸载：未执行，需要人工在本机验证。重点：同步或传输进行时文本 / 图片预览保持稳定；上传完成后不跳目录；名为 `Download` 的文件夹显示原名；两个同名文件先后下载互不覆盖；退出后重新登录可续传；重复启动只唤起已有窗口；关闭“关闭到托盘”后点 X 进程退出；开机自启不弹主窗；Vault 大目录多次刷新后仍可返回上级；RAW 预览速度与方向；下次打包后卸载提示文字不乱码。
 - 新的 Windows exe / NSIS 安装包：本轮未构建或发布。
 
 后续交接先读 [AGENT_HANDOFF.md](AGENT_HANDOFF.md)，再按任务阅读对应模块文档；不要把本节的验证日期延用为后续改动的验证结果。

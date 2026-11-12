@@ -93,7 +93,8 @@ Koofr-GUI is an unaffiliated, Windows-first, file-manager-oriented alternative c
 
 - **Settings**
   - All settings load at startup. The UI can switch immediately between Simplified Chinese, English, and the Windows UI language; compact density and reduced motion apply live.
-  - Launch at login, close/minimize to tray, active-transfer quit confirmation, native completion notifications, and taskbar activity overlays are supported.
+  - Launch at login, close/minimize to tray, active-transfer quit confirmation, native completion notifications, and taskbar activity overlays are supported. The app runs as a single instance; launching it again brings the existing window forward, and a launch at login stays in the tray when close-to-tray is on.
+  - Quitting, signing out (including the idle sign-out) or switching accounts pauses running transfers instead of cancelling them; resumable ones can be continued after the next sign-in.
   - The first version with the transfer floating window asks once before enabling it. It can be toggled later under Notifications, and its dragged position is restored within the available displays.
   - Upload/download concurrency and global/per-task KiB/s limits apply live. “Full speed while idle” means five continuous minutes without Windows keyboard or mouse input.
   - Download conflicts can ask, skip, or add a stable numeric suffix and never overwrite. Optional Koofr MD5 verification, failed-part retention, and open-folder-on-complete are supported.
@@ -102,7 +103,7 @@ Koofr-GUI is an unaffiliated, Windows-first, file-manager-oriented alternative c
   - Configurable default download folder, optional "ask each time" per-download prompt.
   - Configurable application work directory, with an optional complete migration of settings, transfer state, download history, cache, and logs before the next start.
   - Metadata cache: memory / disk / off. Diagnostic log level, retention, rotation size, usage, and cleanup remain configurable.
-  - Optional automatic retry for transfers that fail with `network_error`, with a configurable fixed interval and either a finite or unlimited retry count.
+  - Optional automatic retry for transfers that fail with `network_error`, with a configurable fixed interval and either a finite or unlimited retry count. A stalled connection (no download data for 60 seconds, no upload progress for 5 minutes) counts as a network error too.
   - Five themes (koofr / ocean / iris / coral / berry), covering accent tokens only.
 
 ### Not yet
@@ -204,7 +205,7 @@ Rules that matter:
 - **Credentials never cross the Rust boundary.** Session tokens live in memory only; the optional app-password persistence uses the Windows Credential Manager.
 - **Safe Keys never cross the Rust boundary.** A native Windows credential prompt passes them directly to Rust, rather than through Tauri IPC, React state, logs, or checkpoints.
 - **Paths are validated.** Remote paths reject `.`, `..`, NUL, and overlong names. Download parents must be absolute, existing, non-symlink directories.
-- **Never overwrite.** Single-file downloads land in a `.koofr-part-*` staging file. Same-directory name clashes get a stable suffix.
+- **Never overwrite.** Downloads land in a `.koofr-part-*` staging file. Name selection skips existing files and the targets of other unfinished downloads, and publishing never replaces an existing file; a taken name gets a numbered suffix.
 - **Error messages leak nothing**; they return a stable error code and a safe message, with no paths, tokens, or response bodies.
 
 Full design and data flow in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
