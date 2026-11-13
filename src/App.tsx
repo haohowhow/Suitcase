@@ -262,16 +262,31 @@ function App() {
     }
   }, [setSettings])
 
+  // Set once the floating window prompt was answered in this session, even if
+  // saving the answer failed, so the prompt is not reopened right away.
+  const floatingPromptAnsweredRef = useRef(false)
+
   useEffect(() => {
     if (shouldPromptForFloatingWindow(
       authState === 'signedIn',
       settings !== null,
-      settings?.floatingWindowPrompted ?? false,
+      (settings?.floatingWindowPrompted ?? false) || floatingPromptAnsweredRef.current,
       modalKind !== null,
     )) {
       setModalKind('floatingPrompt')
     }
   }, [authState, modalKind, settings])
+
+  const respondToFloatingPrompt = useCallback(
+    async (enabled: boolean) => {
+      floatingPromptAnsweredRef.current = true
+      await answerFloatingWindowPrompt(enabled)
+      // Close whatever the outcome: a failure is reported as a notice, and keeping
+      // the dialog open would leave the whole window unusable.
+      setModalKind((current) => (current === 'floatingPrompt' ? null : current))
+    },
+    [answerFloatingWindowPrompt],
+  )
 
   useEffect(() => {
     if (authState !== 'signedIn') return
@@ -890,10 +905,10 @@ function App() {
           secondaryActionLabel="暂不开启"
           secondaryActionDisabled={settingsBusy}
           onClose={() => {
-            if (!settingsBusy) void answerFloatingWindowPrompt(false)
+            if (!settingsBusy) void respondToFloatingPrompt(false)
           }}
-          onSecondaryAction={() => void answerFloatingWindowPrompt(false)}
-          onAction={() => void answerFloatingWindowPrompt(true)}
+          onSecondaryAction={() => void respondToFloatingPrompt(false)}
+          onAction={() => void respondToFloatingPrompt(true)}
         >
           <div className="floating-window-prompt">
             <p>

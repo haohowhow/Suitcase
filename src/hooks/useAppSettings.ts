@@ -383,9 +383,10 @@ export function useAppSettings(
     [runSettingsMutation, settings?.notifyOnComplete],
   )
 
+  /** Saves the first-run floating window answer. Resolves to whether it was saved. */
   const answerFloatingWindowPrompt = useCallback(
-    async (enabled: boolean) => {
-      if (!settings) return
+    async (enabled: boolean): Promise<boolean> => {
+      if (!settings) return false
       setSettingsBusy(true)
       setSettingsError('')
       try {
@@ -401,8 +402,14 @@ export function useAppSettings(
         )
         setSettings(next)
         showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在通知设置中开启悬浮窗')
+        return true
       } catch (error) {
-        setSettingsError(commandErrorMessage(error, '无法保存悬浮窗设置。'))
+        const message = commandErrorMessage(error, '无法保存悬浮窗设置。')
+        setSettingsError(message)
+        // The prompt is not inside the settings panel, so the error has to be
+        // visible on its own.
+        showNotice(message)
+        return false
       } finally {
         setSettingsBusy(false)
       }
