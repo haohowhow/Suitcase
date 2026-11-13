@@ -141,7 +141,7 @@ describe('FileWorkspace', () => {
 
     // When
     await user.click(screen.getByRole('button', { name: '选择上传方式' }))
-    await user.click(screen.getByRole('menuitem', { name: /可续传大文件/ }))
+    await user.click(screen.getByRole('menuitem', { name: /分卷上传大文件/ }))
 
     // Then
     expect(onUpload).toHaveBeenCalledWith('split')

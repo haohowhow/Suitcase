@@ -58,7 +58,7 @@ describe('VaultDialog', () => {
     expect(await screen.findByRole('button', { name: /解锁/ })).not.toBeNull()
     expect(document.querySelector('input[type="password"]')).toBeNull()
     expect(screen.queryByRole('textbox', { name: /Safe Key/i })).toBeNull()
-    expect(screen.getByText(/Windows 原生安全窗口/)).not.toBeNull()
+    expect(screen.getByText(/Windows 系统安全窗口/)).not.toBeNull()
   })
 
   it('requests native unlock and opens the opaque root handle', async () => {

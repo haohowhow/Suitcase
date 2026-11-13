@@ -12,7 +12,7 @@ describe('SplitUploadDialog', () => {
       <SplitUploadDialog fileName="movie.mkv" onClose={vi.fn()} onConfirm={onConfirm} />,
     )
 
-    const packageName = screen.getByRole('textbox', { name: '远端文件夹名称' })
+    const packageName = screen.getByRole('textbox', { name: 'Koofr 文件夹名称' })
     const partSize = screen.getByRole('spinbutton', { name: '每个分卷大小（MiB）' })
     await user.clear(packageName)
     await user.type(packageName, '旅行视频分卷')
@@ -45,7 +45,7 @@ describe('SplitUploadDialog', () => {
       <SplitUploadDialog fileName="archive.zip" onClose={vi.fn()} onConfirm={vi.fn()} />,
     )
 
-    const packageName = screen.getByRole('textbox', { name: '远端文件夹名称' })
+    const packageName = screen.getByRole('textbox', { name: 'Koofr 文件夹名称' })
     await user.clear(packageName)
     await user.type(packageName, 'archive/parts')
 
@@ -58,7 +58,7 @@ describe('SplitUploadDialog', () => {
       <SplitUploadDialog fileName="archive.zip" onClose={vi.fn()} onConfirm={vi.fn()} />,
     )
 
-    const packageName = screen.getByRole('textbox', { name: '远端文件夹名称' })
+    const packageName = screen.getByRole('textbox', { name: 'Koofr 文件夹名称' })
     await user.clear(packageName)
     await user.type(packageName, '..')
 

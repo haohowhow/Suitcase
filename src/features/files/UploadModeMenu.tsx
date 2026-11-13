@@ -51,10 +51,10 @@ export function UploadModeMenu({ disabled, onSelect }: UploadModeMenuProps) {
       {open ? (
         <div className="new-menu upload-mode-menu" role="menu">
           <button role="menuitem" type="button" onClick={() => select('compatible')}>
-            <FileUp size={17} />普通上传（官网兼容）
+            <FileUp size={17} />上传文件
           </button>
           <button role="menuitem" type="button" onClick={() => select('split')}>
-            <Layers3 size={17} />可续传大文件（通用分卷）
+            <Layers3 size={17} />分卷上传大文件（可断点续传）
           </button>
         </div>
       ) : null}

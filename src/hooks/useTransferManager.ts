@@ -526,7 +526,7 @@ export function useTransferManager(
     for (const item of resumable) void resumeTransfer(item.id, false)
     if (sync) {
       for (const pair of pausedSync) {
-        void sync.setPairPaused(pair.id, false).catch(() => showNotice('部分同步组无法继续，请在同步页面中查看。'))
+        void sync.setPairPaused(pair.id, false).catch(() => showNotice('部分同步无法继续，请在“同步”页面中查看。'))
       }
     }
     if (resumable.length !== paused.length || pausedSync.length > 0) {

@@ -98,7 +98,7 @@ function currentTaskSummary(pair: SyncPairSummary) {
   if (pair.status === 'idle') return { title: '当前没有进行中的任务', detail: '本地与云端已完成本轮核对。' }
 
   const remaining = Math.max(pair.pendingItems, pair.totalItems - pair.completedItems, 0)
-  if (remaining === 0) return { title: '正在完成同步收尾', detail: '文件内容已传输，正在确认元数据与最终状态。' }
+  if (remaining === 0) return { title: '正在完成同步收尾', detail: '文件已传输完毕，正在做最后确认。' }
   const uploadRemaining = Math.max(pair.upload.pendingItems, pair.upload.totalItems - pair.upload.completedItems, 0)
   const downloadRemaining = Math.max(pair.download.pendingItems, pair.download.totalItems - pair.download.completedItems, 0)
   const title = uploadRemaining > 0 && downloadRemaining === 0
@@ -200,7 +200,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
         }
       })
       .catch(() => {
-        if (!disposed) setNativeCapability({ supported: false, reason: '无法检测 Windows 原生同步能力。', buildNumber: null, integrationNumber: null })
+        if (!disposed) setNativeCapability({ supported: false, reason: '无法确认此电脑是否支持按需同步。', buildNumber: null, integrationNumber: null })
       })
     return () => { disposed = true }
   }, [])
@@ -274,7 +274,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
       setLocalSelection(null)
       await sync.refresh()
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法创建同步，请确认远端目录可写且未重复映射'))
+      setNotice(commandErrorMessage(error, '无法创建同步。请确认 Koofr 文件夹可以写入，且没有与已有同步重叠'))
     } finally {
       setBusy(false)
     }
@@ -326,13 +326,13 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
 
   const remove = async (pair: SyncPairSummary) => {
     const message = pair.syncMode === 'onDemand'
-      ? `解除“${pair.localRoot}”的按需同步根？云端内容不会改变；已下载文件会保留为普通文件，纯在线占位符会从本机移除。`
-      : `移除“${pair.localRoot}”的同步配置？两边的文件不会被删除。`
+      ? `解除“${pair.localRoot}”的按需同步？云端内容不受影响；已下载的文件会保留在本机，仅在线的文件会从本机移除。`
+      : `移除“${pair.localRoot}”的同步？两边的文件都不会被删除。`
     if (!window.confirm(message)) return
     try {
       await sync.removePair(pair.id)
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法移除同步配置'))
+      setNotice(commandErrorMessage(error, '无法移除同步'))
     }
   }
 
@@ -351,9 +351,9 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
       const kind: SyncRootKind = pair.remotePath === '/' ? 'unified' : 'custom'
       await koofr.migrateSyncPairToOnDemand(pair.id, selection.grantId, kind)
       await sync.refresh()
-      setNotice('迁移已完成。旧目录保留为普通完整副本，请确认新根后自行处理。')
+      setNotice('已切换为按需同步。原文件夹保留为完整副本，确认新位置无误后可自行删除。')
     } catch (error) {
-      setNotice(commandErrorMessage(error, '迁移未完成，经典同步配置已保留或恢复。'))
+      setNotice(commandErrorMessage(error, '切换未完成，原来的同步设置保持不变。'))
     }
   }
 
@@ -361,7 +361,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
     try {
       await koofr.openSyncRoot(pair.id)
     } catch (error) {
-      setNotice(commandErrorMessage(error, '无法在资源管理器中打开同步根'))
+      setNotice(commandErrorMessage(error, '无法在资源管理器中打开同步文件夹'))
     }
   }
 
@@ -376,7 +376,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
   return (
     <section className="workspace sync-workspace" aria-label="同步">
       <div className="workspace__header">
-        <div><p className="eyebrow">SYNC</p><h1>同步文件夹</h1><p className="workspace__description">经典同步与 Windows 原生按需同步并存；按需同步会在资源管理器显示状态并在打开文件时下载。</p></div>
+        <div><p className="eyebrow">SYNC</p><h1>同步文件夹</h1><p className="workspace__description">让电脑上的文件夹与 Koofr 保持一致。按需同步会在资源管理器中显示所有文件，打开时才下载。</p></div>
         <button className="button button--primary" type="button" onClick={() => void chooseFolder()}><FolderSync size={17} /> 新建同步</button>
       </div>
       {notice ? <div className="notice notice--error">{notice}</div> : null}
@@ -391,13 +391,13 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
           </select>
           {syncMode === 'onDemand' ? <select className="input sync-create-card__scope" value={rootKind} onChange={(event) => setRootKind(event.target.value as SyncRootKind)} aria-label="按需同步范围"><option value="custom">选择 Koofr 文件夹</option><option value="unified">同步整个 Koofr</option></select> : null}
           <button className={`input input--button sync-create-card__local${syncMode === 'classic' ? ' sync-create-card__local--classic' : ''}`} type="button" onClick={() => void chooseFolder()}><Cloud size={16} /> {localSelection?.localPath || '选择本地文件夹'}</button>
-          {syncMode === 'onDemand' && rootKind === 'unified' && suggestedRoot ? <p className="sync-create-card__hint sync-create-card__hint--wide">“同步整个 Koofr”固定映射远端根目录，不能选择子文件夹。建议本地位置：{suggestedRoot}</p> : null}
+          {syncMode === 'onDemand' && rootKind === 'unified' && suggestedRoot ? <p className="sync-create-card__hint sync-create-card__hint--wide">“同步整个 Koofr”会同步主存储的全部内容，无法只选子文件夹。建议的本地位置：{suggestedRoot}</p> : null}
           <select className="input sync-create-card__mount" value={mountId} onChange={(event) => setMountId(event.target.value)} aria-label="Koofr 主存储">
             <option value="">选择 Koofr 主存储</option>
             {primaryMounts.map((mount) => <option translate="no" key={mount.id} value={mount.id}>{mount.name}</option>)}
           </select>
           {syncMode === 'onDemand' && rootKind === 'unified' ? <div className="sync-remote-picker sync-remote-picker--unified"><div className="input sync-unified-target"><Cloud size={16} /><span>整个 Koofr</span><code>/</code></div><button className="button" type="button" onClick={() => setRootKind('custom')}>改为选择文件夹</button></div> : <div className="sync-remote-picker" ref={remotePickerRef}>
-            <div className="sync-remote-picker__row"><input className="input" value={remotePath} onChange={(event) => setRemotePath(event.target.value)} placeholder="远端文件夹，例如 /My desktop sync" aria-label="远端文件夹" /><button className="button" type="button" disabled={remoteBrowserBusy || !mountId} onClick={() => void browseRemote(remotePath.trim() || '/')}>{remoteBrowserBusy ? <LoaderCircle className="spin" size={15} /> : '浏览 Koofr'}</button></div>
+            <div className="sync-remote-picker__row"><input className="input" value={remotePath} onChange={(event) => setRemotePath(event.target.value)} placeholder="Koofr 文件夹，例如 /My desktop sync" aria-label="Koofr 文件夹" /><button className="button" type="button" disabled={remoteBrowserBusy || !mountId} onClick={() => void browseRemote(remotePath.trim() || '/')}>{remoteBrowserBusy ? <LoaderCircle className="spin" size={15} /> : '浏览 Koofr'}</button></div>
             {remoteBrowserOpen ? <div className="sync-remote-picker__menu" role="dialog" aria-label="选择 Koofr 文件夹">
               <div className="sync-remote-picker__toolbar"><button className="sync-picker-action sync-picker-action--secondary" type="button" disabled={remoteBrowserPath === '/'} onClick={() => void browseRemote(parentPath(remoteBrowserPath))}><ArrowLeft size={15} /> 返回上一级</button><strong className="sync-remote-picker__path" title={remoteBrowserPath}>{remoteBrowserPath}</strong><button className="sync-picker-action sync-picker-action--primary" type="button" onClick={() => chooseRemoteFolder(remoteBrowserPath)}><Check size={15} /> 选择此目录</button></div>
               <div className="sync-remote-picker__divider" />
@@ -407,7 +407,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
           </div>}
           <button className="button button--primary sync-create-card__submit" type="button" disabled={busy || !localSelection || !mountId || (syncMode === 'onDemand' && nativeCapability?.supported !== true)} onClick={() => void createPair()}>{busy ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} 确认创建</button>
         </div>
-        {syncMode === 'onDemand' && nativeCapability?.supported === false ? <div className="notice notice--error">{nativeCapability.reason || '此 Windows 版本不支持原生按需同步。'}</div> : null}
+        {syncMode === 'onDemand' && nativeCapability?.supported === false ? <div className="notice notice--error">{nativeCapability.reason || '此 Windows 版本不支持按需同步。'}</div> : null}
         {syncMode === 'onDemand' ? <p className="sync-create-card__hint">创建后会启用开机启动和关闭到托盘；完全退出应用时在线文件暂时无法打开。</p> : null}
       </div>
 
@@ -424,7 +424,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
             <div className="sync-card__meta">{active ? <><span>已完成 {pair.completedItems}/{pair.totalItems} 项 · {formatBytes(pair.completedBytes)}/{formatBytes(pair.totalBytes)}</span><span>↑ {formatRate(pair.upload.bytesPerSecond)}　↓ {formatRate(pair.download.bytesPerSecond)}</span></> : <span>最近同步：{formatTime(pair.lastSyncedAt)}</span>}{pair.issueCount > 0 ? <button className="text-button text-button--warning" type="button" onClick={() => void showDetail(pair, 'issues')}><TriangleAlert size={14} /> {pair.issueCount} 个问题</button> : null}</div>
             {percent !== null ? <div className="sync-card__progress" role="progressbar" aria-label={`${pair.localRoot} 同步进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{ width: `${percent}%` }} /></div> : null}
           </div>
-          <div className="sync-card__actions"><button className="button button--subtle sync-card__details" type="button" onClick={() => void showDetail(pair)}>{'详情'}</button>{pair.syncMode === 'onDemand' ? <button className="icon-button" type="button" title="在资源管理器中打开" onClick={() => void openRoot(pair)}><FolderOpen size={17} /></button> : nativeCapability?.supported ? <button className="button button--subtle" type="button" onClick={() => void migrate(pair)}>迁移为按需</button> : null}<button className="icon-button" type="button" title={pair.paused ? '继续同步' : '暂停同步'} onClick={() => void toggle(pair)}>{pair.paused ? <Play size={17} /> : <Pause size={17} />}</button><button className="icon-button" type="button" title="立即同步" onClick={() => void runNow(pair)}><RefreshCw size={17} /></button><button className="icon-button icon-button--danger" type="button" title="移除同步配置" onClick={() => void remove(pair)}><Trash2 size={17} /></button></div>
+          <div className="sync-card__actions"><button className="button button--subtle sync-card__details" type="button" onClick={() => void showDetail(pair)}>{'详情'}</button>{pair.syncMode === 'onDemand' ? <button className="icon-button" type="button" title="在资源管理器中打开" onClick={() => void openRoot(pair)}><FolderOpen size={17} /></button> : nativeCapability?.supported ? <button className="button button--subtle" type="button" onClick={() => void migrate(pair)}>切换为按需同步</button> : null}<button className="icon-button" type="button" title={pair.paused ? '继续同步' : '暂停同步'} onClick={() => void toggle(pair)}>{pair.paused ? <Play size={17} /> : <Pause size={17} />}</button><button className="icon-button" type="button" title="立即同步" onClick={() => void runNow(pair)}><RefreshCw size={17} /></button><button className="icon-button icon-button--danger" type="button" title="移除同步" onClick={() => void remove(pair)}><Trash2 size={17} /></button></div>
         </article>
       })}</div>}
 
@@ -440,10 +440,10 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
             <div className="sync-task-queue" aria-label="当前同步任务队列"><DirectionTaskProgress label="上传" stats={detailPair.upload} /><DirectionTaskProgress label="下载" stats={detailPair.download} /></div>
             <div className="sync-card__progress" role="progressbar" aria-label="当前周期总进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(detailProgress)}><span style={{ width: `${detailProgress}%` }} /></div>
           </div>
-          <div className="sync-task-list"><div className="sync-task-list__header"><strong>任务明细</strong><span>仅在打开详情时读取文件显示名</span></div>{detailTasks.length > 0 ? detailTasks.map((task) => <div className={`sync-task-item sync-task-item--${task.state}`} key={task.id}><span className="sync-task-item__direction" aria-hidden="true">{task.direction === 'upload' ? '↑' : task.direction === 'download' ? '↓' : '↕'}</span><strong translate="no" title={task.displayName}>{task.displayName}</strong><span>{taskOperationText[task.operation] ?? '同步'}</span><small>{task.bytes > 0 ? formatBytes(task.bytes) : '—'} · {taskStateText[task.state]}</small></div>) : <p className="sync-task-list__empty">{detailPair.status === 'scanning' || detailPair.status === 'initializing' ? '正在扫描，任务明细将在队列生成后显示。' : '当前没有可显示的同步任务。'}</p>}</div>
+          <div className="sync-task-list"><div className="sync-task-list__header"><strong>任务明细</strong><span>最近处理的文件</span></div>{detailTasks.length > 0 ? detailTasks.map((task) => <div className={`sync-task-item sync-task-item--${task.state}`} key={task.id}><span className="sync-task-item__direction" aria-hidden="true">{task.direction === 'upload' ? '↑' : task.direction === 'download' ? '↓' : '↕'}</span><strong translate="no" title={task.displayName}>{task.displayName}</strong><span>{taskOperationText[task.operation] ?? '同步'}</span><small>{task.bytes > 0 ? formatBytes(task.bytes) : '—'} · {taskStateText[task.state]}</small></div>) : <p className="sync-task-list__empty">{detailPair.status === 'scanning' || detailPair.status === 'initializing' ? '正在扫描，任务明细将在队列生成后显示。' : '当前没有可显示的同步任务。'}</p>}</div>
           <div className="sync-detail-speeds"><div><strong>当前上传速度</strong><span>{formatRate(detailPair.upload.bytesPerSecond)}</span></div><div><strong>当前下载速度</strong><span>{formatRate(detailPair.download.bytesPerSecond)}</span></div><div><strong>最近 60 秒平均</strong><span>{formatRate(detailSamples.length ? detailSamples.reduce((sum, sample) => sum + sample.uploadBytesPerSecond, 0) / detailSamples.length : 0)} ↑ · {formatRate(detailSamples.length ? detailSamples.reduce((sum, sample) => sum + sample.downloadBytesPerSecond, 0) / detailSamples.length : 0)} ↓</span></div><div><strong>最近 60 秒峰值</strong><span>{formatRate(Math.max(0, ...detailSamples.map((sample) => sample.uploadBytesPerSecond)))} ↑ · {formatRate(Math.max(0, ...detailSamples.map((sample) => sample.downloadBytesPerSecond)))} ↓</span></div></div>
           <SyncSpeedChart samples={detailSamples} />
-        </> : <div ref={detailIssuesRef} className="sync-issues sync-issues--detail">{issues[detailPair.id]?.length ? issues[detailPair.id].map((issue) => <div className="sync-issue" key={issue.id}><TriangleAlert size={14} /><span>{issue.relativePath ? `${issue.relativePath}: ` : '同步根目录：'}{issue.message}</span></div>) : <p>当前没有未解决问题。</p>}</div>}
+        </> : <div ref={detailIssuesRef} className="sync-issues sync-issues--detail">{issues[detailPair.id]?.length ? issues[detailPair.id].map((issue) => <div className="sync-issue" key={issue.id}><TriangleAlert size={14} /><span>{issue.relativePath ? `${issue.relativePath}: ` : '同步位置：'}{issue.message}</span></div>) : <p>当前没有未解决问题。</p>}</div>}
       </Modal> : null}
     </section>
   )

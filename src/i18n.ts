@@ -1,4 +1,5 @@
 import type { InterfaceLanguage } from './types/backend'
+import { catalog, patterns } from './i18nCatalog'
 
 const enUs: Record<string, string> = {
   '我的文件': 'My files',
@@ -49,16 +50,16 @@ const enUs: Record<string, string> = {
   '跳过': 'Skip',
   '自动加序号': 'Add a number automatically',
   '下载完成后打开文件夹': 'Open folder after download',
-  '覆盖单文件、文件夹、Vault 与恢复下载': 'Applies to files, folders, Vault, and resumed downloads',
+  '适用于文件、文件夹、保险箱和继续的下载': 'Applies to files, folders, vaults, and resumed downloads',
   '下载后校验文件完整性': 'Verify file integrity after download',
   '失败分片保留天数': 'Days to keep failed partial files',
   '不限速': 'Unlimited',
   '限速': 'Limited',
-  '系统空闲时全速': 'Full speed while system is idle',
+  '电脑空闲时全速': 'Full speed while the PC is idle',
   '全局速度上限': 'Global speed limit',
   '单任务速度上限': 'Per-task speed limit',
   '传输完成时通知': 'Notify when transfers finish',
-  '使用 Tauri 原生通知，仅包含任务显示名，不包含完整文件路径。': 'Uses native Tauri notifications with the task display name, never a full file path.',
+  '使用 Windows 系统通知，只显示任务名称，不包含文件的完整路径。': 'Uses Windows notifications that show only the task name, never a full file path.',
   '播放通知声音': 'Play notification sound',
   '显示任务栏角标': 'Show taskbar badge',
   '显示传输悬浮窗': 'Show transfer floating window',
@@ -139,9 +140,47 @@ const enUs: Record<string, string> = {
   '移动': 'Move',
   '复制': 'Copy',
   '删除': 'Delete',
+  '外观主题': 'Theme',
+  '帮助与反馈': 'Help and feedback',
+  '上传文件': 'Upload file',
+  '分卷上传大文件（可断点续传）': 'Upload large file in parts (resumable)',
+  '这是一个大文件': 'This is a large file',
+  '使用分卷上传': 'Use split upload',
+  '直接上传': 'Upload as one file',
+  '直接上传会在 Koofr 中保存为单个文件，但中断后需要从头开始。': 'Uploading as one file keeps it as a single file in Koofr, but an interruption means starting over.',
 }
 
-const zhCn = Object.fromEntries(Object.entries(enUs).map(([zh, en]) => [en, zh]))
+// The hand-written dictionary above wins over the larger catalog when both define a key.
+const enResource: Record<string, string> = { ...catalog, ...enUs }
+
+// English text can map back from several Chinese sources ("items" is both
+// "项" and "个项目"); the first definition wins, and the dictionary comes first.
+const zhResource: Record<string, string> = {}
+for (const source of [enUs, catalog]) {
+  for (const [zh, en] of Object.entries(source)) zhResource[en] ??= zh
+}
+
+const HAN = /\p{Script=Han}/u
+
+/** Translates one UI string, keeping surrounding whitespace. Unknown text is returned unchanged. */
+export function translateUiText(value: string, language: 'zh-CN' | 'en-US') {
+  const resource = language === 'en-US' ? enResource : zhResource
+  const leading = value.match(/^\s*/)?.[0] ?? ''
+  const trailing = value.match(/\s*$/)?.[0] ?? ''
+  const content = value.trim()
+  if (!content) return value
+  const exact = resource[content]
+  if (exact) return `${leading}${exact}${trailing}`
+  // Patterns only describe Chinese templates that embed names or numbers.
+  if (language !== 'en-US' || !HAN.test(content)) return value
+  const translate = (text: string) => translateUiText(text, language)
+  for (const [pattern, build] of patterns) {
+    const match = content.match(pattern)
+    if (match) return `${leading}${build(match, translate)}${trailing}`
+  }
+  return value
+}
+
 const translatedAttributes = ['aria-label', 'placeholder', 'title'] as const
 
 // File names, paths and other account data are marked with the standard
@@ -167,13 +206,7 @@ export function installRuntimeTranslations(
 ) {
   const resolved = resolvedLanguage(language)
   document.documentElement.lang = resolved
-  const resource = resolved === 'en-US' ? enUs : zhCn
-  const translateText = (value: string) => {
-    const leading = value.match(/^\s*/)?.[0] ?? ''
-    const trailing = value.match(/\s*$/)?.[0] ?? ''
-    const content = value.trim()
-    return resource[content] ? `${leading}${resource[content]}${trailing}` : value
-  }
+  const translateText = (value: string) => translateUiText(value, resolved)
   const translateSubtree = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE && node.textContent) {
       const translated = translateText(node.textContent)
@@ -184,7 +217,10 @@ export function installRuntimeTranslations(
     if (node.matches(USER_CONTENT_SELECTOR)) return
     for (const attribute of translatedAttributes) {
       const value = node.getAttribute(attribute)
-      if (value && resource[value]) node.setAttribute(attribute, resource[value])
+      if (value) {
+        const translated = translateText(value)
+        if (translated !== value) node.setAttribute(attribute, translated)
+      }
     }
     for (const child of node.childNodes) translateSubtree(child)
   }

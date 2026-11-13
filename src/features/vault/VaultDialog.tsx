@@ -167,12 +167,12 @@ export function VaultDialog({
 
   const importVault = () => run(async () => {
     setVaults(await koofr.importVaultRcloneConfig())
-    onNotice('rclone 配置已导入；Safe Key 和 salt 未经过前端。')
+    onNotice('rclone 保险箱已导入。')
   }, '无法导入 rclone crypt 配置。')
 
   const exportVault = (repoId: string) => run(async () => {
     const exported = await koofr.exportVaultRcloneConfig(repoId)
-    if (exported) onNotice('rclone 配置已导出到所选位置。请按敏感凭据妥善保管。')
+    if (exported) onNotice('rclone 配置已导出。该文件可用于解密保险箱，请像密码一样妥善保管。')
   }, '无法导出 rclone 配置。')
 
   const removeVault = (repoId: string) => run(async () => {
@@ -181,8 +181,8 @@ export function VaultDialog({
     setRemoveRepoId(null)
     setRemoveConfirmation('')
     if (directory?.repoId === repoId) setDirectory(null)
-    onNotice('已移除保险箱注册；远端加密目录及其中数据仍然保留。')
-  }, '无法移除保险箱注册。')
+    onNotice('已从列表中移除保险箱；Koofr 中的加密文件仍然保留。')
+  }, '无法移除保险箱。')
 
   const refreshDirectory = () => {
     if (directory) void openDirectory(directory.repoId, directory.directoryId)
@@ -281,7 +281,7 @@ export function VaultDialog({
       <div className="vault-workspace">
         <div className="vault-security-note">
           <FileKey2 size={18} />
-          <span>Safe Key 只在 Windows 原生安全窗口中输入，并始终留在 Rust 后端内存。</span>
+          <span>Safe Key 只在 Windows 系统安全窗口中输入，不会显示在应用界面中。</span>
         </div>
 
         {error ? <div className="vault-error" role="alert">{error}</div> : null}
@@ -322,8 +322,8 @@ export function VaultDialog({
               {!loading && vaults.length === 0 ? (
                 <div className="vault-empty">
                   <Lock size={28} />
-                  <strong>尚未注册保险箱</strong>
-                  <span>可在当前目录创建，或导入本客户端导出的 rclone crypt 配置。</span>
+                  <strong>还没有保险箱</strong>
+                  <span>可以在当前文件夹创建一个，或导入之前导出的 rclone crypt 配置。</span>
                 </div>
               ) : null}
               {vaults.map((vault) => (
@@ -364,7 +364,7 @@ export function VaultDialog({
                   </div>
                   {removeRepoId === vault.id ? (
                     <div className="vault-remove-confirm">
-                      <span>仅移除注册，不删除密文。输入“移除保险箱”并再次验证 Safe Key：</span>
+                      <span>只从本应用的列表中移除，不会删除 Koofr 中的加密文件。请输入“移除保险箱”，然后再次验证 Safe Key：</span>
                       <input value={removeConfirmation} onChange={(event) => setRemoveConfirmation(event.target.value)} />
                       <button
                         className="danger-button"
@@ -470,10 +470,10 @@ export function VaultDialog({
             )}
 
             <div className="vault-file-list" role="list" aria-label={`${directory.repoName} 内容`}>
-              {loading ? <p className="vault-muted">正在解密目录元数据…</p> : null}
+              {loading ? <p className="vault-muted">正在解密文件夹内容…</p> : null}
               {!loading && directory.skippedEntries > 0 ? (
                 <p className="vault-muted" role="status">
-                  有 {directory.skippedEntries} 个项目无法解密，已隐藏。它们可能不是由保险箱创建，或使用了其他 Safe Key。
+                  有 {directory.skippedEntries} 个项目无法解密，已隐藏。它们可能不是由此保险箱创建，或使用了其他 Safe Key。
                 </p>
               ) : null}
               {!loading && directory.entries.length === 0 && directory.skippedEntries === 0 ? (

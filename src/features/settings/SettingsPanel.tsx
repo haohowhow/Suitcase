@@ -162,7 +162,7 @@ const CACHE_OPTIONS = [
   {
     id: 'disk',
     title: '本地磁盘',
-    description: '重启应用后仍可复用文件元数据。',
+    description: '重启应用后仍可复用文件列表。',
     icon: HardDrive,
   },
 ] satisfies Array<{
@@ -535,21 +535,21 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <>
                 <SwitchRow
                   label="空闲或暂停时收为图标"
-                  hint="任务完成提示结束后，悬浮窗收为单图标方块"
+                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
                   checked={settings.floatingWindowCompactEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
                 />
                 <SwitchRow
                   label="单击暂停或继续"
-                  hint="对所有可操作传输执行暂停或继续"
+                  hint="一键暂停或继续所有可暂停的传输"
                   checked={settings.floatingWindowClickToggleEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
                 />
                 <SwitchRow
                   label="双击打开应用"
-                  hint="双击悬浮窗显示并聚焦 Koofr GUI"
+                  hint="双击悬浮窗回到 Koofr GUI 主窗口"
                   checked={settings.floatingWindowDoubleClickOpenEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
@@ -571,14 +571,14 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
 
             <SwitchRow
               label="开机启动 Koofr GUI"
-              hint={settings.nativeSyncBackgroundRequired ? '存在按需同步根时必需；登录 Windows 后自动恢复原生文件访问' : '登录 Windows 后自动启动，仅写入当前用户注册表'}
+              hint={settings.nativeSyncBackgroundRequired ? '使用按需同步时必须开启，以便登录后资源管理器能继续访问在线文件' : '登录 Windows 后自动在后台启动'}
               checked={settings.launchAtLogin}
               disabled={busy || !onGeneralChange || settings.nativeSyncBackgroundRequired}
               onChange={(next) => updateGeneral({ launchAtLogin: next })}
             />
             <SwitchRow
               label="关闭窗口时最小化到托盘"
-              hint={settings.nativeSyncBackgroundRequired ? '存在按需同步根时必需；仍可从托盘菜单明确完全退出' : '点击窗口关闭按钮时不退出应用'}
+              hint={settings.nativeSyncBackgroundRequired ? '使用按需同步时必须开启；仍可从托盘菜单完全退出' : '点击窗口关闭按钮时不退出应用'}
               checked={settings.closeToTray}
               disabled={busy || !onGeneralChange || settings.nativeSyncBackgroundRequired}
               onChange={(next) => updateGeneral({ closeToTray: next })}
@@ -592,7 +592,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             />
             <SwitchRow
               label="退出前若有传输在进行则询问"
-              hint="避免误关闭导致未完成的上传/下载"
+              hint="避免误关窗口中断正在进行的上传或下载"
               checked={settings.confirmQuitWithTransfers}
               disabled={busy || !onGeneralChange}
               onChange={(next) => updateGeneral({ confirmQuitWithTransfers: next })}
@@ -717,14 +717,14 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
 
             <SwitchRow
               label="下载完成后打开所在文件夹"
-              hint="覆盖单文件、文件夹、Vault 与恢复下载"
+              hint="适用于文件、文件夹、保险箱和继续的下载"
               checked={settings.openFolderAfterDownload}
               disabled={busy || !onDownloadBehaviorChange}
               onChange={(next) => updateBehavior({ openFolderAfterDownload: next })}
             />
             <SwitchRow
-              label="下载完成后校验文件哈希"
-              hint="服务端提供 hash 时会计算并对比"
+              label="下载完成后校验文件完整性"
+              hint="Koofr 提供校验值时，比对下载的文件是否完整无误"
               checked={settings.verifyHashAfterDownload}
               disabled={busy || !onDownloadBehaviorChange}
               onChange={(next) => updateBehavior({ verifyHashAfterDownload: next })}
@@ -732,8 +732,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
 
             <div className="settings-row">
               <label htmlFor="settings-keep-part">
-                <strong>失败副本保留天数</strong>
-                <small>过期的 .koofr-part-* 临时文件会在下次启动时清理</small>
+                <strong>未完成下载的保留天数</strong>
+                <small>下载失败或中断留下的临时文件，过期后会在下次启动时清理</small>
               </label>
               <select
                 id="settings-keep-part"
@@ -759,13 +759,13 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <RefreshCw aria-hidden="true" />
               <div>
                 <h3>传输</h3>
-                <p>并发、分卷、断点续传与带宽限制。</p>
+                <p>同时传输的数量、分卷上传、自动重试和速度限制。</p>
               </div>
             </header>
 
             <div className="settings-row settings-row--compact-grid">
               <label htmlFor="settings-upload-concurrency">
-                <strong>并发上传任务数</strong>
+                <strong>同时上传的文件数</strong>
                 <small>取值范围 1–16，建议 2</small>
               </label>
               <select
@@ -782,7 +782,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 ))}
               </select>
               <label htmlFor="settings-download-concurrency">
-                <strong>并发下载任务数</strong>
+                <strong>同时下载的文件数</strong>
                 <small>取值范围 1–16，建议 3</small>
               </label>
               <select
@@ -799,8 +799,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 ))}
               </select>
               <label htmlFor="settings-split-part">
-                <strong>分卷上传默认 part 大小</strong>
-                <small>用于分卷会话默认值，可在弹窗中调整</small>
+                <strong>默认分卷大小</strong>
+                <small>开始分卷上传前仍可单独调整</small>
               </label>
               <select
                 id="settings-split-part"
@@ -817,7 +817,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </select>
               <label htmlFor="settings-auto-split">
                 <strong>提示改用分卷的阈值</strong>
-                <small>普通上传超过阈值时提示改用分卷</small>
+                <small>上传的文件超过此大小时，建议改用分卷上传</small>
               </label>
               <select
                 id="settings-auto-split"
@@ -837,7 +837,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <div className="settings-switch-row">
               <span>
                 <strong>遇到网络错误时自动继续</strong>
-                <small>只处理 network_error。下载和分卷上传从断点继续，普通上传会从头重试。</small>
+                <small>仅在网络中断时自动重试。下载和分卷上传会从中断处继续，直接上传需从头开始。</small>
               </span>
               <button
                 className={`settings-switch${settings.autoRetryNetworkErrors ? ' settings-switch--on' : ''}`}
@@ -859,7 +859,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <div className="settings-row settings-row--compact-grid">
               <label htmlFor="settings-network-retry-limit">
                 <strong>最大重试次数</strong>
-                <small>不包括最初的传输请求；可选择一直重试</small>
+                <small>不含第一次尝试，也可以选择一直重试</small>
               </label>
               <select
                 id="settings-network-retry-limit"
@@ -884,7 +884,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </select>
               <label htmlFor="settings-network-retry-interval">
                 <strong>重试间隔</strong>
-                <small>每次网络错误后等待相同时间再继续</small>
+                <small>网络中断后等待多久再重试</small>
               </label>
               <select
                 id="settings-network-retry-interval"
@@ -915,14 +915,14 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <div>
                 <h3>带宽</h3>
                 <p>
-                  限速实时应用于所有文件传输；系统空闲满五分钟时可自动恢复全速。
+                  限速会立即作用于所有传输；也可以在电脑空闲 5 分钟后自动恢复全速。
                 </p>
               </div>
             </header>
             <div className="settings-row settings-row--compact-grid">
               <label htmlFor="settings-bandwidth-mode">
                 <strong>带宽模式</strong>
-                <small>控制何时应用限速</small>
+                <small>选择何时限制传输速度</small>
               </label>
               <select
                 id="settings-bandwidth-mode"
@@ -933,7 +933,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               >
                 <option value="full">全速</option>
                 <option value="limited">总是限速</option>
-                <option value="idleFull">系统空闲时全速</option>
+                <option value="idleFull">电脑空闲时全速</option>
               </select>
               <label htmlFor="settings-bandwidth-global">
                 <strong>全局上限（KB/s）</strong>
@@ -973,7 +973,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Database aria-hidden="true" />
               <div>
                 <h3>文件信息缓存</h3>
-                <p>减少重复网络请求；点击文件页面的刷新按钮仍会强制获取最新数据。</p>
+                <p>让文件夹打开得更快；在文件页点击刷新始终会获取最新内容。</p>
               </div>
             </header>
 
@@ -1003,7 +1003,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             </div>
             {settings.cacheMode === 'disk' ? (
               <p className="settings-note">
-                磁盘缓存包含普通文件名和远程路径，但不包含密码、令牌或文件内容。
+                磁盘缓存会保存文件名和云端路径，但不会保存密码或文件内容。
               </p>
             ) : null}
 
@@ -1044,12 +1044,12 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             >
               <HardDrive aria-hidden="true" />
               <div>
-                <h3>应用工作目录</h3>
-                <p>统一保存设置、传输检查点、下载历史、磁盘缓存和诊断日志。</p>
+                <h3>应用数据位置</h3>
+                <p>存放设置、未完成传输的进度、下载历史、缓存和诊断日志。</p>
               </div>
             </header>
             <div className="settings-path-field">
-              <label htmlFor="settings-work-directory">工作配置目录</label>
+              <label htmlFor="settings-work-directory">数据文件夹</label>
               <span className="path-field__control">
                 <input
                   id="settings-work-directory"
@@ -1068,7 +1068,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 />
                 <button
                   type="button"
-                  aria-label="选择应用工作目录"
+                  aria-label="选择应用数据文件夹"
                   title="选择文件夹"
                   disabled={busy || browsing !== null}
                   onClick={() => void browseWorkDirectory()}
@@ -1085,7 +1085,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 onChange={(event) => setMoveExisting(event.target.checked)}
               />
               <span>
-                <strong>移动当前工作目录中的全部文件</strong>
+                <strong>把现有数据一起移到新位置</strong>
                 <small>取消勾选会从空目录开始，原目录及其中的数据保持不变。</small>
               </span>
             </label>
@@ -1095,14 +1095,14 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               >
                 {settings.workDirectoryMigrationFailed
                   ? '上次迁移未完成；应用仍保留可用数据，并会在下次启动时重试。'
-                  : '目录更改已安排，将在下次启动、打开任何工作文件之前应用。'}
+                  : '新位置将在下次启动应用时生效。'}
               </p>
             ) : null}
             <div className="settings-path-actions">
-              <small>目标必须是空的本地文件夹，且不能位于当前工作目录内部或外层。</small>
+              <small>请选择一个空的本地文件夹，且不能位于当前数据文件夹之内或包含它。</small>
               <button
                 type="button"
-                aria-label="保存工作目录"
+                aria-label="保存数据位置"
                 disabled={busy || !workDirectoryChanged || !normalizedWorkDirectory}
                 onClick={() => onWorkDirectoryChange(normalizedWorkDirectory, moveExisting)}
               >
@@ -1119,7 +1119,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <div>
                 <h3>诊断日志</h3>
                 <p>
-                  用于定位上传、下载和网络错误；不会记录令牌、邮箱、文件名或完整路径。
+                  帮助排查上传、下载和网络问题；不会记录密码、邮箱、文件名或完整路径。
                 </p>
               </div>
             </header>
@@ -1143,7 +1143,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </select>
               <label htmlFor="settings-log-retention">
                 <strong>保留时间</strong>
-                <small>轮转日志超过此时间会自动删除</small>
+                <small>超过此时间的旧日志会自动删除</small>
               </label>
               <select
                 id="settings-log-retention"
@@ -1160,7 +1160,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </select>
               <label htmlFor="settings-log-size">
                 <strong>单文件上限</strong>
-                <small>达到上限后创建新的日志文件</small>
+                <small>单个日志文件达到此大小后另起新文件</small>
               </label>
               <select
                 id="settings-log-size"
@@ -1244,7 +1244,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <div className="settings-row">
               <label htmlFor="settings-link-kind">
                 <strong>默认链接类型</strong>
-                <small>下载链接分享文件；上传链接允许他人上传</small>
+                <small>下载链接用于分享文件；接收文件链接允许他人向文件夹上传</small>
               </label>
               <select
                 id="settings-link-kind"
@@ -1254,7 +1254,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                   updateLinks({ kind: event.target.value as LinkDefaultKind })}
               >
                 <option value="download">下载链接</option>
-                <option value="upload">上传链接</option>
+                <option value="upload">接收文件链接</option>
               </select>
             </div>
             <div className="settings-row">
@@ -1285,7 +1285,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               onChange={(next) => updateLinks({ requirePassword: next })}
             />
             <p className="settings-note">
-              说明：Koofr 服务端约束仍生效。默认值仅在创建界面中预填，不会绕过任何权限。
+              说明：这些默认值只会在创建链接时预先填好，Koofr 的分享规则仍然适用。
             </p>
           </section>
         ) : null}
@@ -1296,13 +1296,13 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Bell aria-hidden="true" />
               <div>
                 <h3>通知</h3>
-                <p>使用 Tauri 原生通知，仅包含任务显示名，不包含完整文件路径。</p>
+                <p>使用 Windows 系统通知，只显示任务名称，不包含文件的完整路径。</p>
               </div>
             </header>
 
             <SwitchRow
               label="传输完成时通知"
-              hint="非活动窗口下会弹出系统通知"
+              hint="应用不在前台时弹出系统通知"
               checked={settings.notifyOnComplete}
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({ notifyOnComplete: next })}
@@ -1315,8 +1315,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               onChange={(next) => updateNotifications({ notifySound: next })}
             />
             <SwitchRow
-              label="任务栏角标显示活动传输数"
-              hint="仅当 Windows 支持 taskbar overlay 时生效"
+              label="在任务栏图标上显示进行中的传输数"
+              hint="需要当前 Windows 任务栏支持图标角标"
               checked={settings.trayBadge}
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({ trayBadge: next })}
@@ -1335,21 +1335,21 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <>
                 <SwitchRow
                   label="空闲或暂停时收为图标"
-                  hint="任务完成提示结束后，悬浮窗收为单图标方块"
+                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
                   checked={settings.floatingWindowCompactEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
                 />
                 <SwitchRow
                   label="单击暂停或继续"
-                  hint="对所有可操作传输执行暂停或继续"
+                  hint="一键暂停或继续所有可暂停的传输"
                   checked={settings.floatingWindowClickToggleEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
                 />
                 <SwitchRow
                   label="双击打开应用"
-                  hint="双击悬浮窗显示并聚焦 Koofr GUI"
+                  hint="双击悬浮窗回到 Koofr GUI 主窗口"
                   checked={settings.floatingWindowDoubleClickOpenEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
@@ -1372,7 +1372,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <div className="settings-row">
               <label htmlFor="settings-idle-logout">
                 <strong>空闲自动登出</strong>
-                <small>无操作达到该时间后自动断开 Koofr 会话</small>
+                <small>一段时间无操作后自动退出登录</small>
               </label>
               <select
                 id="settings-idle-logout"
@@ -1491,7 +1491,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <p className="settings-note">版本信息暂不可用。</p>
             )}
             <p className="settings-note">
-              Windows 安装包目前未做代码签名，若首次运行出现 SmartScreen 提示，请点击“更多信息”后继续运行。
+              Windows 安装包暂未进行代码签名。首次运行若出现 Windows SmartScreen 提示，请点击“更多信息”，再选择“仍要运行”。
             </p>
           </section>
         ) : null}

@@ -41,7 +41,7 @@ import type {
 } from './types/backend'
 import type { SplitUploadSettings, UploadMode } from './types/files'
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
+type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
 export interface PendingDownload {
@@ -396,15 +396,9 @@ function App() {
         return
       }
       const thresholdBytes = (settings?.autoSplitThresholdMib ?? 512) * 1024 * 1024
-      if (
-        selection.fileSize !== null
-        && selection.fileSize > thresholdBytes
-        && window.confirm(
-          `文件超过 ${settings?.autoSplitThresholdMib ?? 512} MiB。选择“确定”改用分卷上传；选择“取消”继续普通上传。`,
-        )
-      ) {
+      if (selection.fileSize !== null && selection.fileSize > thresholdBytes) {
         setPendingSplitUpload({ selection, mountId: uploadMountId, path: uploadPath })
-        setModalKind('splitUpload')
+        setModalKind('splitPrompt')
         return
       }
       await startSelectedUpload(selection, uploadMountId, uploadPath, null)
@@ -420,6 +414,20 @@ function App() {
     setModalKind(null)
     void startSelectedUpload(pending.selection, pending.mountId, pending.path, splitSettings)
   }, [pendingSplitUpload, startSelectedUpload])
+
+  const uploadPendingAsSingleFile = useCallback(() => {
+    if (!pendingSplitUpload) return
+    const pending = pendingSplitUpload
+    setPendingSplitUpload(null)
+    setModalKind(null)
+    void startSelectedUpload(pending.selection, pending.mountId, pending.path, null)
+  }, [pendingSplitUpload, startSelectedUpload])
+
+  const openHelp = useCallback(() => {
+    void koofr.openExternalPage('issues').catch((error) => {
+      showNotice(commandErrorMessage(error, '无法打开帮助页面。'))
+    })
+  }, [showNotice])
 
 
 
@@ -673,6 +681,7 @@ function App() {
             onThemeClick={() => setModalKind('theme')}
             onVaultClick={() => setModalKind('vault')}
             onLogoutClick={logout}
+            onHelpClick={openHelp}
             storageName={activeMount?.name ?? ''}
             storageUsed={activeMount?.spaceUsed ?? null}
             storageTotal={activeMount?.spaceTotal ?? null}
@@ -760,8 +769,8 @@ function App() {
             <button
               className="transfer-reopen"
               type="button"
-              aria-label={activeDownloadCount > 0 ? `打开传输界面，${activeDownloadCount} 项正在下载` : '打开传输界面'}
-              title="打开传输界面"
+              aria-label={activeDownloadCount > 0 ? `打开传输面板，${activeDownloadCount} 项正在下载` : '打开传输面板'}
+              title="打开传输面板"
               onClick={() => setTransferVisible(true)}
             >
               <ArrowDownToLine size={23} />
@@ -790,6 +799,25 @@ function App() {
           }}
           onConfirm={(directory, askEveryTime) => void confirmDownload(directory, askEveryTime)}
         />
+      ) : null}
+
+      {authState === 'signedIn' && modalKind === 'splitPrompt' && pendingSplitUpload ? (
+        <Modal
+          title="这是一个大文件"
+          actionLabel="使用分卷上传"
+          secondaryActionLabel="直接上传"
+          onSecondaryAction={uploadPendingAsSingleFile}
+          onClose={() => {
+            setModalKind(null)
+            setPendingSplitUpload(null)
+          }}
+          onAction={() => setModalKind('splitUpload')}
+        >
+          <p>
+            文件大于 {settings?.autoSplitThresholdMib ?? 512} MiB。建议使用分卷上传：网络中断后可以从断点继续，不必重新上传整个文件。
+          </p>
+          <p>直接上传会在 Koofr 中保存为单个文件，但中断后需要从头开始。</p>
+        </Modal>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'splitUpload' && pendingSplitUpload ? (
@@ -853,7 +881,7 @@ function App() {
           onClose={() => setModalKind(null)}
           onAction={() => void deleteFiles()}
         >
-          <p>删除后，所选文件和文件夹将从当前 Koofr 存储位置移除。此操作需要明确确认。</p>
+          <p>确定要删除所选的 {pendingFiles.length} 个项目吗？Koofr 存储中删除的项目会移入回收站，可在保留期内恢复。</p>
         </Modal>
       ) : null}
 

@@ -64,10 +64,10 @@ export function ConnectedPlacesDialog({ mounts, onClose }: ConnectedPlacesDialog
           <ExternalLink aria-hidden="true" />
           <span>
             <strong>连接、移除或重新授权</strong>
-            <small>Koofr 暂未公开这些授权操作所需的桌面 API。登录后请打开“账户 → 位置”。</small>
+            <small>目前只能在 Koofr 网页版中管理。登录网页版后打开“账户 → 位置”即可操作。</small>
           </span>
           <label>
-            官方页面地址
+            Koofr 网页地址
             <input value={ACCOUNT_URL} readOnly onFocus={(event) => event.currentTarget.select()} />
           </label>
           <button className="secondary-button" type="button" onClick={() => void copyAccountAddress()}>

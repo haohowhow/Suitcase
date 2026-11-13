@@ -161,8 +161,8 @@ export const FileWorkspace = memo(function FileWorkspace({
   const downloadableSelection = singleSelection
   const crumbs = pathCrumbs(path)
   const syncedText = lastSyncedAt
-    ? `同步于 ${lastSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-    : '尚未同步'
+    ? `更新于 ${lastSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    : '尚未更新'
 
   return (
     <main className="workspace">
@@ -230,7 +230,7 @@ export const FileWorkspace = memo(function FileWorkspace({
 
       <header className="workspace__heading">
         <h1 translate={path === '/' && !activeMount?.name ? undefined : 'no'}>{directoryHeading(path, activeMount)}</h1>
-        <p>{files.length} 个项目 · {loading ? '正在同步…' : syncedText}</p>
+        <p>{files.length} 个项目 · {loading ? '正在刷新…' : syncedText}</p>
       </header>
 
       {selectedFiles.length > 0 ? (
@@ -339,7 +339,7 @@ export const FileWorkspace = memo(function FileWorkspace({
           <div className="empty-state">
             <RefreshCw className="icon-spin" size={27} />
             <strong>正在读取 Koofr 文件</strong>
-            <span>目录内容将在连接完成后显示</span>
+            <span>请稍候</span>
           </div>
         ) : null}
 

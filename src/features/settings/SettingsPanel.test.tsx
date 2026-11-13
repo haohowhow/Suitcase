@@ -133,8 +133,8 @@ describe('SettingsPanel storage and diagnostics', () => {
     })
     await user.click(screen.getByRole('tab', { name: '缓存' }))
 
-    await user.click(screen.getByRole('button', { name: '选择应用工作目录' }))
-    await user.click(screen.getByRole('button', { name: '保存工作目录' }))
+    await user.click(screen.getByRole('button', { name: '选择应用数据文件夹' }))
+    await user.click(screen.getByRole('button', { name: '保存数据位置' }))
 
     expect(onWorkDirectoryChange).toHaveBeenCalledWith('D:\\Koofr Work', true)
   })
@@ -148,9 +148,9 @@ describe('SettingsPanel storage and diagnostics', () => {
     })
     await user.click(screen.getByRole('tab', { name: '缓存' }))
 
-    await user.click(screen.getByRole('button', { name: '选择应用工作目录' }))
-    await user.click(screen.getByRole('checkbox', { name: /移动当前工作目录/ }))
-    await user.click(screen.getByRole('button', { name: '保存工作目录' }))
+    await user.click(screen.getByRole('button', { name: '选择应用数据文件夹' }))
+    await user.click(screen.getByRole('checkbox', { name: /把现有数据一起移到新位置/ }))
+    await user.click(screen.getByRole('button', { name: '保存数据位置' }))
 
     expect(onWorkDirectoryChange).toHaveBeenCalledWith('D:\\Fresh Koofr Work', false)
   })
@@ -229,7 +229,7 @@ describe('SettingsPanel new sections', () => {
     await user.click(screen.getByRole('tab', { name: '传输' }))
 
     await user.selectOptions(
-      screen.getByRole('combobox', { name: /并发下载任务数/ }),
+      screen.getByRole('combobox', { name: /同时下载的文件数/ }),
       '8',
     )
 

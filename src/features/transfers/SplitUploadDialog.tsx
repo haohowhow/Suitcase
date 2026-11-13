@@ -53,7 +53,7 @@ export function SplitUploadDialog({
 
   return (
     <Modal
-      title="设置可续传分卷"
+      title="分卷上传"
       actionLabel="开始分卷上传"
       actionDisabled={!validPackageName || !validPartSize}
       onClose={onClose}
@@ -71,13 +71,13 @@ export function SplitUploadDialog({
           </span>
         </div>
         <p>
-          远端将创建一个文件夹，内部保存原始二进制分卷、恢复命令、SHA-256 校验和与开放格式清单。
+          将在 Koofr 中创建一个文件夹，存放分卷文件和还原脚本。即使不使用本应用，也能用系统自带命令把分卷还原为原文件。
         </p>
         <label className="modal-field">
-          <span>远端文件夹名称</span>
+          <span>Koofr 文件夹名称</span>
           <input
             autoFocus
-            aria-label="远端文件夹名称"
+            aria-label="Koofr 文件夹名称"
             value={packageName}
             maxLength={MAX_REMOTE_NAME_UNITS}
             aria-invalid={!validPackageName}

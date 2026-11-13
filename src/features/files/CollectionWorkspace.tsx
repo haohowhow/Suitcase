@@ -193,8 +193,8 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
     && (isDirectory(singleFile) || singleFile.path !== '/' || singleFile.shareDirection === null)
   const itemCount = isTrash ? trash.length : files.length
   const syncedText = lastSyncedAt
-    ? `同步于 ${lastSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-    : '尚未同步'
+    ? `更新于 ${lastSyncedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    : '尚未更新'
 
   return (
     <main className="workspace collection-workspace">
@@ -234,7 +234,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
         <div>
           <h1>{view}</h1>
           <p>
-            {details.description} · {itemCount} 个项目 · {loading ? '正在同步…' : syncedText}
+            {details.description} · {itemCount} 个项目 · {loading ? '正在刷新…' : syncedText}
             {isTrash && retentionDays > 0 ? ` · 保留 ${retentionDays} 天` : ''}
           </p>
         </div>
@@ -339,7 +339,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           <div className="empty-state">
             <RefreshCw className="icon-spin" size={27} />
             <strong>正在读取{view}</strong>
-            <span>内容将在 Koofr 响应后显示</span>
+            <span>请稍候</span>
           </div>
         ) : null}
 
@@ -348,7 +348,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
             <FileText size={27} />
             <strong>无法显示{view}</strong>
             <span>{error}</span>
-            {diagnostic ? <code className="error-diagnostic">诊断：{diagnostic}</code> : null}
+            {diagnostic ? <code className="error-diagnostic">错误代码：{diagnostic}</code> : null}
             <button className="secondary-button" type="button" onClick={onRefresh}>重试</button>
           </div>
         ) : null}
@@ -357,7 +357,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           <div className="empty-state">
             {query ? <Search size={27} /> : <HeadingIcon size={27} />}
             <strong>{query ? '没有匹配的项目' : details.empty}</strong>
-            <span>{query ? '试试筛选其他文件名' : isTrash ? '删除的项目会在这里显示' : '这里会显示来自 Koofr 的真实内容'}</span>
+            <span>{query ? '试试筛选其他文件名' : isTrash ? '删除的项目会在这里显示' : '有新内容时会显示在这里'}</span>
           </div>
         ) : null}
       </section>

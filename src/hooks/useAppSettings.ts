@@ -99,7 +99,7 @@ export function useAppSettings(
         showNotice('日志设置已保存')
       } catch (error) {
         setSettingsError(
-          commandErrorMessage(error, '无法保存日志设置，请检查参数。'),
+          commandErrorMessage(error, '无法保存日志设置。'),
         )
       } finally {
         setSettingsBusy(false)
@@ -152,12 +152,12 @@ export function useAppSettings(
         setSettings(
           await koofr.updateWorkDirectory(workDirectory, moveExisting),
         )
-        showNotice('工作目录更改已保存，将在下次启动时应用')
+        showNotice('数据位置已保存，将在下次启动时生效')
       } catch (error) {
         setSettingsError(
           commandErrorMessage(
             error,
-            '无法更改工作目录。请选择一个空的、独立的本地文件夹。',
+            '无法更改数据位置。请选择一个空的本地文件夹。',
           ),
         )
       } finally {
@@ -301,8 +301,8 @@ export function useAppSettings(
             next.defaultSplitPartMib,
             next.autoSplitThresholdMib,
           ),
-        '传输高级设置已保存',
-        '无法保存传输高级设置。',
+        '重试设置已保存',
+        '无法保存重试设置。',
       ),
     [runSettingsMutation],
   )
@@ -360,7 +360,7 @@ export function useAppSettings(
           !settings?.notifyOnComplete &&
           !(await ensureNotificationPermission())
         ) {
-          setSettingsError('Windows 通知权限未获准，完成通知未开启。')
+          setSettingsError('Windows 未获得系统通知权限，传输完成通知没有开启。')
           return
         }
         await runSettingsMutation(
@@ -450,8 +450,8 @@ export function useAppSettings(
     (next: { keepDays: number; keepCount: number }) =>
       void runSettingsMutation(
         () => koofr.updateHistoryPolicy(next.keepDays, next.keepCount),
-        '历史策略已保存',
-        '无法保存历史策略。',
+        '下载历史设置已保存',
+        '无法保存下载历史设置。',
       ),
     [runSettingsMutation],
   )

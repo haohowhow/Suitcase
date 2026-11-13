@@ -33,6 +33,7 @@ interface AppSidebarProps {
   onThemeClick: () => void
   onVaultClick: () => void
   onLogoutClick: () => void
+  onHelpClick: () => void
   storageName: string
   storageUsed: number | null
   storageTotal: number | null
@@ -46,6 +47,7 @@ export const AppSidebar = memo(function AppSidebar({
   onThemeClick,
   onVaultClick,
   onLogoutClick,
+  onHelpClick,
   storageName,
   storageUsed,
   storageTotal,
@@ -108,7 +110,7 @@ export const AppSidebar = memo(function AppSidebar({
         </div>
         <button className="footer-link" type="button" onClick={onThemeClick}>
           <Palette size={17} />
-          皮肤
+          外观主题
         </button>
         <button className="footer-link" type="button" onClick={onSettingsClick}>
           <Settings size={17} />
@@ -118,7 +120,7 @@ export const AppSidebar = memo(function AppSidebar({
           <LogOut size={17} />
           退出登录
         </button>
-        <button className="footer-link" type="button">
+        <button className="footer-link" type="button" onClick={onHelpClick}>
           <HelpCircle size={17} />
           帮助与反馈
         </button>
