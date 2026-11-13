@@ -99,7 +99,8 @@ All spacing derives from a 4px base.
 
 - Desktop shell target: 1280×720 with a 980×640 minimum native window.
 - Transfer panel: 470px desktop rail, overlaying content at narrower desktop widths.
-- Modal widths: 430px standard and 660px wide, constrained to the viewport.
+- Modal widths: 440px standard and 660px wide, constrained to the viewport. Settings use a fixed 920×660 dialog (clamped to the viewport) so switching tabs never resizes it; only the page area scrolls.
+- Controls: buttons, selects, search and text inputs are 34px high with a 6px radius; file rows are 46px; workspace titles are 22px.
 - Responsive checkpoints: 1280px, 920px, and 650px; forms and setting choices collapse to one column at the compact breakpoint.
 
 ### Rules
@@ -110,10 +111,17 @@ All spacing derives from a 4px base.
 
 ## 5. Components
 
+### Lists and navigation
+
+- Selected sidebar, settings-nav and theme items use a neutral tint plus a 3px accent marker inside the item; accent color is not used as the row fill.
+- File-list columns have fixed tracks for date, size and row actions, so rows with different action buttons stay aligned.
+- Selection actions appear in the heading row only while something is selected; there is no empty placeholder bar.
+
 ### Modal
 
-- **Structure**: backdrop → semantic dialog section → close button, heading, content, primary action.
-- **Variants**: standard, wide, download destination, and split-upload setup.
+- **Structure**: backdrop → semantic dialog section → close button, heading, content, footer with right-aligned buttons (secondary, then primary). Buttons keep their natural width (min 96px); never stretch them across the dialog.
+- **Variants**: standard, wide, settings (fixed size, bordered header and footer, two-pane body), download destination, and split-upload setup.
+- **Surface**: opaque `--surface` with a 1px border; no backdrop blur on the dialog or the overlay.
 - **Spacing**: `--space-3` through `--space-6`.
 - **States**: opening, visible, busy/disabled action, validation error, closing.
 - **Accessibility**: labelled modal dialog, Escape dismissal, focus entry and restoration, backdrop click dismissal, clicks inside never dismiss.

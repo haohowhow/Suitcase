@@ -1,9 +1,7 @@
 import { memo, useEffect, useState, type FormEvent } from 'react'
 import {
-  Cloud,
   Eye,
   EyeOff,
-  FileText,
   LockKeyhole,
   Monitor,
   ShieldCheck,
@@ -59,18 +57,9 @@ export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, on
           <BrandMark />
         </div>
 
-        <div className="auth-illustration" aria-hidden="true">
-          <div className="auth-file auth-file--left"><FileText /></div>
-          <div className="auth-file auth-file--center"><FileText /></div>
-          <div className="auth-file auth-file--right"><FileText /></div>
-          <div className="auth-flow auth-flow--left" />
-          <div className="auth-flow auth-flow--right" />
-          <div className="auth-flow auth-flow--down" />
-          <span className="auth-flow__check">✓</span>
-          <div className="auth-cloud">
-            <Cloud />
-            <LockKeyhole />
-          </div>
+        <div className="auth-story__copy">
+          <h2>Koofr 桌面客户端</h2>
+          <p>浏览、传输和同步 Koofr 中的文件。大文件可以分卷续传，保险箱内容只在本机解密。</p>
         </div>
 
         <div className="auth-privacy">

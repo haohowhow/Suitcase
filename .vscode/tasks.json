@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Koofr: 构建桌面 Release",
+      "type": "npm",
+      "script": "build:desktop",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Koofr: 构建 NSIS 安装包",
+      "type": "npm",
+      "script": "build:installer",
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Koofr: 构建前端",
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Koofr: 构建桌面 Debug",
+      "type": "npm",
+      "script": "tauri",
+      "args": ["build", "--debug", "--no-bundle"],
+      "group": "build",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Koofr: 快速检查",
+      "type": "npm",
+      "script": "verify:quick",
+      "problemMatcher": []
+    },
+    {
+      "label": "Koofr: Vite 开发服务",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE v",
+          "endsPattern": "Local:.*http://127\\.0\\.0\\.1:1420"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "runOptions": { "instanceLimit": 1 }
+    }
+  ]
+}

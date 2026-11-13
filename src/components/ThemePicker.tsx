@@ -27,10 +27,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
               style={style}
             >
               <span className="theme-option__swatch" aria-hidden="true" />
-              <span className="theme-option__copy">
-                <strong>{theme.label}</strong>
-                <small>{theme.description}</small>
-              </span>
+              <span className="theme-option__label">{theme.label}</span>
               <span className="theme-option__check" aria-hidden="true">
                 {selected ? <Check size={15} strokeWidth={2.4} /> : null}
               </span>

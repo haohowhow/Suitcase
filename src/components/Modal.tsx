@@ -14,6 +14,8 @@ interface ModalProps {
   readonly secondaryActionDisabled?: boolean
   readonly wide?: boolean
   readonly extraWide?: boolean
+  /** Extra class on the dialog surface, for dialogs that need their own layout. */
+  readonly className?: string
 }
 
 export function Modal({
@@ -28,6 +30,7 @@ export function Modal({
   secondaryActionDisabled = false,
   wide = false,
   extraWide = false,
+  className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -67,15 +70,15 @@ export function Modal({
         onClick={() => onCloseRef.current()}
       />
       <section
-        className={`modal${wide ? ' modal--wide' : ''}${extraWide ? ' modal--extra-wide' : ''}`}
+        className={`modal${wide ? ' modal--wide' : ''}${extraWide ? ' modal--extra-wide' : ''}${className ? ` ${className}` : ''}`}
       >
         <button ref={closeButtonRef} className="icon-button modal__close" type="button" aria-label="关闭" onClick={onClose}>
           <X size={18} />
         </button>
         <h2 id="modal-title">{title}</h2>
         <div className="modal__content">{children}</div>
-        {secondaryActionLabel ? (
-          <div className="modal__actions">
+        <div className="modal__actions">
+          {secondaryActionLabel ? (
             <button
               className="secondary-button"
               type="button"
@@ -84,20 +87,16 @@ export function Modal({
             >
               {secondaryActionLabel}
             </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={actionDisabled}
-              onClick={onAction ?? onClose}
-            >
-              {actionLabel}
-            </button>
-          </div>
-        ) : (
-          <button className="primary-button modal__action" type="button" disabled={actionDisabled} onClick={onAction ?? onClose}>
+          ) : null}
+          <button
+            className="primary-button"
+            type="button"
+            disabled={actionDisabled}
+            onClick={onAction ?? onClose}
+          >
             {actionLabel}
           </button>
-        )}
+        </div>
       </section>
     </dialog>
   )

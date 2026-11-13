@@ -5,7 +5,6 @@ import {
   Eye,
   FileText,
   FolderOpen,
-  LayoutList,
   Palette,
   RefreshCw,
   RotateCcw,
@@ -229,42 +228,37 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
         </div>
       </div>
 
-      <header className="workspace__heading collection-heading">
-        <span className="collection-heading__icon"><HeadingIcon size={24} /></span>
-        <div>
+      <div className="workspace__heading-row">
+        <header className="workspace__heading">
           <h1>{view}</h1>
           <p>
             {details.description} · {itemCount} 个项目 · {loading ? '正在刷新…' : syncedText}
             {isTrash && retentionDays > 0 ? ` · 保留 ${retentionDays} 天` : ''}
           </p>
-        </div>
-      </header>
+        </header>
 
-      {isTrash && selectedTrash.length > 0 ? (
-        <div className="selection-toolbar" aria-label="所选回收站项目操作">
-          <strong>{selectedTrash.length}</strong><span>已选中</span><i />
-          <button type="button" disabled={busy} onClick={() => onRestore(selectedTrash)}>
-            <RotateCcw size={18} />恢复所选
-          </button>
-        </div>
-      ) : !isTrash && selectedFiles.length > 0 ? (
-        <div className="selection-toolbar" aria-label="所选文件操作">
-          <strong>{selectedFiles.length}</strong><span>已选中</span><i />
-          <button type="button" disabled={!singleFile} onClick={() => singleFile && onDownload(singleFile)}>
-            <ArrowDownToLine size={18} />下载
-          </button>
-          <button type="button" disabled={!previewableFile} onClick={() => previewableFile && onPreview(previewableFile)}>
-            <Eye size={18} />预览
-          </button>
-          <button type="button" disabled={!canOpenLocation} onClick={() => singleFile && onOpenLocation(singleFile)}>
-            <FolderOpen size={18} />打开位置
-          </button>
-        </div>
-      ) : (
-        <div className="selection-toolbar selection-toolbar--empty">
-          <span>{isTrash ? '选择项目后可以恢复' : '选择项目以查看可用操作'}</span>
-        </div>
-      )}
+        {isTrash && selectedTrash.length > 0 ? (
+          <div className="selection-toolbar" aria-label="所选回收站项目操作">
+            <strong>{selectedTrash.length}</strong><span>已选中</span><i />
+            <button type="button" disabled={busy} onClick={() => onRestore(selectedTrash)}>
+              <RotateCcw size={18} />恢复所选
+            </button>
+          </div>
+        ) : !isTrash && selectedFiles.length > 0 ? (
+          <div className="selection-toolbar" aria-label="所选文件操作">
+            <strong>{selectedFiles.length}</strong><span>已选中</span><i />
+            <button type="button" disabled={!singleFile} onClick={() => singleFile && onDownload(singleFile)}>
+              <ArrowDownToLine size={18} />下载
+            </button>
+            <button type="button" disabled={!previewableFile} onClick={() => previewableFile && onPreview(previewableFile)}>
+              <Eye size={18} />预览
+            </button>
+            <button type="button" disabled={!canOpenLocation} onClick={() => singleFile && onOpenLocation(singleFile)}>
+              <FolderOpen size={18} />打开位置
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <section className="file-list collection-list" aria-label={`${view}列表`} aria-busy={loading}>
         <div className="file-row file-row--header collection-row" role="row">
@@ -275,7 +269,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           <span>位置</span>
           <span>{isTrash ? '删除时间' : '修改时间'}</span>
           <span>大小</span>
-          <LayoutList size={18} />
+          <span aria-hidden="true" />
         </div>
 
         {!isTrash ? visibleFiles.map((file) => {

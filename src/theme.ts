@@ -2,7 +2,6 @@ export const themes = [
   {
     id: 'koofr',
     label: 'Koofr 绿',
-    description: '明亮、自然，默认主题',
     accent: '#66c451',
     accentDark: '#50a93f',
     accentContrast: '#142a17',
@@ -12,7 +11,6 @@ export const themes = [
   {
     id: 'ocean',
     label: '海湾蓝',
-    description: '清晰、沉静的效率感',
     accent: '#3f7fea',
     accentDark: '#2d68cf',
     accentContrast: '#ffffff',
@@ -22,7 +20,6 @@ export const themes = [
   {
     id: 'iris',
     label: '鸢尾紫',
-    description: '柔和、专注的现代感',
     accent: '#7659d9',
     accentDark: '#6243c4',
     accentContrast: '#ffffff',
@@ -32,7 +29,6 @@ export const themes = [
   {
     id: 'coral',
     label: '珊瑚红',
-    description: '温暖、有活力的强调色',
     accent: '#f05d58',
     accentDark: '#d94a45',
     accentContrast: '#ffffff',
@@ -42,7 +38,6 @@ export const themes = [
   {
     id: 'berry',
     label: '莓果粉',
-    description: '精致、克制的个性色彩',
     accent: '#c24f7d',
     accentDark: '#a93a68',
     accentContrast: '#ffffff',

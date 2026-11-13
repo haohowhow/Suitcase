@@ -1,0 +1,52 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "桌面：开发运行（热重载）",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev:desktop",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "桌面：Rust 断点调试",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/koofr-gui.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Koofr: 构建桌面 Debug",
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "environment": []
+    },
+    {
+      "name": "前端：Edge 断点调试（仅 UI）",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://127.0.0.1:1420",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Koofr: Vite 开发服务"
+    },
+    {
+      "name": "构建：Windows EXE（Release）",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run build:desktop",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "构建：NSIS 安装包",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run build:installer",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "构建：前端",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run build",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

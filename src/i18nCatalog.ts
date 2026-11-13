@@ -37,11 +37,6 @@ export const catalog: Record<string, string> = {
   '鸢尾紫': 'Iris Purple',
   '珊瑚红': 'Coral Red',
   '莓果粉': 'Berry Pink',
-  '明亮、自然，默认主题': 'Bright and natural, the default',
-  '清晰、沉静的效率感': 'Clear and calm',
-  '柔和、专注的现代感': 'Soft and focused',
-  '温暖、有活力的强调色': 'Warm and lively',
-  '精致、克制的个性色彩': 'Refined and understated',
 
   // Sign-in
   '登录 Koofr': 'Sign in to Koofr',
@@ -58,6 +53,8 @@ export const catalog: Record<string, string> = {
   '请输入有效的邮箱地址。': 'Enter a valid email address.',
   '请输入应用专用密码。': 'Enter your app password.',
   'Koofr 安全连接说明': 'About secure sign-in',
+  'Koofr 桌面客户端': 'Koofr for desktop',
+  '浏览、传输和同步 Koofr 中的文件。大文件可以分卷续传，保险箱内容只在本机解密。': 'Browse, transfer, and sync your Koofr files. Large files can resume in parts, and vault contents are decrypted only on this PC.',
   '安全连接说明': 'About secure sign-in',
   '密码不会写入网页存储；选择记住密码后，': 'Your password is never stored by the web layer. If you choose to save it,',
   '将由 Windows 凭据管理器保护。': 'Windows Credential Manager protects it.',

@@ -8,7 +8,6 @@ import {
   FileText,
   Folder,
   FolderInput,
-  LayoutList,
   Palette,
   Pencil,
   RefreshCw,
@@ -228,45 +227,46 @@ export const FileWorkspace = memo(function FileWorkspace({
         </div>
       </div>
 
-      <header className="workspace__heading">
-        <h1 translate={path === '/' && !activeMount?.name ? undefined : 'no'}>{directoryHeading(path, activeMount)}</h1>
-        <p>{files.length} 个项目 · {loading ? '正在刷新…' : syncedText}</p>
-      </header>
+      <div className="workspace__heading-row">
+        <header className="workspace__heading">
+          <h1 translate={path === '/' && !activeMount?.name ? undefined : 'no'}>{directoryHeading(path, activeMount)}</h1>
+          <p>{files.length} 个项目 · {loading ? '正在刷新…' : syncedText}</p>
+        </header>
 
-      {selectedFiles.length > 0 ? (
-        <div className="selection-toolbar" aria-label="所选文件操作">
-          <strong>{selectedFiles.length}</strong><span>已选中</span><i />
-          <button type="button" disabled={!downloadableSelection} onClick={() => downloadableSelection && onDownload(downloadableSelection)}>
-            <ArrowDownToLine size={18} />下载
-          </button>
-          <button type="button" disabled={!previewableSelection} onClick={() => previewableSelection && onPreview(previewableSelection)}>
-            <Eye size={18} />预览
-          </button>
-          <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onShare(singleSelection)}>
-            <Share2 size={17} />分享
-          </button>
-          <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onRename(singleSelection)}>
-            <Pencil size={17} />重命名
-          </button>
-          <button type="button" onClick={() => onMove(selectedFiles)}>
-            <FolderInput size={17} />移动
-          </button>
-          <button className="selection-action--danger" type="button" onClick={() => onDelete(selectedFiles)}>
-            <Trash2 size={17} />删除
-          </button>
-        </div>
-      ) : <div className="selection-toolbar selection-toolbar--empty"><span>选择项目以查看可用操作</span></div>}
+        {selectedFiles.length > 0 ? (
+          <div className="selection-toolbar" aria-label="所选文件操作">
+            <strong>{selectedFiles.length}</strong><span>已选中</span><i />
+            <button type="button" disabled={!downloadableSelection} onClick={() => downloadableSelection && onDownload(downloadableSelection)}>
+              <ArrowDownToLine size={18} />下载
+            </button>
+            <button type="button" disabled={!previewableSelection} onClick={() => previewableSelection && onPreview(previewableSelection)}>
+              <Eye size={18} />预览
+            </button>
+            <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onShare(singleSelection)}>
+              <Share2 size={17} />分享
+            </button>
+            <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onRename(singleSelection)}>
+              <Pencil size={17} />重命名
+            </button>
+            <button type="button" onClick={() => onMove(selectedFiles)}>
+              <FolderInput size={17} />移动
+            </button>
+            <button className="selection-action--danger" type="button" onClick={() => onDelete(selectedFiles)}>
+              <Trash2 size={17} />删除
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <section className="file-list" aria-label="文件列表" aria-busy={loading}>
         <div className="file-row file-row--header" role="row">
           <button className={`checkbox${allVisibleSelected ? ' checkbox--checked' : ''}`} type="button" onClick={toggleAll} aria-label="全选当前文件">
             {allVisibleSelected ? <Check size={13} /> : null}
           </button>
-          <button className="column-sort" type="button">名称<ArrowUp size={14} /></button>
-          <span>所有者</span>
+          <span>名称</span>
           <span>修改时间</span>
           <span>大小</span>
-          <LayoutList size={18} />
+          <span aria-hidden="true" />
         </div>
 
         {path !== '/' ? (
@@ -278,7 +278,6 @@ export const FileWorkspace = memo(function FileWorkspace({
             </button>
             <span>返回上一级目录</span>
             <span />
-            <span>—</span>
             <button className="row-action" type="button" aria-label="返回上一级目录" onClick={() => onNavigate(parentDirectory(path))}>
               <ArrowUp size={18} />
             </button>
@@ -309,7 +308,6 @@ export const FileWorkspace = memo(function FileWorkspace({
                 <FileTypeIcon kind={kind} />
                 <strong translate="no">{file.name}</strong>
               </button>
-              <span>我</span>
               <span>{formatModified(file.modified)}</span>
               <span>{directory ? '-' : formatBytes(file.size)}</span>
               {previewable ? (

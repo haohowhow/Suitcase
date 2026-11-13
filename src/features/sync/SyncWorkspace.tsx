@@ -376,7 +376,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
   return (
     <section className="workspace sync-workspace" aria-label="同步">
       <div className="workspace__header">
-        <div><p className="eyebrow">SYNC</p><h1>同步文件夹</h1><p className="workspace__description">让电脑上的文件夹与 Koofr 保持一致。按需同步会在资源管理器中显示所有文件，打开时才下载。</p></div>
+        <div><h1>同步文件夹</h1><p className="workspace__description">让电脑上的文件夹与 Koofr 保持一致。按需同步会在资源管理器中显示所有文件，打开时才下载。</p></div>
         <button className="button button--primary" type="button" onClick={() => void chooseFolder()}><FolderSync size={17} /> 新建同步</button>
       </div>
       {notice ? <div className="notice notice--error">{notice}</div> : null}

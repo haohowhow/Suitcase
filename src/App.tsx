@@ -776,7 +776,7 @@ function App() {
               title="打开传输面板"
               onClick={() => setTransferVisible(true)}
             >
-              <ArrowDownToLine size={23} />
+              <ArrowDownToLine size={20} />
               {activeDownloadCount > 0 ? (
                 <span>{activeDownloadCount}</span>
               ) : null}
@@ -951,7 +951,7 @@ function App() {
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'settings' ? (
-        <Modal title="设置" actionLabel="完成" extraWide onClose={() => setModalKind(null)}>
+        <Modal title="设置" actionLabel="完成" className="modal--settings" onClose={() => setModalKind(null)}>
           <SettingsPanel
             settings={settings}
             loading={settingsLoading}

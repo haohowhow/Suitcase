@@ -84,6 +84,27 @@ npm run dev:desktop
 
 `npm run dev:desktop` 起来后，改前端代码走 Vite HMR，Rust 端**不会重启**。这在调 UI 又不想中断正在跑的传输时很有用。
 
+### VS Code 一键运行、调试和构建
+
+用 VS Code 打开仓库根目录，进入“运行和调试”（`Ctrl+Shift+D`），在下拉框选择入口后点击绿色运行按钮：
+
+| 入口 | 行为 |
+| --- | --- |
+| 桌面：开发运行（热重载） | 执行 `npm run dev:desktop`，启动完整桌面应用并保留前端 HMR；此入口不提供 Rust 断点调试 |
+| 桌面：Rust 断点调试 | 先执行 `npm run tauri -- build --debug --no-bundle`，再通过 Microsoft C/C++ 调试器启动 Debug EXE，可在 Rust 源码设置断点 |
+| 前端：Edge 断点调试（仅 UI） | 自动启动 Vite 并打开 Edge，可在 TypeScript / TSX 源码设置断点；不提供 Tauri 桌面命令 |
+| 构建：Windows EXE（Release） | 执行 `npm run build:desktop` |
+| 构建：NSIS 安装包 | 执行 `npm run build:installer` |
+| 构建：前端 | 执行 `npm run build` |
+
+配置见 [launch.json](../.vscode/launch.json) 和 [tasks.json](../.vscode/tasks.json)。`F5` 启动所选入口；`Ctrl+Shift+B` 默认构建 Release 桌面 EXE，也可通过“终端 → 运行任务”选择 Debug 构建、安装包、前端构建或快速检查。
+
+Rust 断点调试需要 Microsoft C/C++ 扩展（`ms-vscode.cpptools`），已加入 [扩展推荐](../.vscode/extensions.json)。该入口使用打包的前端资源，无需 Vite，也不提供 HMR；前端改动后需重新启动调试以构建资源。在 WebView 内调试前端可使用桌面开发模式的开发者工具。
+
+启动桌面入口前请完全退出已有 Koofr 实例（包括托盘），避免单实例机制将操作转交旧进程。开发运行和 Edge 调试共用端口 1420，不要同时启动。Edge 调试结束后，Vite 会保留供再次调试使用；结束开发时通过“终端 → 终止任务”停止 `Koofr: Vite 开发服务`。桌面开发模式也可在对应终端按 `Ctrl+C` 停止。
+
+上述配置不改变应用权限、账户或发布流程；桌面启动、断点命中和停止行为需要人工在本机验证。
+
 ## 4. 构建
 
 ### 4.1 前端静态资源
