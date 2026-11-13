@@ -677,7 +677,10 @@ function App() {
           <AppSidebar
             activeItem={activeItem}
             onSelect={selectNavigation}
-            onSettingsClick={() => void openSettings()}
+            onSettingsClick={() => {
+              setModalKind('settings')
+              void openSettings()
+            }}
             onThemeClick={() => setModalKind('theme')}
             onVaultClick={() => setModalKind('vault')}
             onLogoutClick={logout}
