@@ -53,7 +53,7 @@ rustup default stable-x86_64-pc-windows-msvc
 ## 2. 拉代码和装依赖
 
 ```powershell
-git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
+git clone https://forgejo.haohaohow.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 ```

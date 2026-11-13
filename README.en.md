@@ -6,12 +6,12 @@
 
 Built with Tauri v2 + React + TypeScript + Rust. Aims to feel like a native file manager, not a web wrapper.
 
-[![Source: Forgejo](https://img.shields.io/badge/Source-Forgejo-fb923c)](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI)
+[![Source: Forgejo](https://img.shields.io/badge/Source-Forgejo-fb923c)](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)](#requirements)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 
-[中文](README.md) · [Download](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
+[中文](README.md) · [Download](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
 Returning to development or handing off: start with [Project status](docs/PROJECT_STATUS.md) and the [Agent handoff guide](docs/AGENT_HANDOFF.md) (both in Chinese).
 
@@ -115,7 +115,7 @@ Koofr-GUI is an unaffiliated, Windows-first, file-manager-oriented alternative c
 
 ## Download
 
-Published installers, when available, are listed on the Releases page. Grab the latest NSIS installer from the [Releases page](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) (e.g., `Koofr GUI_<version>_x64-setup.exe`).
+Published installers, when available, are listed on the Releases page. Grab the latest NSIS installer from the [Releases page](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) (e.g., `Koofr GUI_<version>_x64-setup.exe`).
 
 > ⚠️ **Unsigned binaries**: releases are not code-signed. Windows SmartScreen may warn about an "unknown publisher". Only download from this repository's Releases page, and never from third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification.
 
@@ -141,7 +141,7 @@ Full install instructions in [BUILDING.md](docs/BUILDING.md#1-环境要求).
 ## Building from source
 
 ```powershell
-git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
+git clone https://forgejo.haohaohow.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 npm run dev:desktop          # dev mode: full desktop app

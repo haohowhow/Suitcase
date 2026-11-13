@@ -31,7 +31,7 @@
 恢复开发或交给 agent 时，先看 [项目进度](docs/PROJECT_STATUS.md) 和 [Agent 接手指南](docs/AGENT_HANDOFF.md)。接手指南包含代码导航、安全限制、验证要求和任务模板；本地 `AGENTS.md` 等被忽略文件不随克隆分发，不要提交它们。
 
 1. 读过 [README.md](README.md) 和 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-2. 搜过 [已有 Issue](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
+2. 搜过 [已有 Issue](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/issues)，你想报的问题可能已经在讨论了。
 3. 涉及安全漏洞的**不要**开公开 Issue，走 [SECURITY.md](SECURITY.md) 的私密渠道。
 
 ## 报告 Bug
@@ -69,7 +69,7 @@
 见 [docs/BUILDING.md](docs/BUILDING.md)。快速版：
 
 ```powershell
-git clone https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI.git
+git clone https://forgejo.haohaohow.com/sora-admin/Koofr-GUI.git
 Set-Location Koofr-GUI
 npm ci
 npm run dev:desktop

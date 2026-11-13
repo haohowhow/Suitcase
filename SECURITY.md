@@ -19,7 +19,7 @@
 | 最新稳定版 | ✅ |
 | 其他历史版本 | ❌ 请升级到最新版 |
 
-发布包**未做代码签名**。请只从 [官方 Releases 页面](https://forgejo.zenwinhow.abrdns.com/sora-admin/Koofr-GUI/releases) 下载。
+发布包**未做代码签名**。请只从 [官方 Releases 页面](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) 下载。
 
 ## 报告漏洞
 
