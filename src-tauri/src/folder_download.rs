@@ -166,9 +166,16 @@ pub async fn download_folder(
         },
     };
     let mut retries_completed = 0_u32;
+    let state = context.app.state::<crate::AppState>();
     let result = loop {
-        let result = executor
-            .run(request.remote_path.clone(), &request.transfer_id)
+        let result = state
+            .logger
+            .trace(
+                "transfer",
+                "download_folder_attempt",
+                Some(&request.transfer_id),
+                executor.run(request.remote_path.clone(), &request.transfer_id),
+            )
             .await;
         if !should_retry_network(&result, context.retry_policy, retries_completed) {
             break result;

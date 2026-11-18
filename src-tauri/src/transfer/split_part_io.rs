@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    SplitProgressPhase, TransferDirection, TransferState,
+    TransferDirection, TransferState,
     checkpoint::{SplitUploadCheckpoint, TransferCheckpoint},
     emit_progress_with_split,
     split_package::{SplitPart, encode_sha256, part_file_name},
@@ -48,7 +48,7 @@ pub(super) async fn upload_next_part(
     let transfer_id = checkpoint.transfer_id.clone();
     let cancel_for_stream = cancel.clone();
     let total = checkpoint.expected_size;
-    let part_progress = split_progress(checkpoint, SplitProgressPhase::Parts)?;
+    let part_progress = split_progress(checkpoint)?;
     let stream = ReaderStream::new(file.take(size)).and_then(move |chunk| {
         let app = app.clone();
         let transfer_id = transfer_id.clone();
@@ -111,7 +111,7 @@ pub(super) async fn upload_next_part(
         TransferState::Running,
         committed_bytes(checkpoint),
         Some(checkpoint.expected_size),
-        Some(split_progress(checkpoint, SplitProgressPhase::Parts)?),
+        Some(split_progress(checkpoint)?),
     );
     Ok(())
 }
@@ -119,8 +119,9 @@ pub(super) async fn upload_next_part(
 pub(super) async fn hash_file(
     path: PathBuf,
     cancel: CancellationToken,
+    bytes_hashed: Arc<AtomicU64>,
 ) -> Result<String, AppError> {
-    hash_range(path, 0, None, cancel).await
+    hash_range(path, 0, None, cancel, Some(bytes_hashed)).await
 }
 
 pub(super) async fn hash_file_range(
@@ -129,7 +130,7 @@ pub(super) async fn hash_file_range(
     size: u64,
     cancel: CancellationToken,
 ) -> Result<String, AppError> {
-    hash_range(path, offset, Some(size), cancel).await
+    hash_range(path, offset, Some(size), cancel, None).await
 }
 
 async fn hash_range(
@@ -137,6 +138,7 @@ async fn hash_range(
     offset: u64,
     size: Option<u64>,
     cancel: CancellationToken,
+    bytes_hashed: Option<Arc<AtomicU64>>,
 ) -> Result<String, AppError> {
     tokio::task::spawn_blocking(move || {
         let mut file = std::fs::File::open(path)?;
@@ -147,10 +149,7 @@ async fn hash_range(
         let mut remaining = size.unwrap_or(u64::MAX);
         while remaining > 0 {
             if cancel.is_cancelled() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "split hashing cancelled",
-                ));
+                return Err(AppError::Cancelled);
             }
             let limit = usize::try_from(remaining.min(buffer.len() as u64))
                 .map_err(|_| std::io::Error::other("invalid hash range"))?;
@@ -160,18 +159,20 @@ async fn hash_range(
             }
             hasher.update(&buffer[..read]);
             remaining = remaining.saturating_sub(read as u64);
+            if let Some(bytes_hashed) = &bytes_hashed {
+                bytes_hashed.fetch_add(read as u64, Ordering::Relaxed);
+            }
         }
         if size.is_some() && remaining != 0 {
-            return Err(std::io::Error::new(
+            return Err(AppError::Io(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "split source changed while hashing",
-            ));
+            )));
         }
-        Ok::<_, std::io::Error>(encode_sha256(&hasher.finalize()))
+        Ok(encode_sha256(&hasher.finalize()))
     })
     .await
     .map_err(|_| AppError::LocalData)?
-    .map_err(AppError::Io)
 }
 
 pub(super) fn committed_bytes(checkpoint: &SplitUploadCheckpoint) -> u64 {

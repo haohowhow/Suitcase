@@ -49,8 +49,13 @@ pub async fn unlock_vault(
         .map_err(CommandError::from)?
         .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     state
-        .vault
-        .unlock(&repo_id, safe_key.as_str())
+        .logger
+        .trace(
+            "vault",
+            "unlock",
+            None,
+            state.vault.unlock(&repo_id, safe_key.as_str()),
+        )
         .await
         .map_err(CommandError::from)
 }
@@ -78,8 +83,15 @@ pub async fn list_vault_files(
     directory_id: String,
 ) -> CommandResult<VaultDirectory> {
     state
-        .vault
-        .list_directory(&state.api, &repo_id, &directory_id)
+        .logger
+        .trace(
+            "vault",
+            "list_directory",
+            None,
+            state
+                .vault
+                .list_directory(&state.api, &repo_id, &directory_id),
+        )
         .await
         .map_err(CommandError::from)
 }

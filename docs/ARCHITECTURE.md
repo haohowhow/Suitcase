@@ -283,16 +283,16 @@ src-tauri/src/
 3. 本地将源文件流式切分为 `part-000.bin`、`part-001.bin` 等，**不包含专有文件头**，即原始字节切片。
 4. 每个 part 上传成功后：
    - 计算 SHA-256。
-   - 追加到 `SHA256SUMS`。
-   - 追加到 `manifest.json`（含 part 序号、大小、SHA-256、原文件总大小）。
    - 将 `SplitUploadCheckpoint`（含 `completed_chunks: Vec<SplitPart>`）写入 `transfer-checkpoints.json`。
-5. 全部数据分卷完成后上传以下文件：
+5. 全部数据分卷完成后计算整文件 SHA-256，将结果写入检查点，再上传以下文件：
+   - `SHA256SUMS`（各分卷与整文件 SHA-256）
+   - `manifest.json`（分卷序号、大小、SHA-256 和原文件信息）
    - `README.txt`（中英双语，说明该文件夹用途与还原方式）
    - `restore.cmd`（Windows：`copy /b /y part-*.bin "<输出文件>"`）
    - `restore.sh`（POSIX：`cat part-*.bin > target.bin`）
 6. 删除 checkpoint。
 
-**恢复**：中断后 `list_resumable_transfers()` 会列出该任务，用户点击“继续”即从 `completed_chunks.len()` 之后开始传输下一个 part，已确认完整的 part 不会重传。
+中断后，用户可在传输面板继续任务。应用重新核对远端分卷并补传缺失的分卷。若所有分卷已完成，则复用检查点中已保存的整文件 SHA-256，核对已存在的辅助文件内容并补传缺失文件。单个辅助文件的核对或上传超时按网络错误处理。
 
 **远端可见性**：该文件夹在 Koofr 网页端或移动端呈现为普通文件夹，用户可自行下载并用 `copy /b` 或 `cat` 还原原文件，**不依赖本客户端**。这是有意的互操作保证。
 
@@ -365,7 +365,10 @@ src-tauri/src/
 
 - 活动文件为 `koofr-gui.jsonl`，达到大小上限后按带时间戳与随机 ID 的文件名轮转。
 - 轮转文件按保留天数自动清理；默认保留 14 天，单文件上限 10 MB。
-- 传输日志记录 session ID、transfer ID、方向、终态、字节数、稳定错误码，以及脱敏后的 HTTP 状态、I/O 类别与网络失败分类。
+- 常规传输日志记录 session ID、transfer ID、方向、终态、字节数、稳定错误码，以及脱敏后的 HTTP 状态、I/O 类别与网络失败分类。
+- 调试级别使用 `operation_started` 和 `operation_finished` 记录阶段、耗时和结果。用同一 session ID 内的 `fields.operationId` 配对。网络阶段区分收到 HTTP 响应头与读取、解析 JSON 响应。网络标签使用固定操作名。
+- 分卷日志记录远端分卷核对、分卷提交、收尾、整文件校验值保存，以及各类辅助文件的验证或上传。`split_hash_progress` 每 10 秒记录已完成哈希的字节数，可区分本地校验与后续 Koofr 请求。
+- 调试日志还覆盖普通上传排队与重试、下载续传偏移与校验发布、文件夹下载、同步扫描周期与 CFAPI 回调、凭据读取、Vault 解锁与浏览以及预览下载与解码。日志阶段使用固定标签，辅助文件使用用途标签。
 - **不记录**认证头、令牌、密码、邮箱、文件名、完整本地路径、远程路径或服务端响应正文。
 
 ### 凭据存储

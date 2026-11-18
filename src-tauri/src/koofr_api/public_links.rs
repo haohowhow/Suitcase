@@ -174,16 +174,15 @@ impl KoofrApi {
             }
             (PublicLinkKind::Upload, value) => format!("{value}/"),
         };
-        let response = self
-            .authenticated_request(Method::POST, url)
-            .await?
-            .json(&CreateLinkRequest {
-                path: &request_path,
-            })
-            .send()
-            .await?;
+        let request =
+            self.authenticated_request(Method::POST, url)
+                .await?
+                .json(&CreateLinkRequest {
+                    path: &request_path,
+                });
+        let response = self.send("create_public_link", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK, StatusCode::CREATED])?;
-        let payload: RemotePublicLink = Self::decode_json(response).await?;
+        let payload: RemotePublicLink = self.decode_json(response).await?;
         Ok(payload.with_kind(kind))
     }
 
@@ -195,11 +194,8 @@ impl KoofrApi {
     ) -> Result<(), AppError> {
         let link_id = PublicLinkId::parse(link_id)?;
         let url = self.public_link_endpoint(mount_id, kind, &link_id)?;
-        let response = self
-            .authenticated_request(Method::DELETE, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::DELETE, url).await?;
+        let response = self.send("delete_public_link", request).await?;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::NO_CONTENT])?;
         Ok(())
     }
@@ -216,14 +212,13 @@ impl KoofrApi {
         url.path_segments_mut()
             .map_err(|_| AppError::Initialization)?
             .push("validity");
-        let response = self
+        let request = self
             .authenticated_request(Method::PUT, url)
             .await?
-            .json(&LinkValidity { valid_to })
-            .send()
-            .await?;
+            .json(&LinkValidity { valid_to });
+        let response = self.send("set_public_link_validity", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: RemotePublicLink = Self::decode_json(response).await?;
+        let payload: RemotePublicLink = self.decode_json(response).await?;
         Ok(payload.with_kind(kind))
     }
 
@@ -241,13 +236,10 @@ impl KoofrApi {
                 .map_err(|_| AppError::Initialization)?;
             segments.push("password").push("reset");
         }
-        let response = self
-            .authenticated_request(Method::PUT, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::PUT, url).await?;
+        let response = self.send("reset_public_link_password", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: RemotePublicLink = Self::decode_json(response).await?;
+        let payload: RemotePublicLink = self.decode_json(response).await?;
         Ok(payload.with_kind(kind))
     }
 
@@ -257,19 +249,16 @@ impl KoofrApi {
         kind: PublicLinkKind,
     ) -> Result<Vec<PublicLink>, AppError> {
         let url = self.public_links_endpoint(mount_id, kind)?;
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_public_links_by_kind", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
         let links = match kind {
             PublicLinkKind::Download => {
-                let payload: DownloadList = Self::decode_json(response).await?;
+                let payload: DownloadList = self.decode_json(response).await?;
                 payload.into_links()
             }
             PublicLinkKind::Upload => {
-                let payload: UploadList = Self::decode_json(response).await?;
+                let payload: UploadList = self.decode_json(response).await?;
                 payload.into_links()
             }
         };

@@ -83,10 +83,15 @@ function percentage(item: TransferItem) {
 function splitProgressLabel(item: TransferItem, detail = false) {
   const progress = item.splitProgress
   if (!progress) return null
-  if (progress.phase === 'finalizing') {
+  if (progress.phase === 'finalizing' && item.state === 'running' && !progress.postProcessing) {
     return detail
       ? `分卷 ${progress.totalParts} / ${progress.totalParts} · 正在完成`
       : `分卷 ${progress.totalParts}/${progress.totalParts} · 正在完成`
+  }
+  if (progress.phase === 'finalizing') {
+    return detail
+      ? `已完成 ${progress.completedParts} / ${progress.totalParts} 个分卷`
+      : `已完成 ${progress.completedParts}/${progress.totalParts} 卷`
   }
   if (item.state === 'paused' || item.state === 'failed') {
     return detail
@@ -100,6 +105,32 @@ function splitProgressLabel(item: TransferItem, detail = false) {
   return detail
     ? `当前分卷 ${current} / ${progress.totalParts}`
     : `第 ${current}/${progress.totalParts} 卷`
+}
+
+function PostProcessingProgress({ item }: { readonly item: TransferItem }) {
+  const progress = item.splitProgress?.postProcessing
+  if (!progress || item.state !== 'running') return null
+  const hashing = progress.stage === 'hashing'
+  const label = hashing ? '正在计算整文件校验值' : '正在核对和上传辅助文件'
+  const percent = Math.floor(100 * (hashing
+    ? progress.bytesHashed / progress.totalBytes
+    : progress.completedFiles / progress.totalFiles))
+  const count = hashing ? `${percent}%` : `${progress.completedFiles}/${progress.totalFiles}`
+  const remaining = hashing ? progress.remainingSeconds : null
+  return (
+    <div>
+      <div className="transfer-item__meta">
+        <span>{label}</span>
+        <span>{count}</span>
+        {remaining !== null && remaining > 0 ? (
+          <span>{remaining < 60 ? '预计不到 1 分钟' : `预计还需 ${Math.ceil(remaining / 60)} 分钟`}</span>
+        ) : null}
+      </div>
+      <div className="progress-track" role="progressbar" aria-label={label} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  )
 }
 
 function formatDate(timestamp: number | null) {
@@ -346,7 +377,9 @@ export const TransferPanel = memo(function TransferPanel({
                   {splitProgressLabel(item) ? <span>{splitProgressLabel(item)}</span> : null}
                   <span>{formatBytes(item.totalBytes ?? item.bytesTransferred)}</span>
                 </div>
-                {active || item.state === 'paused' ? (
+                {item.state === 'running' && item.splitProgress?.postProcessing ? (
+                  <PostProcessingProgress item={item} />
+                ) : active || item.state === 'paused' ? (
                   <div className="progress-track" aria-label={`${Math.round(percent)}%`}>
                     <span style={{ width: `${percent}%` }} />
                   </div>
@@ -450,6 +483,7 @@ export const TransferPanel = memo(function TransferPanel({
             <div><span>平均速度</span><strong><Gauge size={14} />{formatRate(averageBytesPerSecond(selected))}/s</strong></div>
           </div>
 
+          <PostProcessingProgress item={selected} />
           <div className="transfer-detail__speed">
             <div>
               <span>速度曲线</span>

@@ -23,10 +23,10 @@ pub use integrity::verify_file_integrity;
 pub use limiter::BandwidthLimiter;
 pub use manager::TransferManager;
 pub use model::{
-    IntegrityStatus, NetworkRetryPolicy, NetworkRetryRequest, SplitProgress, SplitProgressPhase,
-    TransferDirection, TransferResult, TransferState, UPLOAD_STALL_LIMIT, emit_progress,
-    emit_progress_with_split, emit_terminal, normalize_interruption, should_retry_network,
-    stall_watchdog, wait_for_network_retry,
+    IntegrityStatus, NetworkRetryPolicy, NetworkRetryRequest, SplitProgress, TransferDirection,
+    TransferResult, TransferState, UPLOAD_STALL_LIMIT, emit_progress, emit_progress_with_split,
+    emit_terminal, normalize_interruption, should_retry_network, stall_watchdog,
+    wait_for_network_retry,
 };
 pub use split_upload::{
     SplitTransferRuntime, SplitUploadRequest, resume_split_upload, upload_split,

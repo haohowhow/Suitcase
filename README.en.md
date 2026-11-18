@@ -68,7 +68,8 @@ Koofr-GUI is an unaffiliated, Windows-first alternative client built around a na
 
 - **Transfers**
   - Transfer panel with live progress, cancellation, and pausing.
-  - Split uploads show the current part, total parts, and final manifest stage in both the list and detail views.
+  - Split uploads show part progress, full-file checksum progress and estimated time remaining, and support-file progress in both the list and detail views.
+  - After an interruption during finalization, resume from the transfer panel to reuse the saved full-file checksum and upload any missing checksums, manifest, and restore scripts.
   - Optional always-on-top transfer window aggregates concurrent upload/download progress and collapses to a single-icon square while paused or idle. Auto-collapse, click-to-pause/resume, and double-click-to-open can each be disabled. The surface remains draggable with the left button, and the native context menu can open the app, close the floating window, or quit. It receives redacted summary state only.
   - **Single-file download**: HTTP Range plus an on-disk checkpoint for byte-level resume.
   - **Split upload**: splits a large file into user-sized `part-*.bin` chunks inside a user-named remote folder and resumes from the last confirmed complete chunk. The folder appears as an ordinary folder and can be reassembled with `copy /b` on Windows or `cat` on POSIX.
@@ -107,6 +108,7 @@ Koofr-GUI is an unaffiliated, Windows-first alternative client built around a na
   - Optional automatic retry for transfers that fail with `network_error`, with a configurable fixed interval and either a finite or unlimited retry count. A stalled connection (no download data for 60 seconds, no upload progress for 5 minutes) counts as a network error as well.
   - A configurable work directory, with an optional complete migration of settings, transfer state, download history, cache, and logs before the next start.
   - Metadata cache: memory, disk, or off. Diagnostic log level, retention, and rotation size are configurable, with usage reporting and one-click cleanup.
+  - Enable Debug logging in Settings to trace request timings, split-upload hashing and finalization, sync cycles, and preview preparation.
   - Five themes (koofr / ocean / iris / coral / berry) that override accent tokens only.
 
 ### Not yet implemented

@@ -3,7 +3,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{Arc, RwLock, mpsc},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
@@ -29,6 +29,18 @@ pub struct AppLogger {
     config: Arc<RwLock<LogConfig>>,
     session_id: String,
 }
+
+pub struct DiagnosticSpan<'a> {
+    logger: &'a AppLogger,
+    target: &'static str,
+    operation: &'static str,
+    transfer_id: Option<&'a str>,
+    operation_id: u64,
+    started: Instant,
+    finished: bool,
+}
+
+static NEXT_OPERATION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 enum WriterCommand {
     Record(LogRecord),
@@ -78,6 +90,54 @@ impl AppLogger {
         self.record(LogLevel::Info, target, event, transfer_id, fields);
     }
 
+    pub fn debug(
+        &self,
+        target: &'static str,
+        event: &'static str,
+        transfer_id: Option<&str>,
+        fields: Map<String, Value>,
+    ) {
+        self.record(LogLevel::Debug, target, event, transfer_id, fields);
+    }
+
+    pub fn span<'a>(
+        &'a self,
+        target: &'static str,
+        operation: &'static str,
+        transfer_id: Option<&'a str>,
+        fields: Map<String, Value>,
+    ) -> Option<DiagnosticSpan<'a>> {
+        if !self.enabled(LogLevel::Debug) {
+            return None;
+        }
+        let span = DiagnosticSpan {
+            logger: self,
+            target,
+            operation,
+            transfer_id,
+            operation_id: NEXT_OPERATION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            started: Instant::now(),
+            finished: false,
+        };
+        span.record("operation_started", fields);
+        Some(span)
+    }
+
+    pub async fn trace<T>(
+        &self,
+        target: &'static str,
+        operation: &'static str,
+        transfer_id: Option<&str>,
+        future: impl Future<Output = Result<T, AppError>>,
+    ) -> Result<T, AppError> {
+        let span = self.span(target, operation, transfer_id, Map::new());
+        let result = future.await;
+        if let Some(span) = span {
+            span.finish(result.as_ref().err(), Map::new());
+        }
+        result
+    }
+
     pub fn warn(
         &self,
         target: &'static str,
@@ -96,11 +156,7 @@ impl AppLogger {
         error: &AppError,
         mut fields: Map<String, Value>,
     ) {
-        fields.insert(
-            "errorCode".to_owned(),
-            Value::String(error.log_code().to_owned()),
-        );
-        fields.extend(error.safe_log_fields());
+        add_error_fields(&mut fields, error);
         self.record(LogLevel::Error, target, event, transfer_id, fields);
     }
 
@@ -112,12 +168,7 @@ impl AppLogger {
         transfer_id: Option<&str>,
         fields: Map<String, Value>,
     ) {
-        let configured_level = self
-            .config
-            .read()
-            .map(|config| config.level)
-            .unwrap_or(LogLevel::Error);
-        if level > configured_level {
+        if !self.enabled(level) {
             return;
         }
         let _ = self.sender.send(WriterCommand::Record(LogRecord {
@@ -126,9 +177,20 @@ impl AppLogger {
             target,
             event,
             session_id: self.session_id.clone(),
-            transfer_id: transfer_id.map(str::to_owned),
+            transfer_id: transfer_id
+                .and_then(|id| uuid::Uuid::parse_str(id).ok())
+                .map(|id| id.to_string()),
             fields,
         }));
+    }
+
+    fn enabled(&self, level: LogLevel) -> bool {
+        let configured_level = self
+            .config
+            .read()
+            .map(|config| config.level)
+            .unwrap_or(LogLevel::Error);
+        level <= configured_level
     }
 
     pub async fn configure(&self, config: LogConfig) -> Result<(), AppError> {
@@ -174,6 +236,51 @@ impl AppLogger {
         }
         (files, bytes)
     }
+}
+
+impl DiagnosticSpan<'_> {
+    pub fn finish(mut self, error: Option<&AppError>, mut fields: Map<String, Value>) {
+        self.finished = true;
+        let outcome = match error {
+            Some(error) => {
+                add_error_fields(&mut fields, error);
+                "failed"
+            }
+            None => "completed",
+        };
+        self.record_end(outcome, fields);
+    }
+
+    fn record(&self, event: &'static str, mut fields: Map<String, Value>) {
+        fields.insert("operation".to_owned(), self.operation.into());
+        fields.insert("operationId".to_owned(), self.operation_id.into());
+        self.logger
+            .debug(self.target, event, self.transfer_id, fields);
+    }
+
+    fn record_end(&self, outcome: &'static str, mut fields: Map<String, Value>) {
+        fields.insert("outcome".to_owned(), outcome.into());
+        fields.insert(
+            "elapsedMs".to_owned(),
+            u64::try_from(self.started.elapsed().as_millis())
+                .unwrap_or(u64::MAX)
+                .into(),
+        );
+        self.record("operation_finished", fields);
+    }
+}
+
+impl Drop for DiagnosticSpan<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.record_end("interrupted", Map::new());
+        }
+    }
+}
+
+fn add_error_fields(fields: &mut Map<String, Value>, error: &AppError) {
+    fields.insert("errorCode".to_owned(), error.log_code().into());
+    fields.extend(error.safe_log_fields());
 }
 
 fn writer_loop(receiver: mpsc::Receiver<WriterCommand>, mut config: LogConfig) {
@@ -323,6 +430,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("koofr-logs-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).expect("create log directory");
         let logger = AppLogger::initialize(config(directory.clone())).expect("initialize logger");
+        logger.debug("test", "filtered_debug_event", None, Map::new());
         for _ in 0..8 {
             logger.error(
                 "transfer",
@@ -348,6 +456,7 @@ mod tests {
         assert!(payload.contains("local_io_error"));
         assert!(payload.contains("permission_denied"));
         assert!(!payload.contains("private"));
+        assert!(!payload.contains("filtered_debug_event"));
         logger.clear().await.expect("clear logs");
         let remaining = std::fs::read_dir(&directory)
             .expect("read cleared directory")

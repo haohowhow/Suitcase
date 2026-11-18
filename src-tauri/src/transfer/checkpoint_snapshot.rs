@@ -3,8 +3,10 @@ use std::path::Path;
 use crate::error::AppError;
 
 use super::{
-    SplitProgress, SplitProgressPhase, TransferDirection,
+    TransferDirection,
     checkpoint::{RecoveryKind, ResumableTransfer, TransferCheckpoint},
+    split_part_io::committed_bytes,
+    split_upload::split_progress,
 };
 
 pub(super) async fn snapshot(
@@ -64,22 +66,14 @@ pub(super) async fn snapshot(
             split_progress: None,
         }),
         TransferCheckpoint::SplitUpload(checkpoint) => {
-            let split_progress = SplitProgress::new(
-                checkpoint.expected_size,
-                checkpoint.chunk_size,
-                checkpoint.completed_chunks.len(),
-                SplitProgressPhase::Parts,
-            )?;
+            let bytes_transferred = committed_bytes(&checkpoint);
+            let split_progress = split_progress(&checkpoint)?;
             Ok(ResumableTransfer {
                 transfer_id: checkpoint.transfer_id,
                 name: file_name(&checkpoint.local_path)?,
                 direction: TransferDirection::Upload,
                 recovery_kind: RecoveryKind::ChunkResume,
-                bytes_transferred: checkpoint
-                    .completed_chunks
-                    .iter()
-                    .map(|part| part.size)
-                    .sum(),
+                bytes_transferred,
                 total_bytes: checkpoint.expected_size,
                 split_progress: Some(split_progress),
             })

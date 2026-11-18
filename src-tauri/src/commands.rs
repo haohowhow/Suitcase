@@ -214,8 +214,13 @@ pub async fn restore_saved_login(
         });
     };
     let Some(password) = state
-        .credentials
-        .load(email.clone())
+        .logger
+        .trace(
+            "auth",
+            "load_saved_credential",
+            None,
+            state.credentials.load(email.clone()),
+        )
         .await
         .map_err(CommandError::from)?
     else {
@@ -966,6 +971,9 @@ pub async fn list_files(
     let cache_key = format!("files:{}:{}", mount_id.as_str(), path.as_str());
     let (mode, ttl) = state.settings.cache_policy().await;
     if !refresh && let Some(cached) = state.cache.get(&cache_key, mode, ttl).await {
+        state
+            .logger
+            .debug("cache", "directory_cache_hit", None, serde_json::Map::new());
         return Ok(cached);
     }
     let files = state

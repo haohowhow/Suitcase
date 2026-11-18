@@ -193,16 +193,30 @@ pub async fn prepare_file_preview(
             return Err(CommandError::from(AppError::PreviewTooLarge));
         }
         let bytes = Zeroizing::new(
-            download_limited(
-                &state.api,
-                &mount_id,
-                &remote_path,
-                MATERIALIZED_PREVIEW_LIMIT,
-            )
-            .await
-            .map_err(CommandError::from)?,
+            state
+                .logger
+                .trace(
+                    "preview",
+                    "download_for_decode",
+                    None,
+                    download_limited(
+                        &state.api,
+                        &mount_id,
+                        &remote_path,
+                        MATERIALIZED_PREVIEW_LIMIT,
+                    ),
+                )
+                .await
+                .map_err(CommandError::from)?,
         );
-        let (bytes, content_type) = convert_materialized(bytes, &resolved.decoder)
+        let (bytes, content_type) = state
+            .logger
+            .trace(
+                "preview",
+                "decode_image",
+                None,
+                convert_materialized(bytes, &resolved.decoder),
+            )
             .await
             .map_err(CommandError::from)?;
         let size = bytes.len() as u64;
@@ -278,7 +292,14 @@ pub async fn prepare_vault_preview(
     let encrypted_limit =
         u64::try_from(info.size).map_err(|_| CommandError::from(AppError::PreviewDecode))?;
     let encrypted = Zeroizing::new(
-        download_limited(&state.api, &mount_id, &remote_path, encrypted_limit)
+        state
+            .logger
+            .trace(
+                "preview",
+                "download_encrypted_content",
+                None,
+                download_limited(&state.api, &mount_id, &remote_path, encrypted_limit),
+            )
             .await
             .map_err(CommandError::from)?,
     );
@@ -292,7 +313,14 @@ pub async fn prepare_vault_preview(
         return Err(CommandError::from(AppError::PreviewDecode));
     }
     let (plain, content_type, decoder) = if resolved.materialize {
-        let (converted, content_type) = convert_materialized(plain, &resolved.decoder)
+        let (converted, content_type) = state
+            .logger
+            .trace(
+                "preview",
+                "decode_vault_image",
+                None,
+                convert_materialized(plain, &resolved.decoder),
+            )
             .await
             .map_err(CommandError::from)?;
         (Zeroizing::new(converted), content_type, "native".to_owned())

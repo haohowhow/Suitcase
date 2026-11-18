@@ -17,6 +17,7 @@ use md5::{Digest, Md5};
 use notify::{RecursiveMode, Watcher};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -51,7 +52,8 @@ pub async fn handle_native_callback(
     request: NativeCallbackRequest,
     cancel: CancellationToken,
 ) {
-    let manager = app.state::<AppState>().sync.clone();
+    let state = app.state::<AppState>();
+    let manager = state.sync.clone();
     if let NativeCallbackRequest::Delete { operation, .. } = &request {
         let prepared = manager.prepare_native_delete(&pair_id, &request);
         let (pair, entry) = match prepared {
@@ -90,7 +92,15 @@ pub async fn handle_native_callback(
             return;
         }
         manager.set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Syncing);
-        let result = manager.delete_native_placeholder(&app, &pair, &entry).await;
+        let result = state
+            .logger
+            .trace(
+                "sync",
+                "native_delete",
+                None,
+                manager.delete_native_placeholder(&app, &pair, &entry),
+            )
+            .await;
         match result {
             Ok(()) => manager
                 .set_native_provider_status(&pair_id, cloud_files::NativeProviderStatus::Idle),
@@ -109,13 +119,25 @@ pub async fn handle_native_callback(
 
     let result = match &request {
         NativeCallbackRequest::FetchPlaceholders { .. } => {
-            manager
-                .fetch_native_placeholders(&app, &pair_id, &request, &cancel)
+            state
+                .logger
+                .trace(
+                    "sync",
+                    "native_fetch_placeholders",
+                    None,
+                    manager.fetch_native_placeholders(&app, &pair_id, &request, &cancel),
+                )
                 .await
         }
         NativeCallbackRequest::FetchData { .. } => {
-            manager
-                .fetch_native_data(&app, &pair_id, &request, &cancel)
+            state
+                .logger
+                .trace(
+                    "sync",
+                    "native_fetch_data",
+                    None,
+                    manager.fetch_native_data(&app, &pair_id, &request, &cancel),
+                )
                 .await
         }
         NativeCallbackRequest::Delete { .. } => unreachable!("delete handled above"),
@@ -2707,11 +2729,27 @@ impl SyncManager {
         wake: &Notify,
         conflict_rescans: &mut u32,
     ) {
+        let state = app.state::<AppState>();
+        let operation = if native {
+            "native_sync_cycle"
+        } else {
+            "classic_sync_cycle"
+        };
+        let span = state.logger.span("sync", operation, None, Map::new());
         let result = if native {
             self.run_native_once(app, pair_id, cancel).await
         } else {
             self.run_once(app, pair_id, cancel).await
         };
+        if let Some(span) = span {
+            span.finish(
+                result.as_ref().err(),
+                Map::from_iter([(
+                    "willRescan".to_owned(),
+                    matches!(result, Ok(RunOutcome::Rescan)).into(),
+                )]),
+            );
+        }
         match result {
             Ok(RunOutcome::Completed) => *conflict_rescans = 0,
             Ok(RunOutcome::Rescan) => {

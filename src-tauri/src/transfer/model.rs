@@ -48,6 +48,26 @@ pub struct SplitProgress {
     pub current_part: Option<u32>,
     pub total_parts: u32,
     pub phase: SplitProgressPhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_processing: Option<SplitPostProcessing>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "stage",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum SplitPostProcessing {
+    Hashing {
+        bytes_hashed: u64,
+        total_bytes: u64,
+        remaining_seconds: Option<u64>,
+    },
+    SupportFiles {
+        completed_files: usize,
+        total_files: usize,
+    },
 }
 
 impl SplitProgress {
@@ -55,7 +75,6 @@ impl SplitProgress {
         total_bytes: u64,
         part_bytes: u64,
         completed_parts: usize,
-        phase: SplitProgressPhase,
     ) -> Result<Self, AppError> {
         if total_bytes == 0 || part_bytes == 0 {
             return Err(AppError::InvalidInput("split progress"));
@@ -65,15 +84,17 @@ impl SplitProgress {
         let completed_parts = u32::try_from(completed_parts)
             .map_err(|_| AppError::InvalidInput("split part count"))?
             .min(total_parts);
-        let current_part = match phase {
-            SplitProgressPhase::Parts if completed_parts < total_parts => Some(completed_parts + 1),
-            _ => Some(total_parts),
+        let (current_part, phase) = if completed_parts < total_parts {
+            (completed_parts + 1, SplitProgressPhase::Parts)
+        } else {
+            (total_parts, SplitProgressPhase::Finalizing)
         };
         Ok(Self {
             completed_parts,
-            current_part,
+            current_part: Some(current_part),
             total_parts,
             phase,
+            post_processing: None,
         })
     }
 }
@@ -181,12 +202,32 @@ pub fn emit_progress_with_split(
     total_bytes: Option<u64>,
     split_progress: Option<SplitProgress>,
 ) {
-    app.state::<AppState>().download_history.record_progress(
-        transfer_id,
-        state,
-        bytes_transferred,
-        total_bytes,
-    );
+    let app_state = app.state::<AppState>();
+    if state == TransferState::Queued {
+        app_state.logger.debug(
+            "transfer",
+            "transfer_queued",
+            Some(transfer_id),
+            Map::from_iter([
+                (
+                    "direction".to_owned(),
+                    match direction {
+                        TransferDirection::Upload => "upload",
+                        TransferDirection::Download => "download",
+                    }
+                    .into(),
+                ),
+                ("bytesTransferred".to_owned(), bytes_transferred.into()),
+                (
+                    "totalBytes".to_owned(),
+                    total_bytes.map_or(Value::Null, Value::from),
+                ),
+            ]),
+        );
+    }
+    app_state
+        .download_history
+        .record_progress(transfer_id, state, bytes_transferred, total_bytes);
 
     let is_running = state == TransferState::Running;
     let is_boundary =
@@ -475,26 +516,24 @@ mod tests {
 
     #[test]
     fn split_progress_reports_one_based_parts_and_finalization() {
-        let first =
-            SplitProgress::new(10, 4, 0, SplitProgressPhase::Parts).expect("first split progress");
+        let first = SplitProgress::new(10, 4, 0).expect("first split progress");
         assert_eq!(first.current_part, Some(1));
         assert_eq!(first.completed_parts, 0);
         assert_eq!(first.total_parts, 3);
 
-        let last =
-            SplitProgress::new(10, 4, 2, SplitProgressPhase::Parts).expect("last split progress");
+        let last = SplitProgress::new(10, 4, 2).expect("last split progress");
         assert_eq!(last.current_part, Some(3));
+        assert_eq!(last.phase, SplitProgressPhase::Parts);
 
-        let finalizing = SplitProgress::new(10, 4, 3, SplitProgressPhase::Finalizing)
-            .expect("finalizing split progress");
+        let finalizing = SplitProgress::new(10, 4, 3).expect("finalizing split progress");
         assert_eq!(finalizing.completed_parts, 3);
         assert_eq!(finalizing.current_part, Some(3));
+        assert_eq!(finalizing.phase, SplitProgressPhase::Finalizing);
     }
 
     #[test]
     fn split_progress_handles_exact_part_boundaries() {
-        let progress =
-            SplitProgress::new(8, 4, 1, SplitProgressPhase::Parts).expect("split progress");
+        let progress = SplitProgress::new(8, 4, 1).expect("split progress");
         assert_eq!(progress.total_parts, 2);
         assert_eq!(progress.current_part, Some(2));
     }

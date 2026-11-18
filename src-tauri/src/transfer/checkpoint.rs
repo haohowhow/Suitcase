@@ -103,6 +103,8 @@ pub struct SplitUploadCheckpoint {
     pub modified_millis: u128,
     pub chunk_size: u64,
     pub completed_chunks: Vec<SplitPart>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_sha256: Option<String>,
     #[serde(default)]
     pub retained_at: u64,
 }

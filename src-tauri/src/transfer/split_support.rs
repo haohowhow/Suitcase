@@ -1,7 +1,10 @@
+use serde_json::Map;
+
 use crate::{
     error::AppError,
     file_ops::{MountId, RemoteName, RemotePath},
-    koofr_api::{FileInfo, KoofrApi},
+    koofr_api::{BODY_STALL_TIMEOUT, FileInfo, KoofrApi},
+    logging::AppLogger,
 };
 
 use super::split_package::{
@@ -14,28 +17,78 @@ pub(super) async fn upload_support_files(
     mount_id: &MountId,
     package_path: &RemotePath,
     manifest: &SplitManifest,
+    diagnostics: Option<(&AppLogger, &str)>,
+    report: impl Fn(usize, usize),
 ) -> Result<(), AppError> {
-    let existing = api.list_files(mount_id, package_path).await?;
+    let support_file_count = 5;
+    report(0, support_file_count);
+    let list = api.list_files(mount_id, package_path);
+    let existing = if let Some((logger, transfer_id)) = diagnostics {
+        logger
+            .trace(
+                "transfer",
+                "split_list_support_files",
+                Some(transfer_id),
+                list,
+            )
+            .await?
+    } else {
+        list.await?
+    };
     let target = RemoteTarget {
         api,
         mount_id,
         directory: package_path,
         existing: &existing,
     };
-    target
-        .upload_if_missing(RESTORE_CMD_NAME, restore_cmd().as_bytes().to_vec())
-        .await?;
-    target
-        .upload_if_missing(RESTORE_SH_NAME, restore_sh().as_bytes().to_vec())
-        .await?;
-    target
-        .upload_if_missing(README_NAME, manifest.readme().into_bytes())
-        .await?;
-    target
-        .upload_if_missing(SHA256SUMS_NAME, manifest.sha256sums().into_bytes())
-        .await?;
     let payload = serde_json::to_vec_pretty(manifest).map_err(|_| AppError::LocalData)?;
-    target.upload_if_missing(MANIFEST_NAME, payload).await?;
+    let support_files = [
+        (
+            "windows_restore",
+            RESTORE_CMD_NAME,
+            restore_cmd().as_bytes().to_vec(),
+        ),
+        (
+            "posix_restore",
+            RESTORE_SH_NAME,
+            restore_sh().as_bytes().to_vec(),
+        ),
+        ("instructions", README_NAME, manifest.readme().into_bytes()),
+        (
+            "checksum_list",
+            SHA256SUMS_NAME,
+            manifest.sha256sums().into_bytes(),
+        ),
+        ("manifest", MANIFEST_NAME, payload),
+    ];
+    for (index, (kind, name, bytes)) in support_files.into_iter().enumerate() {
+        let span = diagnostics.and_then(|(logger, id)| {
+            let operation = if existing.iter().any(|file| file.name == name) {
+                "split_verify_support_file"
+            } else {
+                "split_upload_support_file"
+            };
+            logger.span(
+                "transfer",
+                operation,
+                Some(id),
+                Map::from_iter([
+                    ("supportKind".to_owned(), kind.into()),
+                    ("bytes".to_owned(), bytes.len().into()),
+                ]),
+            )
+        });
+        // These files are small, so both verification and upload can have a total deadline.
+        let result =
+            tokio::time::timeout(BODY_STALL_TIMEOUT, target.upload_if_missing(name, bytes))
+                .await
+                .unwrap_or(Err(AppError::NetworkStalled));
+        if let Some(span) = span {
+            span.finish(result.as_ref().err(), Map::new());
+        }
+        result?;
+        report(index + 1, support_file_count);
+    }
     Ok(())
 }
 

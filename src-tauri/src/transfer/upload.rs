@@ -121,7 +121,17 @@ async fn run_upload(
         0,
         Some(total),
     );
-    let _permit = match manager.acquire(TransferDirection::Upload, &cancel).await {
+    let state = app.state::<crate::AppState>();
+    let logger = &state.logger;
+    let _permit = match logger
+        .trace(
+            "transfer",
+            "wait_upload_slot",
+            Some(&transfer_id),
+            manager.acquire(TransferDirection::Upload, &cancel),
+        )
+        .await
+    {
         Ok(permit) => permit,
         Err(error) => {
             let paused = registration.finish();
@@ -137,17 +147,23 @@ async fn run_upload(
     let mut retries_completed = 0_u32;
     let result = loop {
         progress.store(0, Ordering::Relaxed);
-        let result = upload_inner(
-            &app,
-            api,
-            &transfer_id,
-            &cancel,
-            mount_id.clone(),
-            directory.clone(),
-            local_path.clone(),
-            progress.clone(),
-        )
-        .await;
+        let result = logger
+            .trace(
+                "transfer",
+                "upload_file_attempt",
+                Some(&transfer_id),
+                upload_inner(
+                    &app,
+                    api,
+                    &transfer_id,
+                    &cancel,
+                    mount_id.clone(),
+                    directory.clone(),
+                    local_path.clone(),
+                    progress.clone(),
+                ),
+            )
+            .await;
         if !should_retry_network(&result, retry_policy, retries_completed) {
             break result;
         }

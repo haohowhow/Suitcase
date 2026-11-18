@@ -290,6 +290,7 @@ describe('TransferPanel', () => {
             currentPart: 10,
             totalParts: 10,
             phase: 'finalizing',
+            postProcessing: { stage: 'hashing', bytesHashed: 480, totalBytes: 640, remainingSeconds: 180 },
           },
         })]}
         onClose={vi.fn()}
@@ -303,8 +304,10 @@ describe('TransferPanel', () => {
       />,
     )
 
-    expect(screen.getByText('分卷 10/10 · 正在完成')).toBeTruthy()
-    expect(screen.getByText('分卷 10 / 10 · 正在完成')).toBeTruthy()
+    const bars = screen.getAllByRole('progressbar', { name: '正在计算整文件校验值' })
+    expect(bars).toHaveLength(2)
+    expect(bars.map((bar) => bar.getAttribute('aria-valuenow'))).toEqual(['75', '75'])
+    expect(screen.getAllByText('预计还需 3 分钟')).toHaveLength(2)
   })
 
   it('keeps pause and cancel available while waiting to retry', () => {

@@ -35,36 +35,29 @@ struct VaultRepos {
 impl KoofrApi {
     pub async fn list_vault_repos(&self) -> Result<Vec<VaultRepo>, AppError> {
         let url = self.endpoint(&["api", "v2.1", "vault", "repos"])?;
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_vault_repos", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: VaultRepos = Self::decode_json(response).await?;
+        let payload: VaultRepos = self.decode_json(response).await?;
         Ok(payload.repos)
     }
 
     pub async fn create_vault_repo(&self, create: &VaultRepoCreate) -> Result<VaultRepo, AppError> {
         let url = self.endpoint(&["api", "v2.1", "vault", "repos"])?;
-        let response = self
+        let request = self
             .authenticated_request(Method::POST, url)
             .await?
-            .json(create)
-            .send()
-            .await?;
+            .json(create);
+        let response = self.send("create_vault_repo", request).await?;
         let response = Self::expect_status(response, &[StatusCode::CREATED])?;
-        Self::decode_json(response).await
+        self.decode_json(response).await
     }
 
     pub async fn remove_vault_repo(&self, repo_id: &str) -> Result<(), AppError> {
         validate_repo_id(repo_id)?;
         let url = self.endpoint(&["api", "v2.1", "vault", "repos", repo_id])?;
-        let response = self
-            .authenticated_request(Method::DELETE, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::DELETE, url).await?;
+        let response = self.send("remove_vault_repo", request).await?;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::NO_CONTENT])?;
         Ok(())
     }

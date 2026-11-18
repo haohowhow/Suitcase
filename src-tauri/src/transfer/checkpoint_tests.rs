@@ -98,6 +98,7 @@ async fn reports_only_committed_chunks_for_resumable_uploads() {
                 SplitPart::new(0, 64, "hash-0".to_owned()),
                 SplitPart::new(1, 64, "hash-1".to_owned()),
             ],
+            file_sha256: None,
             retained_at: 0,
         }))
         .await

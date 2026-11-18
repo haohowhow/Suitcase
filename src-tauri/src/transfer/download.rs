@@ -228,29 +228,23 @@ async fn download_inner(
     let mount_id = MountId::parse(checkpoint.mount_id.clone())?;
     let remote_path = RemotePath::parse(checkpoint.remote_path.clone())?;
     let offset = partial_length(checkpoint).await?;
+    let app_state = app.state::<crate::AppState>();
+    let logger = &app_state.logger;
+    let transfer_id = Some(checkpoint.transfer_id.as_str());
+    logger.debug(
+        "transfer",
+        "download_offset_selected",
+        transfer_id,
+        serde_json::Map::from_iter([
+            ("offset".to_owned(), offset.into()),
+            ("totalBytes".to_owned(), checkpoint.expected_size.into()),
+        ]),
+    );
     if offset == checkpoint.expected_size {
         let output = open_partial(checkpoint, ResponseMode::Append).await?;
         output.sync_all().await?;
         drop(output);
-        let integrity_status = super::verify_file_integrity(
-            &checkpoint.partial_path,
-            &checkpoint.remote_hash,
-            cancel,
-            verify_hash,
-        )
-        .await?;
-        let published = publish_without_overwrite(
-            checkpoint.partial_path.clone(),
-            checkpoint.local_path.clone(),
-        )
-        .await?;
-        return Ok(TransferResult {
-            transfer_id: checkpoint.transfer_id.clone(),
-            bytes_transferred: offset,
-            file: None,
-            integrity_status,
-            local_path: Some(published),
-        });
+        return finish_download(logger, checkpoint, cancel, verify_hash).await;
     }
     let response = tokio::select! {
         result = api.download_response_from(&mount_id, &remote_path, offset) => result?,
@@ -267,6 +261,15 @@ async fn download_inner(
     } else {
         0
     };
+    logger.debug(
+        "transfer",
+        "download_response_accepted",
+        transfer_id,
+        serde_json::Map::from_iter([
+            ("httpStatus".to_owned(), response.status().as_u16().into()),
+            ("resumedAt".to_owned(), transferred.into()),
+        ]),
+    );
     let mut output = open_partial(checkpoint, mode).await?;
     progress.store(transferred, Ordering::Relaxed);
     emit_progress(
@@ -311,21 +314,43 @@ async fn download_inner(
     output.flush().await?;
     output.sync_all().await?;
     drop(output);
-    let integrity_status = super::verify_file_integrity(
-        &checkpoint.partial_path,
-        &checkpoint.remote_hash,
-        cancel,
-        verify_hash,
-    )
-    .await?;
-    let published = publish_without_overwrite(
-        checkpoint.partial_path.clone(),
-        checkpoint.local_path.clone(),
-    )
-    .await?;
+    finish_download(logger, checkpoint, cancel, verify_hash).await
+}
+
+async fn finish_download(
+    logger: &crate::logging::AppLogger,
+    checkpoint: &DownloadCheckpoint,
+    cancel: &CancellationToken,
+    verify_hash: bool,
+) -> Result<TransferResult, AppError> {
+    let transfer_id = Some(checkpoint.transfer_id.as_str());
+    let integrity_status = logger
+        .trace(
+            "transfer",
+            "download_verify_integrity",
+            transfer_id,
+            super::verify_file_integrity(
+                &checkpoint.partial_path,
+                &checkpoint.remote_hash,
+                cancel,
+                verify_hash,
+            ),
+        )
+        .await?;
+    let published = logger
+        .trace(
+            "transfer",
+            "download_publish",
+            transfer_id,
+            publish_without_overwrite(
+                checkpoint.partial_path.clone(),
+                checkpoint.local_path.clone(),
+            ),
+        )
+        .await?;
     Ok(TransferResult {
         transfer_id: checkpoint.transfer_id.clone(),
-        bytes_transferred: transferred,
+        bytes_transferred: checkpoint.expected_size,
         file: None,
         integrity_status,
         local_path: Some(published),

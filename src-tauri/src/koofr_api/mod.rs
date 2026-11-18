@@ -8,14 +8,16 @@ use std::{
     time::Duration,
 };
 
-use reqwest::{Client, Method, Response, StatusCode, Url, header};
+use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Url, header};
 use serde::Serialize;
+use serde_json::Map;
 use tokio::sync::RwLock;
 use zeroize::Zeroize;
 
 use crate::{
     error::AppError,
     file_ops::{MountId, RemoteName, RemotePath},
+    logging::AppLogger,
 };
 
 pub use models::{FileInfo, LocatedFile, Mount, SessionInfo, TrashItem, TrashList};
@@ -67,11 +69,17 @@ pub struct KoofrApi {
     client: Client,
     session: RwLock<Option<Session>>,
     account_scope: RwLock<Option<String>>,
+    logger: Option<AppLogger>,
 }
 
 impl KoofrApi {
-    pub fn production() -> Result<Self, AppError> {
-        Self::new("https://app.koofr.net")
+    pub fn production(logger: AppLogger) -> Result<Self, AppError> {
+        Ok(Self::new("https://app.koofr.net")?.with_logger(logger))
+    }
+
+    fn with_logger(mut self, logger: AppLogger) -> Self {
+        self.logger = Some(logger);
+        self
     }
 
     pub(crate) fn new(base_url: &str) -> Result<Self, AppError> {
@@ -90,6 +98,7 @@ impl KoofrApi {
             client,
             session: RwLock::new(None),
             account_scope: RwLock::new(None),
+            logger: None,
         })
     }
 
@@ -105,13 +114,12 @@ impl KoofrApi {
         }
 
         let url = self.endpoint(&["token"])?;
-        let response = self
+        let request = self
             .client
             .post(url)
             .timeout(METADATA_TIMEOUT)
-            .json(&Credentials { email, password })
-            .send()
-            .await?;
+            .json(&Credentials { email, password });
+        let response = self.send("authenticate", request).await?;
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(AppError::AuthenticationFailed);
         }
@@ -121,8 +129,7 @@ impl KoofrApi {
             .get("x-user-id")
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let bytes = response.bytes().await?;
-        let token: TokenResponse = serde_json::from_slice(&bytes).map_err(AppError::Decode)?;
+        let token: TokenResponse = self.decode_json(response).await?;
         if token.token.is_empty() {
             return Err(AppError::AuthenticationFailed);
         }
@@ -171,13 +178,10 @@ impl KoofrApi {
 
     pub async fn list_mounts(&self) -> Result<Vec<Mount>, AppError> {
         let url = self.endpoint(&["api", "v2", "mounts"])?;
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_mounts", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: MountListResponse = Self::decode_json(response).await?;
+        let payload: MountListResponse = self.decode_json(response).await?;
         Ok(payload.mounts)
     }
 
@@ -188,13 +192,10 @@ impl KoofrApi {
     ) -> Result<Vec<FileInfo>, AppError> {
         let mut url = self.mount_endpoint(mount_id, &["files", "list"])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_files", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let mut payload: FileListResponse = Self::decode_json(response).await?;
+        let mut payload: FileListResponse = self.decode_json(response).await?;
         for file in &mut payload.files {
             file.path = path
                 .join(&RemoteName::parse(file.name.clone())?)?
@@ -211,13 +212,10 @@ impl KoofrApi {
     ) -> Result<FileInfo, AppError> {
         let mut url = self.mount_endpoint(mount_id, &["files", "info"])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("file_info", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let mut file = Self::decode_json::<FileInfo>(response).await?;
+        let mut file = self.decode_json::<FileInfo>(response).await?;
         file.path = path.as_str().to_owned();
         Ok(file)
     }
@@ -231,13 +229,10 @@ impl KoofrApi {
             .append_pair("sortDir", "desc")
             .append_pair("mountId", "")
             .append_pair("path", "");
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_recent", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: SearchResponse = Self::decode_json(response).await?;
+        let payload: SearchResponse = self.decode_json(response).await?;
 
         Ok(payload
             .hits
@@ -267,13 +262,10 @@ impl KoofrApi {
 
     pub async fn list_shared(&self) -> Result<Vec<LocatedFile>, AppError> {
         let url = self.endpoint(&["api", "v2", "shared"])?;
-        let response = self
-            .authenticated_request(Method::GET, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::GET, url).await?;
+        let response = self.send("list_shared", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        let payload: SharedListResponse = Self::decode_json(response).await?;
+        let payload: SharedListResponse = self.decode_json(response).await?;
 
         Ok(payload
             .files
@@ -316,13 +308,10 @@ impl KoofrApi {
                     .append_pair("sortField", "deleted")
                     .append_pair("sortDir", "desc");
             }
-            let response = self
-                .authenticated_request(Method::GET, url)
-                .await?
-                .send()
-                .await?;
+            let request = self.authenticated_request(Method::GET, url).await?;
+            let response = self.send("list_trash", request).await?;
             let response = Self::expect_status(response, &[StatusCode::OK])?;
-            let payload: TrashListResponse = Self::decode_json(response).await?;
+            let payload: TrashListResponse = self.decode_json(response).await?;
             if retention_days == 0 {
                 retention_days = payload.retention_days;
             }
@@ -380,12 +369,11 @@ impl KoofrApi {
                 .collect(),
         };
         let url = self.endpoint(&["api", "v2", "trash", "undelete"])?;
-        let response = self
+        let request = self
             .authenticated_request(Method::POST, url)
             .await?
-            .json(&request)
-            .send()
-            .await?;
+            .json(&request);
+        let response = self.send("restore_trash", request).await?;
         Self::expect_status(
             response,
             &[
@@ -400,11 +388,8 @@ impl KoofrApi {
 
     pub async fn empty_trash(&self) -> Result<(), AppError> {
         let url = self.endpoint(&["api", "v2", "trash"])?;
-        let response = self
-            .authenticated_request(Method::DELETE, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::DELETE, url).await?;
+        let response = self.send("empty_trash", request).await?;
         Self::expect_status(
             response,
             &[StatusCode::OK, StatusCode::ACCEPTED, StatusCode::NO_CONTENT],
@@ -424,14 +409,13 @@ impl KoofrApi {
         }
         let mut url = self.mount_endpoint(mount_id, &["files", "folder"])?;
         url.query_pairs_mut().append_pair("path", parent.as_str());
-        let response = self
+        let request = self
             .authenticated_request(Method::POST, url)
             .await?
             .json(&Folder {
                 name: name.as_str(),
-            })
-            .send()
-            .await?;
+            });
+        let response = self.send("create_folder", request).await?;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::CREATED])?;
         Ok(())
     }
@@ -456,11 +440,8 @@ impl KoofrApi {
                 .append_pair("removeIfSize", &size.to_string())
                 .append_pair("removeIfModified", &modified.to_string());
         }
-        let response = self
-            .authenticated_request(Method::DELETE, url)
-            .await?
-            .send()
-            .await?;
+        let request = self.authenticated_request(Method::DELETE, url).await?;
+        let response = self.send("delete", request).await?;
         Self::expect_status(response, &[StatusCode::OK])?;
         Ok(())
     }
@@ -515,15 +496,14 @@ impl KoofrApi {
         }
         let mut url = self.mount_endpoint(mount_id, &["files", operation])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
-        let response = self
+        let request = self
             .authenticated_request(Method::PUT, url)
             .await?
             .json(&Destination {
                 to_mount_id: destination_mount_id.as_str(),
                 to_path: destination_path.as_str(),
-            })
-            .send()
-            .await?;
+            });
+        let response = self.send(operation, request).await?;
         Self::expect_status(response, &[StatusCode::OK])?;
         Ok(())
     }
@@ -584,14 +564,13 @@ impl KoofrApi {
         let form = reqwest::multipart::Form::new().part("file", part);
         // No total timeout: a large upload legitimately takes hours. Callers watch
         // the upload's own progress instead.
-        let response = self
+        let request = self
             .content_request(Method::POST, url)
             .await?
-            .multipart(form)
-            .send()
-            .await?;
+            .multipart(form);
+        let response = self.send("upload", request).await?;
         let response = Self::expect_status(response, &[StatusCode::OK])?;
-        Self::decode_json(response).await
+        self.decode_json(response).await
     }
 
     pub async fn download_response(
@@ -616,10 +595,55 @@ impl KoofrApi {
         }
         // Only the wait for the headers is bounded here; the body is read with
         // `next_body_chunk`, which bounds each gap between chunks instead.
-        let response = tokio::time::timeout(BODY_STALL_TIMEOUT, request.send())
-            .await
-            .map_err(|_| AppError::NetworkStalled)??;
+        let operation = if offset > 0 {
+            "download_range"
+        } else {
+            "download"
+        };
+        let response = self
+            .trace_response(operation, async {
+                Ok(tokio::time::timeout(BODY_STALL_TIMEOUT, request.send())
+                    .await
+                    .map_err(|_| AppError::NetworkStalled)??)
+            })
+            .await?;
         Self::expect_status(response, &[StatusCode::OK, StatusCode::PARTIAL_CONTENT])
+    }
+
+    async fn send(
+        &self,
+        operation: &'static str,
+        request: RequestBuilder,
+    ) -> Result<Response, AppError> {
+        self.trace_response(operation, async { Ok(request.send().await?) })
+            .await
+    }
+
+    async fn trace_response(
+        &self,
+        operation: &'static str,
+        request: impl Future<Output = Result<Response, AppError>>,
+    ) -> Result<Response, AppError> {
+        // Only fixed operation labels and status codes are logged. A request or
+        // response may contain credentials even in its URL, headers or error text.
+        let span = self
+            .logger
+            .as_ref()
+            .and_then(|logger| logger.span("network", operation, None, Map::new()));
+        let result = request.await;
+        if let Some(span) = span {
+            let mut fields = Map::new();
+            if let Ok(response) = &result {
+                let status = response.status();
+                fields.insert("httpStatus".to_owned(), status.as_u16().into());
+                let error = (status.is_client_error() || status.is_server_error())
+                    .then(|| AppError::from_status(status));
+                span.finish(error.as_ref(), fields);
+            } else {
+                span.finish(result.as_ref().err(), fields);
+            }
+        }
+        result
     }
 
     async fn authenticated_request(
@@ -681,10 +705,20 @@ impl KoofrApi {
     }
 
     async fn decode_json<T: serde::de::DeserializeOwned>(
+        &self,
         response: Response,
     ) -> Result<T, AppError> {
-        let bytes = response.bytes().await?;
-        serde_json::from_slice(&bytes).map_err(AppError::Decode)
+        let decode = async {
+            let bytes = response.bytes().await?;
+            serde_json::from_slice(&bytes).map_err(AppError::Decode)
+        };
+        if let Some(logger) = &self.logger {
+            logger
+                .trace("network", "decode_json_response", None, decode)
+                .await
+        } else {
+            decode.await
+        }
     }
 }
 
@@ -706,7 +740,73 @@ mod tests {
     use crate::{
         error::AppError,
         file_ops::{MountId, RemoteName, RemotePath},
+        logging::{AppLogger, LogConfig},
+        settings::LogLevel,
     };
+
+    #[tokio::test]
+    async fn debug_request_log_correlates_stages_and_redacts_request_and_response() {
+        let directory =
+            std::env::temp_dir().join(format!("koofr-api-log-{}", uuid::Uuid::new_v4()));
+        let logger = AppLogger::initialize(LogConfig {
+            directory: directory.clone(),
+            level: LogLevel::Debug,
+            retention_days: 7,
+            max_file_bytes: 64 * 1024,
+        })
+        .expect("start logger");
+        let server = MockServer::start_async().await;
+        let api = KoofrApi::new(&server.base_url())
+            .expect("mock api")
+            .with_logger(logger);
+        api.set_test_session("private-session-token").await;
+        let response = server
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path("/api/v2/mounts/private-mount/files/list")
+                    .query_param("path", "/private-folder")
+                    .header("authorization", "Token token=private-session-token");
+                then.status(200)
+                    .json_body(json!({ "files": "private-response-body" }));
+            })
+            .await;
+        let mount = MountId::parse("private-mount".to_owned()).expect("valid mount");
+        let path = RemotePath::parse("/private-folder".to_owned()).expect("valid path");
+        assert!(matches!(
+            api.list_files(&mount, &path).await,
+            Err(AppError::Decode(_))
+        ));
+        response.assert_async().await;
+
+        let path = directory.join("koofr-gui.jsonl");
+        let payload = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let payload = std::fs::read_to_string(&path).unwrap_or_default();
+                if payload.contains("invalid_response") && payload.ends_with('\n') {
+                    break payload;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("wait for the log writer");
+        let request = payload
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("valid log event"))
+            .filter(|record| record["fields"]["operation"] == "list_files")
+            .collect::<Vec<_>>();
+        assert_eq!(request.len(), 2);
+        assert_eq!(request[0]["event"], "operation_started");
+        assert_eq!(request[1]["event"], "operation_finished");
+        assert_eq!(
+            request[0]["fields"]["operationId"],
+            request[1]["fields"]["operationId"]
+        );
+        assert_eq!(request[1]["fields"]["httpStatus"], 200);
+        assert!(request[1]["fields"]["elapsedMs"].is_number());
+        assert!(!payload.contains("private-"));
+        std::fs::remove_dir_all(directory).expect("remove test logs");
+    }
 
     #[tokio::test]
     async fn exchanges_an_app_password_for_an_in_memory_token() {

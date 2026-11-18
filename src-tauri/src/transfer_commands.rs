@@ -67,17 +67,24 @@ pub async fn resume_transfer(
     state: State<'_, AppState>,
     transfer_id: String,
 ) -> CommandResult<TransferResult> {
-    let outcome = transfer::resume_checkpoint(
-        app,
-        &state.api,
-        &state.transfers,
-        &state.transfer_checkpoints,
-        &state.vault,
-        transfer::NetworkRetryPolicy::from(state.settings.network_retry_settings().await),
-        transfer_id.clone(),
-    )
-    .await
-    .map_err(CommandError::from)?;
+    let outcome = state
+        .logger
+        .trace(
+            "transfer",
+            "resume_checkpoint",
+            Some(&transfer_id),
+            transfer::resume_checkpoint(
+                app,
+                &state.api,
+                &state.transfers,
+                &state.transfer_checkpoints,
+                &state.vault,
+                transfer::NetworkRetryPolicy::from(state.settings.network_retry_settings().await),
+                transfer_id.clone(),
+            ),
+        )
+        .await
+        .map_err(CommandError::from)?;
     if let Some(path) = outcome.result.local_path.clone().or(outcome.completed_path) {
         state
             .local_access

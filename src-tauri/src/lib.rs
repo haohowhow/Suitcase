@@ -141,6 +141,15 @@ pub fn run() {
                 retention_days,
                 max_file_bytes: u64::from(max_file_size_mb) * 1024 * 1024,
             })?;
+            logger.info(
+                "application",
+                "startup_configuration",
+                None,
+                serde_json::Map::from_iter([
+                    ("version".to_owned(), env!("CARGO_PKG_VERSION").into()),
+                    ("debugBuild".to_owned(), cfg!(debug_assertions).into()),
+                ]),
+            );
             let cache = MetadataCache::load(
                 settings
                     .initial_cache_directory()
@@ -185,7 +194,7 @@ pub fn run() {
             )?;
             let sync = sync::SyncManager::load(data_dir.join("sync-state.sqlite3"))?;
             app.manage(AppState {
-                api: KoofrApi::production()?,
+                api: KoofrApi::production(logger.clone())?,
                 local_access: LocalAccessManager::default(),
                 download_history,
                 transfers,

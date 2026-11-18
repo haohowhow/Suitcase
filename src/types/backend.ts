@@ -187,6 +187,9 @@ export interface SplitProgress {
   readonly currentPart: number | null
   readonly totalParts: number
   readonly phase: 'parts' | 'finalizing'
+  readonly postProcessing?:
+    | { readonly stage: 'hashing'; readonly bytesHashed: number; readonly totalBytes: number; readonly remainingSeconds: number | null }
+    | { readonly stage: 'support_files'; readonly completedFiles: number; readonly totalFiles: number }
 }
 
 export interface TransferProgress {
