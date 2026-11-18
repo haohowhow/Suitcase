@@ -6,26 +6,26 @@ labels: enhancement
 assignees: ''
 ---
 
-<!-- 请先读 README 的"路线图"和"还没做"章节，以及 CONTRIBUTING.md 里的 Out-of-Scope 部分。
-     Please check the Roadmap and "Not yet" section in README, and the Out-of-Scope list in CONTRIBUTING.md. -->
+<!-- 请先阅读 README 的“路线图”与“尚未实现的功能”章节，以及 CONTRIBUTING.md 中“已明确不属于本项目范围”的内容。
+     Please read the Roadmap and "Not yet implemented" sections of the README, and the out-of-scope list in CONTRIBUTING.md. -->
 
-## 要解决的问题 / Problem
+## 待解决的问题 / Problem
 
-<!-- 你遇到的实际场景 / A concrete situation you ran into -->
+<!-- 你遇到的具体场景 / A concrete situation you ran into -->
 
-## 建议的方案 / Proposed solution
+## 建议方案 / Proposed solution
 
-<!-- 你希望应用怎么表现 / How you'd like the app to behave -->
+<!-- 期望的应用行为 / How you would like the app to behave -->
 
 ## 替代方案 / Alternatives considered
 
-<!-- 你想过的其他做法，为什么不选 / Other approaches you considered and why not -->
+<!-- 考虑过的其他方案及未采用的原因 / Other approaches you considered and why they were rejected -->
 
 ## 影响范围 / Impact
 
-- UI 变化？/ UI change?
-- 涉及新的 Tauri 命令？/ New Tauri command?
-- 涉及本地数据格式？/ Local data format?
-- 涉及安全边界？/ Security boundary?
+- 是否涉及 UI 变化 / UI change?
+- 是否涉及新增 Tauri 命令 / New Tauri command?
+- 是否涉及本地数据格式 / Local data format?
+- 是否涉及安全边界 / Security boundary?
 
-## 其他 / Additional context
+## 其他信息 / Additional context
