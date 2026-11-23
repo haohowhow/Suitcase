@@ -68,6 +68,7 @@ Koofr-GUI is an unaffiliated, Windows-first alternative client built around a na
 
 - **Transfers**
   - Transfer panel with live progress, cancellation, and pausing.
+  - The upload speed chart updates after a retry. Whole-file retries start a fresh set of speed samples.
   - Split uploads show part progress, full-file checksum progress and estimated time remaining, and support-file progress in both the list and detail views.
   - After an interruption during finalization, resume from the transfer panel to reuse the saved full-file checksum and upload any missing checksums, manifest, and restore scripts.
   - Optional always-on-top transfer window aggregates concurrent upload/download progress and collapses to a single-icon square while paused or idle. Auto-collapse, click-to-pause/resume, and double-click-to-open can each be disabled. The surface remains draggable with the left button, and the native context menu can open the app, close the floating window, or quit. It receives redacted summary state only.

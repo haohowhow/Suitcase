@@ -432,7 +432,8 @@ export function useTransferManager(
           item.id === transferId
             ? {
                 ...item,
-                state: 'running',
+                state: 'queued',
+                finishedAt: null,
                 speedSamples:
                   item.speedSamples.length > 0
                     ? item.speedSamples

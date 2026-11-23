@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TransferPanel } from './TransferPanel'
+import { mergeTransferProgress } from './transferProgress'
 import type { TransferItem } from '../../types/files'
 
 function transferItem(overrides: Partial<TransferItem>): TransferItem {
@@ -25,6 +26,77 @@ function transferItem(overrides: Partial<TransferItem>): TransferItem {
 }
 
 describe('TransferPanel', () => {
+  it.each(['queued', 'retrying'] as const)(
+    'updates the upload speed chart after a whole-file retry from %s',
+    async (retryState) => {
+      const startedAt = 1_700_000_000_000
+      const retryAt = startedAt + 10_000
+      let items = [transferItem({
+        direction: 'upload',
+        state: retryState === 'queued' ? 'failed' : 'running',
+        recoveryKind: 'restart',
+        bytesTransferred: 8192,
+        totalBytes: 16384,
+        startedAt,
+        finishedAt: retryState === 'queued' ? startedAt + 9000 : null,
+        speedSamples: [
+          { recordedAt: startedAt, bytesTransferred: 0 },
+          { recordedAt: retryAt - 500, bytesTransferred: 8192 },
+        ],
+      })]
+      const event = {
+        transferId: items[0].id,
+        direction: 'upload' as const,
+        totalBytes: 16384,
+      }
+      const now = vi.spyOn(Date, 'now').mockReturnValue(retryAt)
+      try {
+        items = mergeTransferProgress(items, {
+          ...event,
+          state: retryState,
+          bytesTransferred: retryState === 'queued' ? 0 : 8192,
+        })
+        items = mergeTransferProgress(items, { ...event, state: 'running', bytesTransferred: 0 })
+        expect(items[0].finishedAt).toBeNull()
+        expect(items[0].speedSamples).toEqual([{ recordedAt: retryAt, bytesTransferred: 0 }])
+        expect(items[0].startedAt).toBe(startedAt)
+
+        const props = {
+          visible: true,
+          onClose: vi.fn(),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDiscard: vi.fn(),
+          onOpenFile: vi.fn(),
+          onOpenFolder: vi.fn(),
+          onClearFinished: vi.fn(),
+        }
+        const { rerender } = render(<TransferPanel {...props} items={items} />)
+        await userEvent.setup().click(screen.getByRole('option', { name: /file\.bin/ }))
+        const chart = screen.getByRole('img', { name: '最近 1 分钟上传速度' })
+        const line = chart.querySelector('polyline')
+        const initialPoints = line?.getAttribute('points')
+        expect(initialPoints).toBeTruthy()
+
+        now.mockReturnValue(retryAt + 500)
+        items = mergeTransferProgress(items, { ...event, state: 'running', bytesTransferred: 2048 })
+        now.mockReturnValue(retryAt + 1000)
+        items = mergeTransferProgress(items, { ...event, state: 'running', bytesTransferred: 2048 })
+        rerender(<TransferPanel {...props} items={items} />)
+
+        expect(line?.getAttribute('points')).not.toBe(initialPoints)
+        expect(screen.getByText('峰值 2.00 KB/s')).toBeTruthy()
+
+        now.mockReturnValue(retryAt + 2000)
+        items = mergeTransferProgress(items, { ...event, state: 'completed', bytesTransferred: 16384 })
+        expect(items[0].finishedAt).toBe(retryAt + 2000)
+      } finally {
+        now.mockRestore()
+      }
+    },
+  )
+
   it('shows cached download details and speed information for the selected row', async () => {
     const user = userEvent.setup()
     render(

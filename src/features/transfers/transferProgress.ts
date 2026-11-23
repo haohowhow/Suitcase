@@ -22,25 +22,35 @@ export function mergeTransferProgress(
         const terminal = progress.state === 'completed'
           || progress.state === 'cancelled'
           || progress.state === 'failed'
-        const shouldSample = progress.bytesTransferred !== transfer.bytesTransferred
+        const active = progress.state === 'queued'
+          || progress.state === 'running'
+          || progress.state === 'retrying'
+        const restartedUpload = transfer.direction === 'upload'
+          && transfer.recoveryKind === 'restart'
+          && progress.state === 'running'
+          && transfer.state !== 'running'
+        const sample = { recordedAt, bytesTransferred: progress.bytesTransferred }
+        const shouldSample = sample.bytesTransferred !== (previousSample?.bytesTransferred ?? transfer.bytesTransferred)
           && (
             previousSample === undefined
             || recordedAt - previousSample.recordedAt >= MIN_SPEED_SAMPLE_INTERVAL_MS
             || terminal
           )
-        const speedSamples = shouldSample
-          ? [
-              ...transfer.speedSamples,
-              { recordedAt, bytesTransferred: progress.bytesTransferred },
-            ].slice(-MAX_SPEED_SAMPLES)
-          : transfer.speedSamples
+        let speedSamples = transfer.speedSamples
+        // Whole-file uploads restart their byte counter after a retry. Start
+        // sampling at the new attempt so the first rate uses its own baseline.
+        if (restartedUpload) {
+          speedSamples = [sample]
+        } else if (shouldSample) {
+          speedSamples = [...speedSamples, sample].slice(-MAX_SPEED_SAMPLES)
+        }
         return {
           ...transfer,
           state: progress.state,
           bytesTransferred: progress.bytesTransferred,
           totalBytes: progress.totalBytes ?? transfer.totalBytes,
           splitProgress: progress.splitProgress ?? transfer.splitProgress,
-          finishedAt: terminal ? transfer.finishedAt ?? recordedAt : transfer.finishedAt,
+          finishedAt: active ? null : terminal ? transfer.finishedAt ?? recordedAt : transfer.finishedAt,
           speedSamples,
         }
       })()

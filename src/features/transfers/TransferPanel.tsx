@@ -191,9 +191,9 @@ function chartPoints(item: TransferItem) {
   const fallbackValue = averageBytesPerSecond(item)
   const firstValue = visible[0]?.value ?? fallbackValue
   const lastValue = visible.at(-1)?.value ?? fallbackValue
-  const transferStart = Math.max(item.startedAt ?? windowStart, windowStart)
+  const seriesStart = Math.max(item.speedSamples[0]?.recordedAt ?? item.startedAt ?? windowStart, windowStart)
   const values: SpeedPoint[] = [
-    { recordedAt: transferStart, value: firstValue },
+    { recordedAt: seriesStart, value: firstValue },
     ...visible,
     { recordedAt: windowEnd, value: lastValue },
   ]
