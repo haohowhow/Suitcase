@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
-import { fileKindByName, formatBytes } from '../files/filePresentation'
+import { fileKindByName, formatBytes } from '../../utils/format'
 import type { RecoveryKind } from '../../types/backend'
 import type { FileKind, TransferItem } from '../../types/files'
 
@@ -455,11 +455,21 @@ export const TransferPanel = memo(function TransferPanel({
           <dl className="transfer-detail__paths">
             <div>
               <dt>来源</dt>
-              <dd title={selected.remotePath ?? undefined}>{selected.remotePath ? `Koofr · ${selected.remotePath}` : 'Koofr'}</dd>
+              <dd
+                title={selected.remotePath ?? undefined}
+                translate={selected.remotePath ? 'no' : undefined}
+              >
+                {selected.remotePath ? `Koofr · ${selected.remotePath}` : 'Koofr'}
+              </dd>
             </div>
             <div>
               <dt>文件位置</dt>
-              <dd title={selected.localPath ?? undefined}>{selected.localPath ?? '完成后可用'}</dd>
+              <dd
+                title={selected.localPath ?? undefined}
+                translate={selected.localPath ? 'no' : undefined}
+              >
+                {selected.localPath ?? '完成后可用'}
+              </dd>
             </div>
           </dl>
 

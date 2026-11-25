@@ -1,7 +1,7 @@
 import { CheckCircle2, Cloud, Copy, Database, ExternalLink, HardDrive } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Modal } from '../../components/Modal'
-import { formatStorageMegabytes } from '../files/filePresentation'
+import { formatStorageMegabytes } from '../../utils/format'
 import type { KoofrMount } from '../../types/backend'
 import { identifyMountProvider } from './mountProviders'
 

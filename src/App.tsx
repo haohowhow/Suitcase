@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDownToLine } from 'lucide-react'
 import { AppSidebar } from './components/AppSidebar'
 import { Modal } from './components/Modal'
@@ -8,19 +8,15 @@ import { LoginPage } from './features/auth/LoginPage'
 import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
-import { FilePreviewModal } from './features/files/FilePreviewModal'
 import { MoveDestinationDialog } from './features/files/MoveDestinationDialog'
-import { isDirectory } from './features/files/filePresentation'
 import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
 import { useKoofrWorkspace } from './features/files/useKoofrWorkspace'
-import { SettingsPanel } from './features/settings/SettingsPanel'
 import { DownloadDestinationDialog } from './features/transfers/DownloadDestinationDialog'
 import { SplitUploadDialog } from './features/transfers/SplitUploadDialog'
 import { TransferPanel } from './features/transfers/TransferPanel'
-import { SyncWorkspace } from './features/sync/SyncWorkspace'
-import { VaultDialog } from './features/vault/VaultDialog'
 import { countActiveDownloads } from './features/transfers/transferProgress'
 import { shouldPromptForFloatingWindow } from './features/transfers/floatingTransfer'
+import { isDirectory } from './utils/format'
 import {
   commandErrorMessage,
   isTauriRuntime,
@@ -41,7 +37,26 @@ import type {
 } from './types/backend'
 import type { SplitUploadSettings, UploadMode } from './types/files'
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'delete' | 'emptyTrash' | null
+const FilePreviewModal = lazy(() =>
+  import('./features/files/FilePreviewModal').then((m) => ({ default: m.FilePreviewModal })),
+)
+const SettingsPanel = lazy(() =>
+  import('./features/settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
+)
+const SyncWorkspace = lazy(() =>
+  import('./features/sync/SyncWorkspace').then((m) => ({ default: m.SyncWorkspace })),
+)
+const VaultDialog = lazy(() =>
+  import('./features/vault/VaultDialog').then((m) => ({ default: m.VaultDialog })),
+)
+const ShareLinksDialog = lazy(() =>
+  import('./features/links/ShareLinksDialog').then((m) => ({ default: m.ShareLinksDialog })),
+)
+const ConnectedPlacesDialog = lazy(() =>
+  import('./features/places/ConnectedPlacesDialog').then((m) => ({ default: m.ConnectedPlacesDialog })),
+)
+
+type ModalKind = 'settings' | 'theme' | 'vault' | 'links' | 'places' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'copy' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
 
 export interface PendingDownload {
@@ -74,6 +89,7 @@ function App() {
   const [themeId, setThemeId] = useState<ThemeId>(readStoredTheme)
 
   const noticeTimeoutRef = useRef<number | null>(null)
+  const toastRef = useRef<HTMLDivElement>(null)
   const showNotice = useCallback((message: string) => {
     setNotice(message)
     if (noticeTimeoutRef.current !== null) {
@@ -84,6 +100,24 @@ function App() {
       noticeTimeoutRef.current = null
     }, 3200)
   }, [])
+
+  useEffect(() => {
+    const element = toastRef.current as (HTMLDivElement & { showPopover?: () => void; hidePopover?: () => void }) | null
+    if (!element) return
+    if (notice) {
+      try {
+        element.showPopover?.()
+      } catch {
+        // Popover API may already be open or unsupported in tests.
+      }
+    } else {
+      try {
+        element.hidePopover?.()
+      } catch {
+        // Ignore when already hidden.
+      }
+    }
+  }, [notice])
 
   const onEmailCleared = useCallback(() => setSavedEmail(''), [])
   const {
@@ -431,7 +465,7 @@ function App() {
 
 
 
-  const openFilePreview = async (
+  const openFilePreview = useCallback(async (
     file: RemoteFile,
     mountId: string,
     onDownload: () => void,
@@ -443,9 +477,9 @@ function App() {
     } catch (error) {
       showNotice(commandErrorMessage(error, '无法预览此文件，请下载后打开。'))
     }
-  }
+  }, [showNotice])
 
-  const openVaultFilePreview = async (
+  const openVaultFilePreview = useCallback(async (
     repoId: string,
     entry: VaultEntry,
     onDownload: () => void,
@@ -456,7 +490,7 @@ function App() {
     } catch (error) {
       showNotice(commandErrorMessage(error, '无法预览此加密文件，请下载后打开。'))
     }
-  }
+  }, [showNotice])
 
   // Stable while a preview is open, so unrelated app re-renders do not hand the
   // modal new callbacks.
@@ -474,11 +508,11 @@ function App() {
     download()
   }, [closeFilePreview, filePreview])
 
-  const openCreateFolder = () => {
+  const openCreateFolder = useCallback(() => {
     setModalInput('')
     setPendingFiles([])
     setModalKind('createFolder')
-  }
+  }, [])
 
   const createFolder = async () => {
     const name = modalInput.trim()
@@ -496,16 +530,16 @@ function App() {
     }
   }
 
-  const openRename = (file: RemoteFile) => {
+  const openRename = useCallback((file: RemoteFile) => {
     setModalInput(file.name)
     setPendingFiles([file])
     setModalKind('rename')
-  }
+  }, [])
 
-  const openShare = (file: RemoteFile) => {
+  const openShare = useCallback((file: RemoteFile) => {
     setPendingFiles([file])
     setModalKind('share')
-  }
+  }, [])
 
   const renameFile = async () => {
     const file = pendingFiles[0]
@@ -524,10 +558,10 @@ function App() {
     }
   }
 
-  const openDelete = (files: RemoteFile[]) => {
+  const openDelete = useCallback((files: RemoteFile[]) => {
     setPendingFiles(files)
     setModalKind('delete')
-  }
+  }, [])
 
   const deleteFiles = async () => {
     if (!workspace.activeMountId || pendingFiles.length === 0) return
@@ -551,10 +585,15 @@ function App() {
     }
   }
 
-  const openMove = (files: RemoteFile[]) => {
+  const openMove = useCallback((files: RemoteFile[]) => {
     setPendingFiles(files)
     setModalKind('move')
-  }
+  }, [])
+
+  const openCopy = useCallback((files: RemoteFile[]) => {
+    setPendingFiles(files)
+    setModalKind('copy')
+  }, [])
 
   const executeMove = async (destinationMountId: string, destinationPath: string) => {
     if (!workspace.activeMountId || pendingFiles.length === 0) return
@@ -580,16 +619,40 @@ function App() {
     }
   }
 
-  const openLocatedFile = (file: LocatedFile) => {
+  const executeCopy = async (destinationMountId: string, destinationPath: string) => {
+    if (!workspace.activeMountId || pendingFiles.length === 0) return
+    setOperationBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        pendingFiles.map((file) =>
+          koofr.copyEntry(workspace.activeMountId, file.path, destinationMountId, destinationPath),
+        ),
+      )
+      const copied = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.filter((result) => result.status === 'rejected')
+      setModalKind(null)
+      if (failed.length === 0) {
+        showNotice(`已复制 ${copied} 个项目`)
+      } else {
+        const prefix = copied > 0 ? `已复制 ${copied} 个项目；` : ''
+        showNotice(`${prefix}${commandErrorMessage(failed[0]?.reason, '其余项目复制失败。')}`)
+      }
+    } finally {
+      await workspace.refresh()
+      setOperationBusy(false)
+    }
+  }
+
+  const openLocatedFile = useCallback((file: LocatedFile) => {
     const segments = file.path.split('/').filter(Boolean)
     const targetPath = isDirectory(file)
       ? file.path
       : segments.length <= 1 ? '/' : `/${segments.slice(0, -1).join('/')}`
     setActiveItem('我的文件')
     void workspace.loadDirectory(file.mountId, targetPath)
-  }
+  }, [workspace.loadDirectory])
 
-  const restoreTrash = async (items: TrashItem[]) => {
+  const restoreTrash = useCallback(async (items: TrashItem[]) => {
     if (items.length === 0) return
     setOperationBusy(true)
     try {
@@ -601,9 +664,9 @@ function App() {
     } finally {
       setOperationBusy(false)
     }
-  }
+  }, [collections.load, showNotice])
 
-  const restoreAllTrash = async () => {
+  const restoreAllTrash = useCallback(async () => {
     setOperationBusy(true)
     try {
       await koofr.restoreAllTrash()
@@ -614,12 +677,12 @@ function App() {
     } finally {
       setOperationBusy(false)
     }
-  }
+  }, [collections.load, showNotice])
 
-  const openEmptyTrash = () => {
+  const openEmptyTrash = useCallback(() => {
     setModalInput('')
     setModalKind('emptyTrash')
-  }
+  }, [])
 
   const emptyTrash = async () => {
     if (modalInput !== '永久删除') return
@@ -636,7 +699,7 @@ function App() {
     }
   }
 
-  const selectNavigation = (label: string) => {
+  const selectNavigation = useCallback((label: string) => {
     setActiveItem(label)
     if (label === '我的文件') {
       if (workspace.activeMountId && workspace.path !== '/') {
@@ -644,7 +707,76 @@ function App() {
       }
       return
     }
-  }
+  }, [workspace.activeMountId, workspace.loadDirectory, workspace.path])
+
+  const handleOpenSettings = useCallback(() => {
+    setModalKind('settings')
+    void openSettings()
+  }, [openSettings])
+  const handleOpenTheme = useCallback(() => setModalKind('theme'), [])
+  const handleOpenVault = useCallback(() => setModalKind('vault'), [])
+  const handleOpenLinks = useCallback(() => setModalKind('links'), [])
+  const handleOpenPlaces = useCallback(() => setModalKind('places'), [])
+  const handleCloseTransfer = useCallback(() => setTransferVisible(false), [setTransferVisible])
+  const handleMountChange = useCallback(
+    (mountId: string) => void workspace.loadDirectory(mountId, '/'),
+    [workspace.loadDirectory],
+  )
+  const handleNavigate = useCallback(
+    (path: string) => void workspace.loadDirectory(workspace.activeMountId, path),
+    [workspace.activeMountId, workspace.loadDirectory],
+  )
+  const handleWorkspaceRefresh = useCallback(
+    () => void (workspace.activeMountId ? workspace.refresh() : workspace.initialize()),
+    [workspace.activeMountId, workspace.initialize, workspace.refresh],
+  )
+  const handleWorkspaceUpload = useCallback(
+    (mode: UploadMode) => void handleUpload(mode),
+    [handleUpload],
+  )
+  const handleWorkspaceDownload = useCallback(
+    (file: RemoteFile) => void handleDownload(file, workspace.activeMountId),
+    [handleDownload, workspace.activeMountId],
+  )
+  const handleWorkspacePreview = useCallback(
+    (file: RemoteFile) => void openFilePreview(
+      file,
+      workspace.activeMountId,
+      () => void handleDownload(file, workspace.activeMountId),
+    ),
+    [handleDownload, openFilePreview, workspace.activeMountId],
+  )
+  const handleCollectionRefresh = useCallback(
+    () => void collections.refresh(),
+    [collections.refresh],
+  )
+  const handleCollectionDownload = useCallback(
+    (file: LocatedFile) => void handleDownload(file, file.mountId),
+    [handleDownload],
+  )
+  const handleCollectionPreview = useCallback(
+    (file: LocatedFile) => void openFilePreview(
+      file,
+      file.mountId,
+      () => void handleDownload(file, file.mountId),
+    ),
+    [handleDownload, openFilePreview],
+  )
+  const handleRestoreTrash = useCallback(
+    (items: TrashItem[]) => void restoreTrash(items),
+    [restoreTrash],
+  )
+  const handleRestoreAllTrash = useCallback(
+    () => void restoreAllTrash(),
+    [restoreAllTrash],
+  )
+  const handleCancelTransfer = useCallback((id: string) => void cancelTransfer(id), [cancelTransfer])
+  const handlePauseTransfer = useCallback((id: string) => void pauseTransfer(id), [pauseTransfer])
+  const handleResumeTransfer = useCallback((id: string) => void resumeTransfer(id), [resumeTransfer])
+  const handleDiscardTransfer = useCallback((id: string) => void discardResumableTransfer(id), [discardResumableTransfer])
+  const handleOpenDownloadedFile = useCallback((id: string) => void openDownloadedFile(id), [openDownloadedFile])
+  const handleOpenDownloadedFolder = useCallback((id: string) => void openDownloadedFolder(id), [openDownloadedFolder])
+  const handleClearFinishedTransfers = useCallback(() => void clearFinishedTransfers(), [clearFinishedTransfers])
 
   return (
     <div
@@ -677,26 +809,26 @@ function App() {
           <AppSidebar
             activeItem={activeItem}
             onSelect={selectNavigation}
-            onSettingsClick={() => {
-              setModalKind('settings')
-              void openSettings()
-            }}
-            onThemeClick={() => setModalKind('theme')}
-            onVaultClick={() => setModalKind('vault')}
+            onSettingsClick={handleOpenSettings}
+            onThemeClick={handleOpenTheme}
+            onVaultClick={handleOpenVault}
+            onLinksClick={handleOpenLinks}
+            onPlacesClick={handleOpenPlaces}
             onLogoutClick={logout}
             onHelpClick={openHelp}
             storageName={activeMount?.name ?? ''}
             storageUsed={activeMount?.spaceUsed ?? null}
             storageTotal={activeMount?.spaceTotal ?? null}
-            mounts={workspace.mounts}
           />
           {activeItem === '同步' ? (
-            <SyncWorkspace
-              mounts={workspace.mounts}
-              defaultMountId={workspace.activeMountId}
-              defaultRemotePath={workspace.path}
-              sync={sync}
-            />
+            <Suspense fallback={<main className="workspace" />}>
+              <SyncWorkspace
+                mounts={workspace.mounts}
+                defaultMountId={workspace.activeMountId}
+                defaultRemotePath={workspace.path}
+                sync={sync}
+              />
+            </Suspense>
           ) : isCollectionView(activeItem) ? (
             <CollectionWorkspace
               view={activeItem}
@@ -708,17 +840,13 @@ function App() {
               diagnostic={collections.diagnostic}
               lastSyncedAt={collections.lastSyncedAt}
               busy={operationBusy}
-              onRefresh={() => void collections.refresh()}
-              onThemeOpen={() => setModalKind('theme')}
+              onRefresh={handleCollectionRefresh}
+              onThemeOpen={handleOpenTheme}
               onOpenLocation={openLocatedFile}
-              onDownload={(file) => void handleDownload(file, file.mountId)}
-              onPreview={(file) => void openFilePreview(
-                file,
-                file.mountId,
-                () => void handleDownload(file, file.mountId),
-              )}
-              onRestore={(items) => void restoreTrash(items)}
-              onRestoreAll={() => void restoreAllTrash()}
+              onDownload={handleCollectionDownload}
+              onPreview={handleCollectionPreview}
+              onRestore={handleRestoreTrash}
+              onRestoreAll={handleRestoreAllTrash}
               onEmptyTrash={openEmptyTrash}
             />
           ) : (
@@ -730,21 +858,18 @@ function App() {
               loading={workspace.status === 'loading'}
               error={workspace.error}
               lastSyncedAt={workspace.lastSyncedAt}
-              onMountChange={(mountId) => void workspace.loadDirectory(mountId, '/')}
-              onNavigate={(path) => void workspace.loadDirectory(workspace.activeMountId, path)}
-              onRefresh={() => void (workspace.activeMountId ? workspace.refresh() : workspace.initialize())}
+              onMountChange={handleMountChange}
+              onNavigate={handleNavigate}
+              onRefresh={handleWorkspaceRefresh}
               onCreateFolder={openCreateFolder}
-              onThemeOpen={() => setModalKind('theme')}
-              onUpload={(mode) => void handleUpload(mode)}
-              onDownload={(file) => void handleDownload(file, workspace.activeMountId)}
-              onPreview={(file) => void openFilePreview(
-                file,
-                workspace.activeMountId,
-                () => void handleDownload(file, workspace.activeMountId),
-              )}
+              onThemeOpen={handleOpenTheme}
+              onUpload={handleWorkspaceUpload}
+              onDownload={handleWorkspaceDownload}
+              onPreview={handleWorkspacePreview}
               onShare={openShare}
               onRename={openRename}
               onMove={openMove}
+              onCopy={openCopy}
               onDelete={openDelete}
             />
           )}
@@ -753,20 +878,20 @@ function App() {
               className="transfer-panel-backdrop"
               type="button"
               aria-label="收起传输面板"
-              onClick={() => setTransferVisible(false)}
+              onClick={handleCloseTransfer}
             />
           ) : null}
           <TransferPanel
             visible={transferVisible}
             items={transfers}
-            onClose={() => setTransferVisible(false)}
-            onCancel={(transferId) => void cancelTransfer(transferId)}
-            onPause={(transferId) => void pauseTransfer(transferId)}
-            onResume={(transferId) => void resumeTransfer(transferId)}
-            onDiscard={(transferId) => void discardResumableTransfer(transferId)}
-            onOpenFile={(transferId) => void openDownloadedFile(transferId)}
-            onOpenFolder={(transferId) => void openDownloadedFolder(transferId)}
-            onClearFinished={() => void clearFinishedTransfers()}
+            onClose={handleCloseTransfer}
+            onCancel={handleCancelTransfer}
+            onPause={handlePauseTransfer}
+            onResume={handleResumeTransfer}
+            onDiscard={handleDiscardTransfer}
+            onOpenFile={handleOpenDownloadedFile}
+            onOpenFolder={handleOpenDownloadedFolder}
+            onClearFinished={handleClearFinishedTransfers}
           />
           {!transferVisible ? (
             <button
@@ -785,7 +910,7 @@ function App() {
         </div>
       ) : null}
 
-      {notice ? <div className="toast" role="status">{notice}</div> : null}
+      {notice ? <div ref={toastRef} className="toast" role="status" popover="manual">{notice}</div> : null}
 
       {authState === 'signedIn' && modalKind === 'download' && pendingDownload ? (
         <DownloadDestinationDialog
@@ -845,7 +970,18 @@ function App() {
         >
           <label className="modal-field">
             <span>文件夹名称</span>
-            <input autoFocus value={modalInput} maxLength={255} onChange={(event) => setModalInput(event.target.value)} />
+            <input
+              autoFocus
+              value={modalInput}
+              maxLength={255}
+              onChange={(event) => setModalInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !operationBusy && modalInput.trim()) {
+                  event.preventDefault()
+                  void createFolder()
+                }
+              }}
+            />
           </label>
         </Modal>
       ) : null}
@@ -871,7 +1007,18 @@ function App() {
         >
           <label className="modal-field">
             <span>新名称</span>
-            <input autoFocus value={modalInput} maxLength={255} onChange={(event) => setModalInput(event.target.value)} />
+            <input
+              autoFocus
+              value={modalInput}
+              maxLength={255}
+              onChange={(event) => setModalInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !operationBusy && modalInput.trim() && modalInput.trim() !== pendingFiles[0]?.name) {
+                  event.preventDefault()
+                  void renameFile()
+                }
+              }}
+            />
           </label>
         </Modal>
       ) : null}
@@ -888,14 +1035,15 @@ function App() {
         </Modal>
       ) : null}
 
-      {authState === 'signedIn' && modalKind === 'move' && pendingFiles.length > 0 && workspace.activeMountId ? (
+      {authState === 'signedIn' && (modalKind === 'move' || modalKind === 'copy') && pendingFiles.length > 0 && workspace.activeMountId ? (
         <MoveDestinationDialog
           files={pendingFiles}
           mountId={workspace.activeMountId}
           mounts={workspace.mounts}
           busy={operationBusy}
+          mode={modalKind}
           onClose={() => setModalKind(null)}
-          onConfirm={(mntId, path) => void executeMove(mntId, path)}
+          onConfirm={(mntId, path) => void (modalKind === 'copy' ? executeCopy(mntId, path) : executeMove(mntId, path))}
         />
       ) : null}
 
@@ -910,22 +1058,46 @@ function App() {
           <p>回收站中的所有项目将被永久删除，且无法恢复。请输入“永久删除”以确认。</p>
           <label className="modal-field modal-field--spaced">
             <span>确认文字</span>
-            <input autoFocus value={modalInput} onChange={(event) => setModalInput(event.target.value)} />
+            <input
+              autoFocus
+              value={modalInput}
+              onChange={(event) => setModalInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !operationBusy && modalInput === '永久删除') {
+                  event.preventDefault()
+                  void emptyTrash()
+                }
+              }}
+            />
           </label>
         </Modal>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'vault' ? (
-        <VaultDialog
-          mountId={workspace.activeMountId}
-          parentPath={workspace.path}
-          onClose={() => setModalKind(null)}
-          onNotice={showNotice}
-          onTransferStarted={startVaultTransfer}
-          onPreview={(repoId, entry, onDownload) => {
-            void openVaultFilePreview(repoId, entry, onDownload)
-          }}
-        />
+        <Suspense fallback={null}>
+          <VaultDialog
+            mountId={workspace.activeMountId}
+            parentPath={workspace.path}
+            onClose={() => setModalKind(null)}
+            onNotice={showNotice}
+            onTransferStarted={startVaultTransfer}
+            onPreview={(repoId, entry, onDownload) => {
+              void openVaultFilePreview(repoId, entry, onDownload)
+            }}
+          />
+        </Suspense>
+      ) : null}
+
+      {authState === 'signedIn' && modalKind === 'links' ? (
+        <Suspense fallback={null}>
+          <ShareLinksDialog mounts={workspace.mounts} onClose={() => setModalKind(null)} />
+        </Suspense>
+      ) : null}
+
+      {authState === 'signedIn' && modalKind === 'places' ? (
+        <Suspense fallback={null}>
+          <ConnectedPlacesDialog mounts={workspace.mounts} onClose={() => setModalKind(null)} />
+        </Suspense>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'floatingPrompt' ? (
@@ -945,71 +1117,73 @@ function App() {
             <p>
               悬浮窗会置顶显示上传、下载和暂停状态，只同步任务数量与汇总百分比，不包含文件名或路径。
             </p>
-            <p>可拖动到合适位置，单击即可回到传输面板。</p>
+            <p>可拖动到合适位置，单击可暂停或继续任务，双击打开主窗口。</p>
           </div>
         </Modal>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'settings' ? (
         <Modal title="设置" actionLabel="完成" className="modal--settings" onClose={() => setModalKind(null)}>
-          <SettingsPanel
-            settings={settings}
-            loading={settingsLoading}
-            busy={settingsBusy}
-            error={settingsError}
-            downloadError={downloadSettingsError}
-            onCacheModeChange={(cacheMode) => {
-              if (settings) void updateCacheSettings(
-                cacheMode,
-                settings.cacheTtlMinutes,
-              )
-            }}
-            onCacheTtlChange={(cacheTtlMinutes) => {
-              if (settings) void updateCacheSettings(
-                settings.cacheMode,
-                cacheTtlMinutes,
-              )
-            }}
-            onLoggingSettingsChange={(next) => void updateLoggingSettings(
-              next.logLevel,
-              next.logRetentionDays,
-              next.logMaxFileSizeMb,
-            )}
-            onTransferSettingsChange={(next) => void updateTransferSettings(
-              next.autoRetryNetworkErrors,
-              next.networkRetryLimit,
-              next.networkRetryIntervalSeconds,
-            )}
-            onDownloadSettingsChange={(directory, askDownloadLocation) => {
-              void updateDownloadSettings(directory, askDownloadLocation)
-            }}
-            onBrowseDownloadDirectory={browseSettingsDownloadDirectory}
-            onBrowseWorkDirectory={browseWorkDirectory}
-            onWorkDirectoryChange={(directory, moveExisting) => {
-              void updateWorkDirectory(directory, moveExisting)
-            }}
-            onClearCache={() => void clearMetadataCache()}
-            onClearLogs={() => void clearLogs()}
-            onForgetLogin={() => void forgetSavedLogin()}
-            themeId={themeId}
-            onThemeChange={selectTheme}
-            onAppearanceChange={updateAppearance}
-            onGeneralChange={updateGeneral}
-            onTransferAdvancedChange={updateAdvancedTransfer}
-            onDownloadBehaviorChange={updateDownloadBehavior}
-            onBandwidthChange={updateBandwidth}
-            onNotificationChange={updateNotifications}
-            onLinkDefaultsChange={updateLinkDefaults}
-            onSecurityChange={updateSecurity}
-            onHistoryPolicyChange={updateHistoryPolicy}
-            onClearDownloadHistory={() => void clearFinishedTransfers()}
-            versionInfo={versionInfo}
-            onOpenExternalPage={(page) => {
-              void koofr.openExternalPage(page).catch((error) => {
-                setSettingsError(commandErrorMessage(error, '无法打开外部页面。'))
-              })
-            }}
-          />
+          <Suspense fallback={<div className="settings-loading"><span className="auth-spinner" />正在读取本地设置…</div>}>
+            <SettingsPanel
+              settings={settings}
+              loading={settingsLoading}
+              busy={settingsBusy}
+              error={settingsError}
+              downloadError={downloadSettingsError}
+              onCacheModeChange={(cacheMode) => {
+                if (settings) void updateCacheSettings(
+                  cacheMode,
+                  settings.cacheTtlMinutes,
+                )
+              }}
+              onCacheTtlChange={(cacheTtlMinutes) => {
+                if (settings) void updateCacheSettings(
+                  settings.cacheMode,
+                  cacheTtlMinutes,
+                )
+              }}
+              onLoggingSettingsChange={(next) => void updateLoggingSettings(
+                next.logLevel,
+                next.logRetentionDays,
+                next.logMaxFileSizeMb,
+              )}
+              onTransferSettingsChange={(next) => void updateTransferSettings(
+                next.autoRetryNetworkErrors,
+                next.networkRetryLimit,
+                next.networkRetryIntervalSeconds,
+              )}
+              onDownloadSettingsChange={(directory, askDownloadLocation) => {
+                void updateDownloadSettings(directory, askDownloadLocation)
+              }}
+              onBrowseDownloadDirectory={browseSettingsDownloadDirectory}
+              onBrowseWorkDirectory={browseWorkDirectory}
+              onWorkDirectoryChange={(directory, moveExisting) => {
+                void updateWorkDirectory(directory, moveExisting)
+              }}
+              onClearCache={() => void clearMetadataCache()}
+              onClearLogs={() => void clearLogs()}
+              onForgetLogin={() => void forgetSavedLogin()}
+              themeId={themeId}
+              onThemeChange={selectTheme}
+              onAppearanceChange={updateAppearance}
+              onGeneralChange={updateGeneral}
+              onTransferAdvancedChange={updateAdvancedTransfer}
+              onDownloadBehaviorChange={updateDownloadBehavior}
+              onBandwidthChange={updateBandwidth}
+              onNotificationChange={updateNotifications}
+              onLinkDefaultsChange={updateLinkDefaults}
+              onSecurityChange={updateSecurity}
+              onHistoryPolicyChange={updateHistoryPolicy}
+              onClearDownloadHistory={() => void clearFinishedTransfers()}
+              versionInfo={versionInfo}
+              onOpenExternalPage={(page) => {
+                void koofr.openExternalPage(page).catch((error) => {
+                  setSettingsError(commandErrorMessage(error, '无法打开外部页面。'))
+                })
+              }}
+            />
+          </Suspense>
         </Modal>
       ) : null}
 
@@ -1020,12 +1194,14 @@ function App() {
       ) : null}
 
       {filePreview ? (
-        <FilePreviewModal
-          previewInfo={filePreview.previewInfo}
-          fileName={filePreview.fileName}
-          onClose={closeFilePreview}
-          onDownload={downloadPreviewedFile}
-        />
+        <Suspense fallback={null}>
+          <FilePreviewModal
+            previewInfo={filePreview.previewInfo}
+            fileName={filePreview.fileName}
+            onClose={closeFilePreview}
+            onDownload={downloadPreviewedFile}
+          />
+        </Suspense>
       ) : null}
     </div>
   )

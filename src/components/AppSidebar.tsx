@@ -12,11 +12,8 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react'
-import { memo, useState } from 'react'
-import { formatStorageMegabytes } from '../features/files/filePresentation'
-import { ShareLinksDialog } from '../features/links/ShareLinksDialog'
-import { ConnectedPlacesDialog } from '../features/places/ConnectedPlacesDialog'
-import type { KoofrMount } from '../types/backend'
+import { memo } from 'react'
+import { formatStorageMegabytes } from '../utils/format'
 
 const primaryItems = [
   { label: '我的文件', icon: Folder },
@@ -32,12 +29,13 @@ interface AppSidebarProps {
   onSettingsClick: () => void
   onThemeClick: () => void
   onVaultClick: () => void
+  onLinksClick: () => void
+  onPlacesClick: () => void
   onLogoutClick: () => void
   onHelpClick: () => void
   storageName: string
   storageUsed: number | null
   storageTotal: number | null
-  mounts: readonly KoofrMount[]
 }
 
 export const AppSidebar = memo(function AppSidebar({
@@ -46,14 +44,14 @@ export const AppSidebar = memo(function AppSidebar({
   onSettingsClick,
   onThemeClick,
   onVaultClick,
+  onLinksClick,
+  onPlacesClick,
   onLogoutClick,
   onHelpClick,
   storageName,
   storageUsed,
   storageTotal,
-  mounts,
 }: AppSidebarProps) {
-  const [accountDialog, setAccountDialog] = useState<'links' | 'places' | null>(null)
   const storagePercent = storageUsed !== null && storageTotal !== null && storageTotal > 0
     ? Math.min(100, Math.max(0, (storageUsed / storageTotal) * 100))
     : 0
@@ -80,17 +78,16 @@ export const AppSidebar = memo(function AppSidebar({
         <button className="nav-item nav-item--vault" type="button" onClick={onVaultClick}>
           <LockKeyhole size={19} strokeWidth={1.9} />
           <span>私人保险箱</span>
-          <span className="vault-state">已锁定</span>
         </button>
       </div>
 
       <div className="sidebar__section sidebar__section--account">
         <p className="sidebar__section-label">账户功能</p>
-        <button className="nav-item" type="button" onClick={() => setAccountDialog('links')}>
+        <button className="nav-item" type="button" onClick={onLinksClick}>
           <Share size={19} strokeWidth={1.9} />
           <span>分享链接</span>
         </button>
-        <button className="nav-item" type="button" onClick={() => setAccountDialog('places')}>
+        <button className="nav-item" type="button" onClick={onPlacesClick}>
           <Cloud size={19} strokeWidth={1.9} />
           <span>已连接存储</span>
         </button>
@@ -125,13 +122,6 @@ export const AppSidebar = memo(function AppSidebar({
           帮助与反馈
         </button>
       </div>
-
-      {accountDialog === 'links' ? (
-        <ShareLinksDialog mounts={mounts} onClose={() => setAccountDialog(null)} />
-      ) : null}
-      {accountDialog === 'places' ? (
-        <ConnectedPlacesDialog mounts={mounts} onClose={() => setAccountDialog(null)} />
-      ) : null}
     </aside>
   )
 })

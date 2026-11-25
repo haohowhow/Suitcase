@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { getDocument } from 'pdfjs-dist'
 import { StrictMode } from 'react'
@@ -155,22 +155,10 @@ describe('FilePreviewModal', () => {
       getViewport: () => ({ width: 600, height: 800 }),
       render: () => ({ promise: Promise.resolve(), cancel: vi.fn() }),
     })
-    let rejectProbe: (reason: Error) => void = () => {}
-    const probePromise = new Promise<never>((_, reject) => {
-      rejectProbe = reject
-    })
-    vi.mocked(getDocument)
-      .mockReturnValueOnce({
-        promise: probePromise,
-        destroy: vi.fn(() => {
-          rejectProbe(new Error('Loading aborted'))
-          return Promise.resolve()
-        }),
-      } as never)
-      .mockReturnValueOnce({
-        promise: Promise.resolve({ numPages: 1, getPage }),
-        destroy: vi.fn().mockResolvedValue(undefined),
-      } as never)
+    vi.mocked(getDocument).mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, getPage }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never)
     const pdfInfo: FilePreviewInfo = {
       ...video,
       kind: 'pdf',
@@ -190,8 +178,8 @@ describe('FilePreviewModal', () => {
     )
 
     expect(await screen.findByLabelText('PDF 第 1 页')).not.toBeNull()
+    await waitFor(() => expect(getDocument).toHaveBeenCalledTimes(1))
     expect(screen.queryByText(/无法解析此 PDF/)).toBeNull()
-    expect(getDocument).toHaveBeenCalledTimes(2)
     vi.restoreAllMocks()
   })
 

@@ -33,7 +33,8 @@ const DOWNLOAD_ONLY_EXTENSIONS = new Set([
 
 export function isPreviewableFile(file: PreviewCandidate) {
   if (file.entryType !== 'file') return false
-  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+  const dot = file.name.lastIndexOf('.')
+  const extension = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : ''
   if (DOWNLOAD_ONLY_EXTENSIONS.has(extension)) return false
   const contentType = file.contentType.trim().toLowerCase()
   if (

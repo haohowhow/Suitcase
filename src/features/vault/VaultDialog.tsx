@@ -22,6 +22,7 @@ import { isPreviewableFile } from '../../preview'
 import { commandErrorMessage, isCommandErrorCode, koofr } from '../../services/koofr'
 import type { VaultDirectory, VaultEntry, VaultSummary } from '../../types/backend'
 import type { VaultTransferSpec } from '../../types/vault'
+import { formatBytes, formatModified } from '../../utils/format'
 
 interface VaultDialogProps {
   readonly mountId: string
@@ -35,30 +36,6 @@ interface VaultDialogProps {
 interface Relocation {
   readonly entry: VaultEntry
   readonly isMove: boolean
-}
-
-const DATE_FORMAT = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-
-function formatBytes(value: number) {
-  if (!Number.isFinite(value) || value < 0) return '—'
-  if (value === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
-  const amount = value / (1024 ** index)
-  return `${amount.toFixed(index === 0 || amount >= 100 ? 0 : amount >= 10 ? 1 : 2)} ${units[index]}`
-}
-
-function formatModified(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return '—'
-  const milliseconds = value < 1_000_000_000_000 ? value * 1000 : value
-  const date = new Date(milliseconds)
-  return Number.isNaN(date.getTime()) ? '—' : DATE_FORMAT.format(date)
 }
 
 export function VaultDialog({
@@ -80,6 +57,7 @@ export function VaultDialog({
   const [renameName, setRenameName] = useState('')
   const [removeRepoId, setRemoveRepoId] = useState<string | null>(null)
   const [removeConfirmation, setRemoveConfirmation] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [relocation, setRelocation] = useState<Relocation | null>(null)
   const directoryRef = useRef<VaultDirectory | null>(null)
 
@@ -211,7 +189,7 @@ export function VaultDialog({
 
   const deleteEntries = () => run(async () => {
     if (!directory || selected.length === 0) return
-    if (!window.confirm(`确定删除所选 ${selected.length} 个加密项目吗？`)) return
+    setConfirmingDelete(false)
     await koofr.deleteVaultEntries(directory.repoId, selected.map((entry) => entry.id))
     await openDirectory(directory.repoId, directory.directoryId)
   }, '无法删除加密项目。')
@@ -443,10 +421,22 @@ export function VaultDialog({
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected} onClick={() => singleSelected && setRelocation({ entry: singleSelected, isMove: false })}>
                     <Copy size={15} />复制
                   </button>
-                  <button className="danger-button" type="button" disabled={busy || selected.length === 0} onClick={() => void deleteEntries()}>
+                  <button className="danger-button" type="button" disabled={busy || selected.length === 0} onClick={() => setConfirmingDelete(true)}>
                     <Trash2 size={15} />删除
                   </button>
                 </div>
+
+                {confirmingDelete && selected.length > 0 ? (
+                  <div className="vault-relocation">
+                    <span>确定删除所选 {selected.length} 个加密项目吗？</span>
+                    <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteEntries()}>
+                      确认删除
+                    </button>
+                    <button className="secondary-button" type="button" disabled={busy} onClick={() => setConfirmingDelete(false)}>
+                      取消
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="vault-inline-forms">
                   <label>

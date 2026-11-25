@@ -729,6 +729,19 @@ export const catalog: Record<string, string> = {
   'Safe Key 不正确，请检查后重试。': 'The Safe Key is incorrect. Check it and try again.',
   '保险箱内容无法安全解密，Safe Key、Salt 或密文可能不匹配。': 'The vault contents could not be decrypted safely. The Safe Key, salt, or encrypted data may not match.',
   '无法打开 Windows Safe Key 安全输入窗口。': 'Could not open the secure Safe Key window.',
+
+  // Copy, link overrides, sync/vault confirmations
+  '复制到…': 'Copy to…',
+  '复制目标': 'Items to copy',
+  '复制至': 'Copy to',
+  '正在复制…': 'Copying…',
+  '链接有效期': 'Link expiration',
+  '设置密码': 'Require password',
+  '创建后自动生成一次性分享密码': 'Automatically generate a one-time share password',
+  '传输高级设置已保存': 'Advanced transfer settings saved',
+  '无法保存传输高级设置。': 'Could not save advanced transfer settings.',
+  '确认移除同步': 'Confirm removing sync',
+  '其余项目复制失败。': 'The remaining items could not be copied.',
 }
 
 type Translate = (value: string) => string
@@ -769,7 +782,7 @@ export const patterns: readonly Pattern[] = [
   [/^(\d+) (秒|分钟|小时|天|次|条)$/, (m) => `${m[1]} ${plural(m[1], ...unitNames[m[2]])}`],
   [/^已创建文件夹“(.*)”$/s, (m) => `Folder “${m[1]}” created`],
   [/^已重命名为“(.*)”$/s, (m) => `Renamed to “${m[1]}”`],
-  [/^已(删除|移动) (\d+) 个项目(?:；(.*))?$/s, (m, tr) => `${m[1] === '删除' ? 'Deleted' : 'Moved'} ${m[2]} ${plural(m[2], 'item', 'items')}${m[3] ? `; ${tr(m[3])}` : ''}`],
+  [/^已(删除|移动|复制) (\d+) 个项目(?:；(.*))?$/s, (m, tr) => `${m[1] === '删除' ? 'Deleted' : m[1] === '移动' ? 'Moved' : 'Copied'} ${m[2]} ${plural(m[2], 'item', 'items')}${m[3] ? `; ${tr(m[3])}` : ''}`],
   [/^已提交恢复 (\d+) 个项目$/, (m) => `Restore requested for ${m[1]} ${plural(m[1], 'item', 'items')}`],
   [/^删除 (\d+) 个项目$/, (m) => `Delete ${m[1]} ${plural(m[1], 'item', 'items')}`],
   [/^等 (\d+) 个项目$/, (m) => `and ${m[1]} items`],
@@ -818,7 +831,7 @@ export const patterns: readonly Pattern[] = [
   [/^(\d+) 个任务 · 计算中$/, (m) => `${m[1]} ${plural(m[1], 'task', 'tasks')} · calculating`],
   [/^(\d+) 个问题待处理$/, (m) => `${m[1]} ${plural(m[1], 'issue needs', 'issues need')} review`],
   [/^(\d+) 组同步离线$/, (m) => `${m[1]} ${plural(m[1], 'sync', 'syncs')} offline`],
-  [/^(\d+) 个项目无法解密，已隐藏。它们可能不是由此保险箱创建，或使用了其他 Safe Key。$/, (m) => `${m[1]} ${plural(m[1], 'item', 'items')} could not be decrypted and ${plural(m[1], 'is', 'are')} hidden. ${plural(m[1], 'It', 'They')} may not belong to this vault or use a different Safe Key.`],
+  [/^有 (\d+) 个项目无法解密，已隐藏。它们可能不是由此保险箱创建，或使用了其他 Safe Key。$/, (m) => `${m[1]} ${plural(m[1], 'item', 'items')} could not be decrypted and ${plural(m[1], 'is', 'are')} hidden. ${plural(m[1], 'It', 'They')} may not belong to this vault or use a different Safe Key.`],
   [/^筛选(.+)$/s, (m, tr) => `Filter ${tr(m[1]).toLowerCase()}`],
   [/^刷新(.+)$/s, (m, tr) => `Refresh ${tr(m[1]).toLowerCase()}`],
   [/^全选(.+)$/s, (m, tr) => `Select all ${tr(m[1]).toLowerCase()}`],

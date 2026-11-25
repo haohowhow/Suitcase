@@ -82,6 +82,12 @@ export function SplitUploadDialog({
             maxLength={MAX_REMOTE_NAME_UNITS}
             aria-invalid={!validPackageName}
             onChange={(event) => setPackageName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && validPackageName && validPartSize) {
+                event.preventDefault()
+                onConfirm({ packageName: trimmedPackageName, partBytes: parsedPartMiB * MEBIBYTE })
+              }
+            }}
           />
           <small>
             <Files aria-hidden="true" />

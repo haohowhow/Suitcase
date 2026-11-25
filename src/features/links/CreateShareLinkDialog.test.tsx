@@ -65,4 +65,19 @@ describe('CreateShareLinkDialog', () => {
       requirePassword: false,
     })
   })
+
+  it('allows overriding expiration and password requirement per link', async () => {
+    const user = userEvent.setup()
+    render(<CreateShareLinkDialog mountId="mount_1" file={FILE} onClose={vi.fn()} />)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: '链接有效期' }), '7')
+    await user.click(screen.getByRole('switch', { name: '设置密码' }))
+    await user.click(screen.getByRole('button', { name: '创建链接' }))
+
+    expect(publicLinks.create).toHaveBeenCalledWith('mount_1', FILE.path, {
+      kind: 'download',
+      expireDays: 7,
+      requirePassword: true,
+    })
+  })
 })

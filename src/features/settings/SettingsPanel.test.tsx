@@ -276,4 +276,23 @@ describe('SettingsPanel new sections', () => {
     expect(screen.getByText('2.1.0')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'https://example.test/home' })).toBeTruthy()
   })
+
+  it('commits bandwidth limits on blur instead of on every keystroke', async () => {
+    const user = userEvent.setup()
+    const onBandwidthChange = vi.fn()
+    renderSettings({ onBandwidthChange })
+    await user.click(screen.getByRole('tab', { name: '传输' }))
+
+    const input = screen.getByLabelText(/全局上限/)
+    await user.clear(input)
+    await user.type(input, '1024')
+    expect(onBandwidthChange).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(onBandwidthChange).toHaveBeenCalledWith({
+      globalKbps: 1024,
+      perTaskKbps: 0,
+      mode: 'full',
+    })
+  })
 })

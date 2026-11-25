@@ -1,5 +1,7 @@
 import {
+  ArrowDown,
   ArrowDownToLine,
+  ArrowUp,
   Check,
   Clock3,
   Eye,
@@ -12,12 +14,15 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react'
-import { memo, useDeferredValue, useMemo, useState } from 'react'
+import { memo, useDeferredValue, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { isPreviewableFile } from '../../preview'
 import type { LocatedFile, RemoteFile, TrashItem } from '../../types/backend'
 import type { CollectionView } from './useKoofrCollections'
-import { fileKind, formatBytes, formatModified, isDirectory } from './filePresentation'
+import { fileKind, formatBytes, formatModified, isDirectory } from '../../utils/format'
+
+type CollectionSortKey = 'name' | 'time' | 'size'
+type CollectionSortDir = 'asc' | 'desc'
 
 interface CollectionWorkspaceProps {
   view: CollectionView
@@ -127,29 +132,64 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
   onEmptyTrash,
 }: CollectionWorkspaceProps) {
   const [query, setQuery] = useState('')
-  const [selection, setSelection] = useState<{ scope: CollectionView; ids: Set<string> }>({
+  const [sortKey, setSortKey] = useState<CollectionSortKey>('time')
+  const [sortDir, setSortDir] = useState<CollectionSortDir>('desc')
+  const [selection, setSelection] = useState<{ scope: CollectionView; ids: Set<string>; anchor: string | null }>({
     scope: view,
     ids: EMPTY_SELECTION,
+    anchor: null,
   })
   const deferredQuery = useDeferredValue(query)
   const selectedIds = selection.scope === view ? selection.ids : EMPTY_SELECTION
+  const anchorId = selection.scope === view ? selection.anchor : null
   const details = viewDetails[view]
   const HeadingIcon = details.icon
   const isTrash = view === '回收站'
 
+  const toggleSort = (key: CollectionSortKey) => {
+    if (sortKey === key) {
+      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
+  }
+
   const visibleFiles = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase('zh-CN')
-    return normalized
+    const matched = normalized
       ? files.filter((file) => file.name.toLocaleLowerCase('zh-CN').includes(normalized))
       : files
-  }, [deferredQuery, files])
+    const direction = sortDir === 'asc' ? 1 : -1
+    return [...matched].sort((left, right) => {
+      if (sortKey === 'time') {
+        const diff = (left.modified - right.modified) * direction
+        if (diff !== 0) return diff
+      } else if (sortKey === 'size') {
+        const diff = ((left.size ?? 0) - (right.size ?? 0)) * direction
+        if (diff !== 0) return diff
+      }
+      return left.name.localeCompare(right.name, 'zh-CN', { numeric: true }) * direction
+    })
+  }, [deferredQuery, files, sortDir, sortKey])
 
   const visibleTrash = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase('zh-CN')
-    return normalized
+    const matched = normalized
       ? trash.filter((item) => item.name.toLocaleLowerCase('zh-CN').includes(normalized))
       : trash
-  }, [deferredQuery, trash])
+    const direction = sortDir === 'asc' ? 1 : -1
+    return [...matched].sort((left, right) => {
+      if (sortKey === 'time') {
+        const diff = left.deleted.localeCompare(right.deleted) * direction
+        if (diff !== 0) return diff
+      } else if (sortKey === 'size') {
+        const diff = ((left.size ?? 0) - (right.size ?? 0)) * direction
+        if (diff !== 0) return diff
+      }
+      return left.name.localeCompare(right.name, 'zh-CN', { numeric: true }) * direction
+    })
+  }, [deferredQuery, sortDir, sortKey, trash])
 
   const selectedFiles = useMemo(
     () => files.filter((file) => selectedIds.has(locatedId(file))),
@@ -159,9 +199,10 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
     () => trash.filter((item) => selectedIds.has(item.versionId)),
     [selectedIds, trash],
   )
-  const visibleIds = isTrash
-    ? visibleTrash.map((item) => item.versionId)
-    : visibleFiles.map(locatedId)
+  const visibleIds = useMemo(
+    () => (isTrash ? visibleTrash.map((item) => item.versionId) : visibleFiles.map(locatedId)),
+    [isTrash, visibleFiles, visibleTrash],
+  )
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
 
   const toggleSelection = (id: string) => {
@@ -169,8 +210,29 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
       const next = new Set(current.scope === view ? current.ids : EMPTY_SELECTION)
       if (next.has(id)) next.delete(id)
       else next.add(id)
-      return { scope: view, ids: next }
+      return { scope: view, ids: next, anchor: id }
     })
+  }
+
+  const selectRow = (id: string, event: ReactMouseEvent) => {
+    if (event.shiftKey && anchorId) {
+      const startIndex = visibleIds.indexOf(anchorId)
+      const endIndex = visibleIds.indexOf(id)
+      if (startIndex !== -1 && endIndex !== -1) {
+        const [from, to] = startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex]
+        const next = new Set(event.ctrlKey || event.metaKey ? selectedIds : EMPTY_SELECTION)
+        for (let index = from; index <= to; index += 1) {
+          next.add(visibleIds[index])
+        }
+        setSelection({ scope: view, ids: next, anchor: anchorId })
+        return
+      }
+    }
+    if (event.ctrlKey || event.metaKey) {
+      toggleSelection(id)
+      return
+    }
+    setSelection({ scope: view, ids: new Set([id]), anchor: id })
   }
 
   const toggleAll = () => {
@@ -180,7 +242,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
         if (allVisibleSelected) next.delete(id)
         else next.add(id)
       })
-      return { scope: view, ids: next }
+      return { scope: view, ids: next, anchor: null }
     })
   }
 
@@ -260,16 +322,50 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
         ) : null}
       </div>
 
-      <section className="file-list collection-list" aria-label={`${view}列表`} aria-busy={loading}>
+      <section className="file-list collection-list" role="grid" aria-label={`${view}列表`} aria-busy={loading}>
         <div className="file-row file-row--header collection-row" role="row">
-          <button className={`checkbox${allVisibleSelected ? ' checkbox--checked' : ''}`} type="button" onClick={toggleAll} aria-label={`全选${view}`}>
+          <button
+            className={`checkbox${allVisibleSelected ? ' checkbox--checked' : ''}`}
+            type="button"
+            role="checkbox"
+            aria-checked={allVisibleSelected}
+            onClick={toggleAll}
+            aria-label={`全选${view}`}
+          >
             {allVisibleSelected ? <Check size={13} /> : null}
           </button>
-          <span>名称</span>
-          <span>位置</span>
-          <span>{isTrash ? '删除时间' : '修改时间'}</span>
-          <span>大小</span>
-          <span aria-hidden="true" />
+          <span role="columnheader" aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+            <button
+              className={`column-sort${sortKey === 'name' ? ' column-sort--active' : ''}`}
+              type="button"
+              onClick={() => toggleSort('name')}
+            >
+              名称
+              {sortKey === 'name' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+            </button>
+          </span>
+          <span role="columnheader">位置</span>
+          <span role="columnheader" aria-sort={sortKey === 'time' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+            <button
+              className={`column-sort${sortKey === 'time' ? ' column-sort--active' : ''}`}
+              type="button"
+              onClick={() => toggleSort('time')}
+            >
+              {isTrash ? '删除时间' : '修改时间'}
+              {sortKey === 'time' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+            </button>
+          </span>
+          <span role="columnheader" aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+            <button
+              className={`column-sort${sortKey === 'size' ? ' column-sort--active' : ''}`}
+              type="button"
+              onClick={() => toggleSort('size')}
+            >
+              大小
+              {sortKey === 'size' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+            </button>
+          </span>
+          <span role="columnheader" aria-hidden="true" />
         </div>
 
         {!isTrash ? visibleFiles.map((file) => {
@@ -279,19 +375,19 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           const previewable = isPreviewableFile(file)
           const direction = file.shareDirection === 'received' ? '共享给我' : file.shareDirection === 'outgoing' ? '我已共享' : null
           return (
-            <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" key={id}>
-              <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" onClick={() => toggleSelection(id)} aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}>
+            <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" aria-selected={selected} key={id}>
+              <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" role="checkbox" aria-checked={selected} onClick={() => toggleSelection(id)} aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}>
                 {selected ? <Check size={13} /> : null}
               </button>
-              <button className="file-name file-name--button" type="button" onClick={() => directory ? onOpenLocation(file) : toggleSelection(id)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
+              <button className="file-name file-name--button" type="button" onClick={(event) => selectRow(id, event)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
                 <FileTypeIcon kind={fileKind(file)} />
                 <strong translate="no">{file.name}</strong>
               </button>
-              <span className="collection-location">{direction ? <em>{direction}</em> : null}<span translate="no">{locationLabel(file)}</span></span>
-              <span>{formatModified(file.modified)}</span>
-              <span>{directory ? '—' : formatBytes(file.size)}</span>
+              <span className="collection-location" role="gridcell">{direction ? <em>{direction}</em> : null}<span translate="no">{locationLabel(file)}</span></span>
+              <span role="gridcell">{formatModified(file.modified)}</span>
+              <span role="gridcell">{directory ? '—' : formatBytes(file.size)}</span>
               {previewable ? (
-                <div className="row-actions">
+                <div className="row-actions" role="gridcell">
                   <button className="row-action" type="button" aria-label={`预览 ${file.name}`} onClick={() => onPreview(file)}>
                     <Eye size={17} />
                   </button>
@@ -311,17 +407,17 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           const file = trashAsFile(item)
           const kind = fileKind(file)
           return (
-            <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" key={item.versionId}>
-              <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" onClick={() => toggleSelection(item.versionId)} aria-label={`${selected ? '取消选择' : '选择'} ${item.name}`}>
+            <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" aria-selected={selected} key={item.versionId}>
+              <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" role="checkbox" aria-checked={selected} onClick={() => toggleSelection(item.versionId)} aria-label={`${selected ? '取消选择' : '选择'} ${item.name}`}>
                 {selected ? <Check size={13} /> : null}
               </button>
-              <button className="file-name file-name--button" type="button" onClick={() => toggleSelection(item.versionId)}>
+              <button className="file-name file-name--button" type="button" onClick={(event) => selectRow(item.versionId, event)}>
                 <FileTypeIcon kind={kind} />
                 <strong translate="no">{item.name}</strong>
               </button>
-              <span className="collection-location" translate="no">{item.mountName || '存储位置'}{parentPath(item.path)}</span>
-              <span>{formatDeleted(item.deleted)}</span>
-              <span>{formatBytes(item.size)}</span>
+              <span className="collection-location" role="gridcell" translate="no">{item.mountName || '存储位置'}{parentPath(item.path)}</span>
+              <span role="gridcell">{formatDeleted(item.deleted)}</span>
+              <span role="gridcell">{formatBytes(item.size)}</span>
               <button className="row-action" type="button" aria-label={`恢复 ${item.name}`} disabled={busy} onClick={() => onRestore([item])}>
                 <RotateCcw size={18} />
               </button>
@@ -329,7 +425,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           )
         })}
 
-        {loading ? (
+        {loading && (isTrash ? visibleTrash.length === 0 : visibleFiles.length === 0) ? (
           <div className="empty-state">
             <RefreshCw className="icon-spin" size={27} />
             <strong>正在读取{view}</strong>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { ArrowDownToLine, ArrowUpDown, ArrowUpToLine, Check, Cloud, FolderSync, Pause, Play } from 'lucide-react'
 import { koofr } from '../../services/koofr'
+import { formatRate } from '../../utils/format'
 import type { FloatingTransferDirection, FloatingTransferSnapshot } from './floatingTransfer'
 
 const INITIAL_SNAPSHOT: FloatingTransferSnapshot = {
@@ -26,12 +27,6 @@ function activeStatus(direction: FloatingTransferDirection, english: boolean) {
   if (direction === 'upload') return english ? 'Uploading' : '正在上传'
   if (direction === 'download') return english ? 'Downloading' : '正在下载'
   return english ? 'Transferring' : '正在传输'
-}
-
-function formatRate(bytes: number) {
-  if (bytes < 1024) return `${Math.round(bytes)} B/s`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB/s`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB/s`
 }
 
 export function FloatingTransferWindow() {

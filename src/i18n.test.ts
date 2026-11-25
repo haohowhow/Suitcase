@@ -63,6 +63,32 @@ describe('installRuntimeTranslations', () => {
     expect(item.querySelector('strong')?.textContent).toBe('History')
     stop()
   })
+
+  it('restores dynamic pattern-translated text when switching from English back to Chinese', () => {
+    const root = mount('<div aria-label="打开传输面板，2 项正在下载">已删除 3 个项目</div>')
+
+    const stopEn = installRuntimeTranslations(root, 'enUs')
+    expect(root.querySelector('div')?.textContent).toBe('Deleted 3 items')
+    expect(root.querySelector('div')?.getAttribute('aria-label')).toBe('Open Transfers, 2 downloading')
+    stopEn()
+
+    const stopZh = installRuntimeTranslations(root, 'zhCn')
+    expect(root.querySelector('div')?.textContent).toBe('已删除 3 个项目')
+    expect(root.querySelector('div')?.getAttribute('aria-label')).toBe('打开传输面板，2 项正在下载')
+    stopZh()
+  })
+
+  it('translates dynamically updated attributes on mounted elements', async () => {
+    const root = mount('<input placeholder="筛选最近的文件" />')
+    const stop = installRuntimeTranslations(root, 'enUs')
+    const input = root.querySelector('input')!
+    expect(input.getAttribute('placeholder')).toBe('Filter recent files')
+
+    input.setAttribute('placeholder', '筛选回收站')
+    await nextMutationBatch()
+    expect(input.getAttribute('placeholder')).toBe('Filter trash')
+    stop()
+  })
 })
 
 describe('translateUiText', () => {

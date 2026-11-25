@@ -775,4 +775,9 @@ export const koofr = {
   openMainWindowFromFloating() {
     return invoke<void>('open_main_window_from_floating')
   },
+
+  runWindowCommand(command: 'minimize' | 'toggleMaximize' | 'close') {
+    if (!isTauriRuntime()) return
+    void getCurrentWindow()[command]()
+  },
 }

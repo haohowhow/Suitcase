@@ -37,15 +37,18 @@ export function useKoofrCollections(enabled: boolean, activeItem: string) {
 
   const load = useCallback(async (view: CollectionView, forceRefresh = false) => {
     const requestId = ++requestSequence.current
-    setState((current) => ({
-      ...current,
-      view,
-      files: [],
-      trash: [],
-      status: 'loading',
-      error: '',
-      diagnostic: '',
-    }))
+    setState((current) => {
+      const sameView = current.view === view
+      return {
+        ...current,
+        view,
+        files: sameView ? current.files : [],
+        trash: sameView ? current.trash : [],
+        status: 'loading',
+        error: '',
+        diagnostic: '',
+      }
+    })
 
     try {
       if (view === '回收站') {

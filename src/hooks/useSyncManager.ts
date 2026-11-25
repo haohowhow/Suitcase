@@ -97,7 +97,9 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
     return () => { disposed = true; unlisten?.() }
   }, [authState])
 
+  const hasSpeedSamples = speedSamples.length > 0
   useEffect(() => {
+    if (authState !== 'signedIn' || !hasSpeedSamples) return
     const timer = window.setInterval(() => {
       const now = Date.now()
       setSpeedSamples((current) => {
@@ -108,7 +110,7 @@ export function useSyncManager(authState: string, showNotice?: (message: string)
       })
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [authState, hasSpeedSamples])
 
   const setPairPaused = useCallback(async (pairId: string, paused: boolean) => {
     await koofr.setSyncPairPaused(pairId, paused)

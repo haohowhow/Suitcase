@@ -31,7 +31,7 @@ import type {
   LogLevel,
   UiDensity,
 } from '../../types/backend'
-import { formatBytes } from '../files/filePresentation'
+import { formatBytes } from '../../utils/format'
 
 interface SettingsPanelProps {
   readonly settings: AppSettings | null
@@ -215,6 +215,12 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
   const [logLevel, setLogLevel] = useState<LogLevel>(settings?.logLevel ?? 'info')
   const [logRetentionDays, setLogRetentionDays] = useState(settings?.logRetentionDays ?? 14)
   const [logMaxFileSizeMb, setLogMaxFileSizeMb] = useState(settings?.logMaxFileSizeMb ?? 10)
+  const [globalBandwidthDraft, setGlobalBandwidthDraft] = useState(
+    String(settings?.globalBandwidthLimitKbps ?? 0),
+  )
+  const [perTaskBandwidthDraft, setPerTaskBandwidthDraft] = useState(
+    String(settings?.perTaskBandwidthLimitKbps ?? 0),
+  )
   const [browsing, setBrowsing] = useState<'download' | 'work' | null>(null)
 
   useEffect(() => {
@@ -225,6 +231,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
     setLogLevel(settings.logLevel)
     setLogRetentionDays(settings.logRetentionDays)
     setLogMaxFileSizeMb(settings.logMaxFileSizeMb)
+    setGlobalBandwidthDraft(String(settings.globalBandwidthLimitKbps))
+    setPerTaskBandwidthDraft(String(settings.perTaskBandwidthLimitKbps))
   }, [settings])
 
   const cacheDetails = useMemo(
@@ -520,42 +528,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 <span aria-hidden="true" />
               </button>
             </div>
-
-            <SwitchRow
-              label="显示传输悬浮窗"
-              hint="置顶显示上传、下载或暂停状态；单击可打开传输面板"
-              checked={settings.floatingWindowEnabled}
-              disabled={busy || !onNotificationChange}
-              onChange={(next) => updateNotifications({
-                floatingWindowEnabled: next,
-                floatingWindowPrompted: true,
-              })}
-            />
-            {settings.floatingWindowEnabled ? (
-              <>
-                <SwitchRow
-                  label="空闲或暂停时收为图标"
-                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
-                  checked={settings.floatingWindowCompactEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
-                />
-                <SwitchRow
-                  label="单击暂停或继续"
-                  hint="一键暂停或继续所有可暂停的传输"
-                  checked={settings.floatingWindowClickToggleEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
-                />
-                <SwitchRow
-                  label="双击打开应用"
-                  hint="双击悬浮窗回到 Koofr GUI 主窗口"
-                  checked={settings.floatingWindowDoubleClickOpenEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
-                />
-              </>
-            ) : null}
           </section>
         ) : null}
 
@@ -944,10 +916,21 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 type="number"
                 min={0}
                 step={128}
-                value={settings.globalBandwidthLimitKbps}
-                disabled={busy || !onBandwidthChange}
-                onChange={(event) =>
-                  updateBandwidth({ globalKbps: Math.max(0, Number(event.target.value) || 0) })}
+                value={globalBandwidthDraft}
+                disabled={!onBandwidthChange}
+                onChange={(event) => setGlobalBandwidthDraft(event.target.value)}
+                onBlur={() => {
+                  const nextValue = Math.max(0, Math.floor(Number(globalBandwidthDraft) || 0))
+                  setGlobalBandwidthDraft(String(nextValue))
+                  if (nextValue !== settings.globalBandwidthLimitKbps) {
+                    updateBandwidth({ globalKbps: nextValue })
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur()
+                  }
+                }}
               />
               <label htmlFor="settings-bandwidth-per-task">
                 <strong>单任务上限（KB/s）</strong>
@@ -958,10 +941,21 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 type="number"
                 min={0}
                 step={128}
-                value={settings.perTaskBandwidthLimitKbps}
-                disabled={busy || !onBandwidthChange}
-                onChange={(event) =>
-                  updateBandwidth({ perTaskKbps: Math.max(0, Number(event.target.value) || 0) })}
+                value={perTaskBandwidthDraft}
+                disabled={!onBandwidthChange}
+                onChange={(event) => setPerTaskBandwidthDraft(event.target.value)}
+                onBlur={() => {
+                  const nextValue = Math.max(0, Math.floor(Number(perTaskBandwidthDraft) || 0))
+                  setPerTaskBandwidthDraft(String(nextValue))
+                  if (nextValue !== settings.perTaskBandwidthLimitKbps) {
+                    updateBandwidth({ perTaskKbps: nextValue })
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur()
+                  }
+                }}
               />
             </div>
           </section>
@@ -1323,7 +1317,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             />
             <SwitchRow
               label="显示传输悬浮窗"
-              hint="置顶显示上传、下载或暂停状态；单击可打开传输面板"
+              hint="置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口"
               checked={settings.floatingWindowEnabled}
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({

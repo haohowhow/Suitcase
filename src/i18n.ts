@@ -63,13 +63,13 @@ const enUs: Record<string, string> = {
   '播放通知声音': 'Play notification sound',
   '显示任务栏角标': 'Show taskbar badge',
   '显示传输悬浮窗': 'Show transfer floating window',
-  '置顶显示上传、下载或暂停状态；单击可打开传输面板': 'Keep upload, download, or paused status on top; click to open Transfers',
+  '置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口': 'Keep upload, download, or paused status on top; click to pause/resume, double-click to open the main window',
   '显示传输悬浮窗？': 'Show the transfer floating window?',
   '开启悬浮窗': 'Enable floating window',
   '正在开启…': 'Enabling…',
   '暂不开启': 'Not now',
   '悬浮窗会置顶显示上传、下载和暂停状态，只同步任务数量与汇总百分比，不包含文件名或路径。': 'The floating window stays on top with upload, download, and paused status. It only receives task counts and aggregate progress, never file names or paths.',
-  '可拖动到合适位置，单击即可回到传输面板。': 'Drag it to a convenient position and click it to return to Transfers.',
+  '可拖动到合适位置，单击可暂停或继续任务，双击打开主窗口。': 'Drag it anywhere; click to pause or resume transfers, or double-click to open the main window.',
   '链接默认类型': 'Default link type',
   '下载链接': 'Download link',
   '接收文件链接': 'File request link',
@@ -200,6 +200,11 @@ export function resolvedLanguage(language: InterfaceLanguage): 'zh-CN' | 'en-US'
   return navigator.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US'
 }
 
+const originalTextSource = new WeakMap<Text, string>()
+const lastWrittenText = new WeakMap<Text, string>()
+const originalAttributeSource = new WeakMap<Element, Map<string, string>>()
+const lastWrittenAttribute = new WeakMap<Element, Map<string, string>>()
+
 export function installRuntimeTranslations(
   root: HTMLElement,
   language: InterfaceLanguage,
@@ -207,20 +212,66 @@ export function installRuntimeTranslations(
   const resolved = resolvedLanguage(language)
   document.documentElement.lang = resolved
   const translateText = (value: string) => translateUiText(value, resolved)
+
+  const syncTextNode = (node: Text) => {
+    const current = node.textContent
+    if (!current) return
+    const previousWritten = lastWrittenText.get(node)
+    let source = originalTextSource.get(node)
+    if (source === undefined || (previousWritten !== undefined && current !== previousWritten)) {
+      source = current
+      originalTextSource.set(node, source)
+    }
+    const target = resolved === 'zh-CN'
+      ? (HAN.test(source) ? source : translateText(source))
+      : translateText(source)
+    if (target !== current) {
+      lastWrittenText.set(node, target)
+      node.textContent = target
+    } else {
+      lastWrittenText.set(node, current)
+    }
+  }
+
+  const syncAttribute = (element: HTMLElement, attribute: string) => {
+    const current = element.getAttribute(attribute)
+    if (!current) return
+    let sourceMap = originalAttributeSource.get(element)
+    if (!sourceMap) {
+      sourceMap = new Map()
+      originalAttributeSource.set(element, sourceMap)
+    }
+    let writtenMap = lastWrittenAttribute.get(element)
+    if (!writtenMap) {
+      writtenMap = new Map()
+      lastWrittenAttribute.set(element, writtenMap)
+    }
+    const previousWritten = writtenMap.get(attribute)
+    let source = sourceMap.get(attribute)
+    if (source === undefined || (previousWritten !== undefined && current !== previousWritten)) {
+      source = current
+      sourceMap.set(attribute, source)
+    }
+    const target = resolved === 'zh-CN'
+      ? (HAN.test(source) ? source : translateText(source))
+      : translateText(source)
+    if (target !== current) {
+      writtenMap.set(attribute, target)
+      element.setAttribute(attribute, target)
+    } else {
+      writtenMap.set(attribute, current)
+    }
+  }
+
   const translateSubtree = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE && node.textContent) {
-      const translated = translateText(node.textContent)
-      if (translated !== node.textContent) node.textContent = translated
+    if (node.nodeType === Node.TEXT_NODE) {
+      syncTextNode(node as Text)
       return
     }
     if (!(node instanceof HTMLElement)) return
     if (node.matches(USER_CONTENT_SELECTOR)) return
     for (const attribute of translatedAttributes) {
-      const value = node.getAttribute(attribute)
-      if (value) {
-        const translated = translateText(value)
-        if (translated !== value) node.setAttribute(attribute, translated)
-      }
+      syncAttribute(node, attribute)
     }
     for (const child of node.childNodes) translateSubtree(child)
   }
@@ -232,10 +283,28 @@ export function installRuntimeTranslations(
   translateNode(root)
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) translateNode(node)
-      if (mutation.type === 'characterData') translateNode(mutation.target)
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes) translateNode(node)
+      } else if (mutation.type === 'characterData') {
+        if (!isUserContent(mutation.target) && mutation.target.nodeType === Node.TEXT_NODE) {
+          syncTextNode(mutation.target as Text)
+        }
+      } else if (
+        mutation.type === 'attributes'
+        && mutation.attributeName
+        && mutation.target instanceof HTMLElement
+        && !isUserContent(mutation.target)
+      ) {
+        syncAttribute(mutation.target, mutation.attributeName)
+      }
     }
   })
-  observer.observe(root, { childList: true, subtree: true, characterData: true })
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: [...translatedAttributes],
+  })
   return () => observer.disconnect()
 }

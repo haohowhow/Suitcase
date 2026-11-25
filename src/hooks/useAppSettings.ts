@@ -301,8 +301,8 @@ export function useAppSettings(
             next.defaultSplitPartMib,
             next.autoSplitThresholdMib,
           ),
-        '重试设置已保存',
-        '无法保存重试设置。',
+        '传输高级设置已保存',
+        '无法保存传输高级设置。',
       ),
     [runSettingsMutation],
   )
