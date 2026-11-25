@@ -261,7 +261,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
     <main className="workspace collection-workspace">
       <div className="workspace__topbar collection-workspace__topbar">
         <label className="search-box collection-search">
-          <Search size={18} />
+          <Search size={15} strokeWidth={1.8} />
           <input
             type="search"
             value={query}
@@ -274,18 +274,18 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           {isTrash && trash.length > 0 ? (
             <>
               <button className="secondary-button" type="button" disabled={busy || loading} onClick={onRestoreAll}>
-                <RotateCcw size={17} />恢复全部
+                <RotateCcw size={15} strokeWidth={1.8} />恢复全部
               </button>
               <button className="danger-button" type="button" disabled={busy || loading} onClick={onEmptyTrash}>
-                <Trash2 size={17} />永久清空
+                <Trash2 size={15} strokeWidth={1.8} />永久清空
               </button>
             </>
           ) : null}
           <button className="icon-button icon-button--bordered" type="button" aria-label={`刷新${view}`} disabled={loading || busy} onClick={onRefresh}>
-            <RefreshCw className={loading ? 'icon-spin' : ''} size={19} />
+            <RefreshCw className={loading ? 'icon-spin' : ''} size={15} strokeWidth={1.8} />
           </button>
           <button className="icon-button icon-button--bordered theme-button-mobile" type="button" aria-label="外观主题" onClick={onThemeOpen}>
-            <Palette size={19} />
+            <Palette size={15} strokeWidth={1.8} />
           </button>
         </div>
       </div>
@@ -303,26 +303,31 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           <div className="selection-toolbar" aria-label="所选回收站项目操作">
             <strong>{selectedTrash.length}</strong><span>已选中</span><i />
             <button type="button" disabled={busy} onClick={() => onRestore(selectedTrash)}>
-              <RotateCcw size={18} />恢复所选
+              <RotateCcw size={15} strokeWidth={1.8} />恢复所选
             </button>
           </div>
         ) : !isTrash && selectedFiles.length > 0 ? (
           <div className="selection-toolbar" aria-label="所选文件操作">
             <strong>{selectedFiles.length}</strong><span>已选中</span><i />
             <button type="button" disabled={!singleFile} onClick={() => singleFile && onDownload(singleFile)}>
-              <ArrowDownToLine size={18} />下载
+              <ArrowDownToLine size={15} strokeWidth={1.8} />下载
             </button>
             <button type="button" disabled={!previewableFile} onClick={() => previewableFile && onPreview(previewableFile)}>
-              <Eye size={18} />预览
+              <Eye size={15} strokeWidth={1.8} />预览
             </button>
             <button type="button" disabled={!canOpenLocation} onClick={() => singleFile && onOpenLocation(singleFile)}>
-              <FolderOpen size={18} />打开位置
+              <FolderOpen size={15} strokeWidth={1.8} />打开位置
             </button>
           </div>
         ) : null}
       </div>
 
-      <section className="file-list collection-list" role="grid" aria-label={`${view}列表`} aria-busy={loading}>
+      <section
+        className={`file-list collection-list${(isTrash ? selectedTrash.length : selectedFiles.length) > 0 ? ' file-list--has-selection' : ''}`}
+        role="grid"
+        aria-label={`${view}列表`}
+        aria-busy={loading}
+      >
         <div className="file-row file-row--header collection-row" role="row">
           <button
             className={`checkbox${allVisibleSelected ? ' checkbox--checked' : ''}`}
@@ -332,7 +337,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
             onClick={toggleAll}
             aria-label={`全选${view}`}
           >
-            {allVisibleSelected ? <Check size={13} /> : null}
+            {allVisibleSelected ? <Check size={12} strokeWidth={2.4} /> : null}
           </button>
           <span role="columnheader" aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
             <button
@@ -341,7 +346,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               onClick={() => toggleSort('name')}
             >
               名称
-              {sortKey === 'name' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'name' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
           <span role="columnheader">位置</span>
@@ -352,17 +357,17 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               onClick={() => toggleSort('time')}
             >
               {isTrash ? '删除时间' : '修改时间'}
-              {sortKey === 'time' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'time' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
-          <span role="columnheader" aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+          <span className="file-cell--size" role="columnheader" aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
             <button
               className={`column-sort${sortKey === 'size' ? ' column-sort--active' : ''}`}
               type="button"
               onClick={() => toggleSort('size')}
             >
               大小
-              {sortKey === 'size' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'size' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
           <span role="columnheader" aria-hidden="true" />
@@ -377,7 +382,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           return (
             <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" aria-selected={selected} key={id}>
               <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" role="checkbox" aria-checked={selected} onClick={() => toggleSelection(id)} aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}>
-                {selected ? <Check size={13} /> : null}
+                {selected ? <Check size={12} strokeWidth={2.4} /> : null}
               </button>
               <button className="file-name file-name--button" type="button" onClick={(event) => selectRow(id, event)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
                 <FileTypeIcon kind={fileKind(file)} />
@@ -385,19 +390,19 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               </button>
               <span className="collection-location" role="gridcell">{direction ? <em>{direction}</em> : null}<span translate="no">{locationLabel(file)}</span></span>
               <span role="gridcell">{formatModified(file.modified)}</span>
-              <span role="gridcell">{directory ? '—' : formatBytes(file.size)}</span>
+              <span className="file-cell--size" role="gridcell">{directory ? '—' : formatBytes(file.size)}</span>
               {previewable ? (
                 <div className="row-actions" role="gridcell">
                   <button className="row-action" type="button" aria-label={`预览 ${file.name}`} onClick={() => onPreview(file)}>
-                    <Eye size={17} />
+                    <Eye size={15} strokeWidth={1.8} />
                   </button>
                   <button className="row-action" type="button" aria-label={`下载 ${file.name}`} onClick={() => onDownload(file)}>
-                    <ArrowDownToLine size={17} />
+                    <ArrowDownToLine size={15} strokeWidth={1.8} />
                   </button>
                 </div>
               ) : (
                 <button className="row-action" type="button" aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`} onClick={() => directory ? onOpenLocation(file) : onDownload(file)}>
-                  {directory ? <FolderOpen size={18} /> : <ArrowDownToLine size={18} />}
+                  {directory ? <FolderOpen size={15} strokeWidth={1.8} /> : <ArrowDownToLine size={15} strokeWidth={1.8} />}
                 </button>
               )}
             </div>
@@ -409,7 +414,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           return (
             <div className={`file-row collection-row${selected ? ' file-row--selected' : ''}`} role="row" aria-selected={selected} key={item.versionId}>
               <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" role="checkbox" aria-checked={selected} onClick={() => toggleSelection(item.versionId)} aria-label={`${selected ? '取消选择' : '选择'} ${item.name}`}>
-                {selected ? <Check size={13} /> : null}
+                {selected ? <Check size={12} strokeWidth={2.4} /> : null}
               </button>
               <button className="file-name file-name--button" type="button" onClick={(event) => selectRow(item.versionId, event)}>
                 <FileTypeIcon kind={kind} />
@@ -417,9 +422,9 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               </button>
               <span className="collection-location" role="gridcell" translate="no">{item.mountName || '存储位置'}{parentPath(item.path)}</span>
               <span role="gridcell">{formatDeleted(item.deleted)}</span>
-              <span role="gridcell">{formatBytes(item.size)}</span>
+              <span className="file-cell--size" role="gridcell">{formatBytes(item.size)}</span>
               <button className="row-action" type="button" aria-label={`恢复 ${item.name}`} disabled={busy} onClick={() => onRestore([item])}>
-                <RotateCcw size={18} />
+                <RotateCcw size={15} strokeWidth={1.8} />
               </button>
             </div>
           )
@@ -427,7 +432,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
 
         {loading && (isTrash ? visibleTrash.length === 0 : visibleFiles.length === 0) ? (
           <div className="empty-state">
-            <RefreshCw className="icon-spin" size={27} />
+            <RefreshCw className="icon-spin" size={20} strokeWidth={1.7} />
             <strong>正在读取{view}</strong>
             <span>请稍候</span>
           </div>
@@ -435,7 +440,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
 
         {!loading && error ? (
           <div className="empty-state empty-state--error">
-            <FileText size={27} />
+            <FileText size={20} strokeWidth={1.7} />
             <strong>无法显示{view}</strong>
             <span>{error}</span>
             {diagnostic ? <code className="error-diagnostic">错误代码：{diagnostic}</code> : null}
@@ -445,7 +450,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
 
         {!loading && !error && (isTrash ? visibleTrash.length === 0 : visibleFiles.length === 0) ? (
           <div className="empty-state">
-            {query ? <Search size={27} /> : <HeadingIcon size={27} />}
+            {query ? <Search size={20} strokeWidth={1.7} /> : <HeadingIcon size={20} strokeWidth={1.7} />}
             <strong>{query ? '没有匹配的项目' : details.empty}</strong>
             <span>{query ? '试试筛选其他文件名' : isTrash ? '删除的项目会在这里显示' : '有新内容时会显示在这里'}</span>
           </div>

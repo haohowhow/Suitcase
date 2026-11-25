@@ -87,10 +87,12 @@ export function Modal({
       <section
         className={`modal${wide ? ' modal--wide' : ''}${extraWide ? ' modal--extra-wide' : ''}${className ? ` ${className}` : ''}`}
       >
-        <button ref={closeButtonRef} className="icon-button modal__close" type="button" aria-label="关闭" onClick={onClose}>
-          <X size={18} />
-        </button>
-        <h2 id={titleId}>{title}</h2>
+        <header className="modal__header">
+          <h2 id={titleId}>{title}</h2>
+          <button ref={closeButtonRef} className="icon-button modal__close" type="button" aria-label="关闭" onClick={onClose}>
+            <X size={16} strokeWidth={1.8} />
+          </button>
+        </header>
         <div className="modal__content">{children}</div>
         <div className="modal__actions">
           {secondaryActionLabel ? (

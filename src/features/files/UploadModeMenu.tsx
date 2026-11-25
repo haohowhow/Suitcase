@@ -46,15 +46,15 @@ export function UploadModeMenu({ disabled, onSelect }: UploadModeMenuProps) {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <FileUp size={18} />上传<ChevronDown size={16} />
+        <FileUp size={15} strokeWidth={1.85} />上传<ChevronDown size={14} strokeWidth={1.85} />
       </button>
       {open ? (
         <div className="new-menu upload-mode-menu" role="menu">
           <button role="menuitem" type="button" onClick={() => select('compatible')}>
-            <FileUp size={17} />上传文件
+            <FileUp size={15} strokeWidth={1.8} />上传文件
           </button>
           <button role="menuitem" type="button" onClick={() => select('split')}>
-            <Layers3 size={17} />分卷上传大文件（可断点续传）
+            <Layers3 size={15} strokeWidth={1.8} />分卷上传大文件（可断点续传）
           </button>
         </div>
       ) : null}

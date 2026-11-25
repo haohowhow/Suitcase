@@ -12,23 +12,27 @@ Koofr-GUI should feel like a calm Windows file manager: compact, dependable, and
 
 | Role | Token | Light | Usage |
 | --- | --- | --- | --- |
-| Surface/primary | `--surface` | `#ffffff` | Main application and modal surface |
-| Surface/canvas | `--canvas` | `#e8eaed` | Window background |
-| Surface/subtle | `--surface-subtle` | `#f5f6f7` | Sidebar and quiet controls |
-| Surface/raised | `--surface-raised` | `#fbfcfc` | Settings sections and grouped controls |
-| Text/primary | `--text` | `#17191d` | Primary copy and headings |
-| Text/secondary | `--muted` | `#666c76` | Supporting copy |
-| Text/tertiary | `--subtle` | `#8b919a` | Metadata, placeholders, disabled content |
-| Border/default | `--border` | `#e1e4e8` | Dividers and control outlines |
-| Border/strong | `--border-strong` | `#cfd4d9` | Form fields and emphasized boundaries |
-| Accent/primary | `--accent` | `#66c451` | Primary actions, progress, selected state |
-| Accent/hover | `--accent-dark` | `#50a93f` | Hover and active accent |
-| Accent/contrast | `--accent-contrast` | `#142a17` | Text/icons on bright accent surfaces |
-| Accent/subtle | `--accent-soft` | `#f0faed` | Selected and informational backgrounds |
-| Accent/subtle-strong | `--accent-soft-strong` | `#e3f5de` | Stronger accent tint |
-| Status/error | `--status-error` | `#b33d37` | Error messages and destructive feedback |
-| Status/error-soft | `--status-error-soft` | `#fff1ef` | Error background |
-| Status/warning | `--status-warning` | `#8a6330` | Cautionary notes |
+| Surface/chrome | `--chrome-bg` | `#f3f4f6` | Outer window frame, title bar, sidebar, and sign-in canvas |
+| Surface/primary | `--surface` | `#ffffff` | Inset workspace sheet and modal surface |
+| Surface/canvas | `--canvas` | `#eceef2` | Base window background |
+| Surface/subtle | `--surface-subtle` | `#f6f7f9` | Dialog footers, summary wells, and quiet surfaces |
+| Surface/recessed | `--surface-recessed` | `#f3f5f8` | Address bar and search inputs at rest |
+| Surface/raised | `--surface-raised` | `#fafbfc` | Subtle raised cards |
+| Text/primary | `--text` | `#181b20` | Primary copy and headings |
+| Text/secondary | `--muted` | `#5c6470` | Supporting copy |
+| Text/tertiary | `--subtle` | `#868e9b` | Metadata, placeholders, quiet glyphs |
+| Border/subtle | `--border-subtle` | `#f2f4f7` | Soft file row hairlines |
+| Border/default | `--border` | `#e5e8ee` | Dividers and recessed outlines |
+| Border/strong | `--border-strong` | `#d3d8e1` | Control outlines |
+| Accent/primary | `--accent` | `#2fa84f` | Primary actions, progress, selected state |
+| Accent/hover | `--accent-dark` | `#238a3e` | Hover and active accent |
+| Accent/contrast | `--accent-contrast` | `#ffffff` | Text/icons on accent surfaces |
+| Accent/subtle | `--accent-soft` | `#eef9f1` | Selected and informational backgrounds |
+| Accent/subtle-strong | `--accent-soft-strong` | `#dcf3e2` | Stronger accent tint |
+| Status/error | `--status-error` | `#c23934` | Error messages and destructive feedback |
+| Status/error-soft | `--status-error-soft` | `#fef2f1` | Error background |
+| Status/warning | `--status-warning` | `#94601c` | Cautionary notes |
+| Status/warning-soft | `--status-warning-soft` | `#fef8ee` | Warning background |
 | Provider/Google | `--provider-google` | `#e6ad27` | Google Drive connection identifier |
 | Provider/OneDrive | `--provider-onedrive` | `#3979c7` | OneDrive connection identifier |
 | Provider/Dropbox | `--provider-dropbox` | `#236dc9` | Dropbox connection identifier |
@@ -97,10 +101,11 @@ All spacing derives from a 4px base.
 
 ### Grid
 
-- Desktop shell target: 1280×720 with a 980×640 minimum native window.
-- Transfer panel: 470px desktop rail, overlaying content at narrower desktop widths.
-- Modal widths: 440px standard and 660px wide, constrained to the viewport. Settings use a fixed 920×660 dialog (clamped to the viewport) so switching tabs never resizes it; only the page area scrolls.
-- Controls: buttons, selects, search and text inputs are 34px high with a 6px radius; file rows are 46px; workspace titles are 22px.
+- Desktop shell target: 1280×720 with a 980×640 minimum native window; `36px` caption bar and `220px` navigation pane frame an inset `--surface` workspace sheet (`12px` top-left radius).
+- Sign-in view: centered `400px` tactile card (`14px` radius) on a subtly top-lit `--chrome-bg` canvas rather than a multi-column web marketing split.
+- Transfer panel: `392px` desktop inspector rail, overlaying content at narrower desktop widths (`<= 1280px`); collapses to a bottom-right desktop status pill rather than a circular FAB.
+- Modal widths: `440px` standard, `656px` wide, and `996px` extra-wide (`12px` radius), constrained to the viewport with a fixed header, scrollable body, and bordered `--surface-subtle` footer bar. Settings use a fixed `900×640` dialog (clamped to the viewport) so switching tabs never resizes it; only the page area scrolls.
+- Controls: toolbar buttons, selects, recessed address bar, and search inputs are `34px` high (`36px` in standalone forms) with `7px–8px` radii; file rows are `42px` (`34px` in compact density) with `8px` hover/selection pills beneath a sticky `32px` header; workspace headings use `18px` semibold typography.
 - Responsive checkpoints: 1280px, 920px, and 650px; forms and setting choices collapse to one column at the compact breakpoint.
 
 ### Rules

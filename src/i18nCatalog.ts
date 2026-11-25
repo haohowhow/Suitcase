@@ -58,6 +58,7 @@ export const catalog: Record<string, string> = {
   '安全连接说明': 'About secure sign-in',
   '密码不会写入网页存储；选择记住密码后，': 'Your password is never stored by the web layer. If you choose to save it,',
   '将由 Windows 凭据管理器保护。': 'Windows Credential Manager protects it.',
+  '密码不会写入网页存储；选择记住密码后，将由 Windows 凭据管理器保护。': 'Your password is never stored by the web layer; when saved, Windows Credential Manager protects it.',
   '正在检查登录状态…': 'Checking sign-in status…',
   '登录功能需要在 Koofr 桌面应用中使用。': 'Signing in is only available in the Koofr desktop app.',
   'Koofr 未能建立登录会话，请重试。': 'Could not start a session. Please try again.',

@@ -3,7 +3,6 @@ import {
   Copy,
   Download,
   Eye,
-  File,
   FileKey2,
   Folder,
   FolderInput,
@@ -17,12 +16,13 @@ import {
   Upload,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { Modal } from '../../components/Modal'
 import { isPreviewableFile } from '../../preview'
 import { commandErrorMessage, isCommandErrorCode, koofr } from '../../services/koofr'
 import type { VaultDirectory, VaultEntry, VaultSummary } from '../../types/backend'
 import type { VaultTransferSpec } from '../../types/vault'
-import { formatBytes, formatModified } from '../../utils/format'
+import { fileKindByName, formatBytes, formatModified } from '../../utils/format'
 
 interface VaultDialogProps {
   readonly mountId: string
@@ -54,6 +54,7 @@ export function VaultDialog({
   const [error, setError] = useState('')
   const [createName, setCreateName] = useState('')
   const [folderName, setFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
   const [renameName, setRenameName] = useState('')
   const [removeRepoId, setRemoveRepoId] = useState<string | null>(null)
   const [removeConfirmation, setRemoveConfirmation] = useState('')
@@ -177,6 +178,7 @@ export function VaultDialog({
     if (!directory || !folderName.trim()) return
     await koofr.createVaultFolder(directory.repoId, directory.directoryId, folderName.trim())
     setFolderName('')
+    setCreatingFolder(false)
     await openDirectory(directory.repoId, directory.directoryId)
   }, '无法创建加密文件夹。')
 
@@ -258,7 +260,7 @@ export function VaultDialog({
     <Modal title="Koofr Vault" actionLabel="关闭" extraWide onClose={onClose}>
       <div className="vault-workspace">
         <div className="vault-security-note">
-          <FileKey2 size={18} />
+          <FileKey2 size={15} strokeWidth={1.8} />
           <span>Safe Key 只在 Windows 系统安全窗口中输入，不会显示在应用界面中。</span>
         </div>
 
@@ -268,10 +270,10 @@ export function VaultDialog({
           <>
             <div className="vault-toolbar">
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void loadVaults()}>
-                <RefreshCw size={15} />刷新
+                <RefreshCw size={14} strokeWidth={1.8} />刷新
               </button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void importVault()}>
-                <FolderInput size={15} />导入 rclone 配置
+                <FolderInput size={14} strokeWidth={1.8} />导入 rclone 配置
               </button>
             </div>
 
@@ -291,7 +293,7 @@ export function VaultDialog({
                 disabled={busy || !mountId || !createName.trim()}
                 onClick={() => void createVault()}
               >
-                <ShieldPlus size={15} />创建
+                <ShieldPlus size={15} strokeWidth={1.8} />创建
               </button>
             </div>
 
@@ -299,7 +301,7 @@ export function VaultDialog({
               {loading ? <p className="vault-muted">正在读取保险箱…</p> : null}
               {!loading && vaults.length === 0 ? (
                 <div className="vault-empty">
-                  <Lock size={28} />
+                  <Lock size={22} strokeWidth={1.7} />
                   <strong>还没有保险箱</strong>
                   <span>可以在当前文件夹创建一个，或导入之前导出的 rclone crypt 配置。</span>
                 </div>
@@ -313,15 +315,15 @@ export function VaultDialog({
                   <div className="vault-card__actions">
                     {vault.locked ? (
                       <button className="primary-button" type="button" disabled={busy} onClick={() => void unlock(vault.id)}>
-                        <KeyRound size={14} />解锁
+                        <KeyRound size={14} strokeWidth={1.8} />解锁
                       </button>
                     ) : (
                       <>
                         <button className="primary-button" type="button" disabled={busy} onClick={() => void openDirectory(vault.id, 'root')}>
-                          <Folder size={14} />打开
+                          <Folder size={14} strokeWidth={1.8} />打开
                         </button>
                         <button className="secondary-button" type="button" disabled={busy} onClick={() => void lock(vault.id)}>
-                          <Lock size={14} />锁定
+                          <Lock size={14} strokeWidth={1.8} />锁定
                         </button>
                       </>
                     )}
@@ -362,7 +364,7 @@ export function VaultDialog({
           <>
             <div className="vault-toolbar vault-toolbar--browser">
               <button className="secondary-button" type="button" disabled={busy} onClick={() => setDirectory(null)}>
-                <ArrowLeft size={15} />保险箱列表
+                <ArrowLeft size={14} strokeWidth={1.8} />保险箱列表
               </button>
               <nav className="vault-breadcrumb" aria-label="保险箱路径">
                 {directory.breadcrumbs.map((crumb, index) => (
@@ -374,12 +376,12 @@ export function VaultDialog({
                   </span>
                 ))}
               </nav>
-              <button className="secondary-button" type="button" disabled={busy} onClick={refreshDirectory}>
-                <RefreshCw size={15} />
+              <button className="secondary-button" type="button" disabled={busy} aria-label="刷新" title="刷新" onClick={refreshDirectory}>
+                <RefreshCw size={14} strokeWidth={1.8} />
                 <span className="sr-only">刷新</span>
               </button>
               <button className="secondary-button" type="button" disabled={busy} onClick={() => void lock(directory.repoId)}>
-                <Lock size={15} />锁定
+                <Lock size={14} strokeWidth={1.8} />锁定
               </button>
             </div>
 
@@ -387,7 +389,7 @@ export function VaultDialog({
               <div className="vault-relocation">
                 <span>选择目标文件夹：<bdi translate="no">{relocation.entry.name}</bdi></span>
                 <button className="primary-button" type="button" disabled={busy} onClick={() => void completeRelocation()}>
-                  {relocation.isMove ? <FolderInput size={15} /> : <Copy size={15} />}
+                  {relocation.isMove ? <FolderInput size={14} strokeWidth={1.8} /> : <Copy size={14} strokeWidth={1.8} />}
                   {relocation.isMove ? '移动到此处' : '复制到此处'}
                 </button>
                 <button className="secondary-button" type="button" onClick={() => setRelocation(null)}>取消</button>
@@ -395,39 +397,46 @@ export function VaultDialog({
             ) : (
               <>
                 <div className="vault-toolbar">
-                  <button className="secondary-button" type="button" disabled={busy} onClick={() => void upload()}>
-                    <Upload size={15} />加密上传
+                  <button className="primary-button" type="button" disabled={busy} onClick={() => void upload()}>
+                    <Upload size={14} strokeWidth={1.85} />加密上传
+                  </button>
+                  <button className="secondary-button" type="button" disabled={busy} onClick={() => {
+                    setCreatingFolder((open) => !open)
+                    setRenameName('')
+                  }}>
+                    <FolderPlus size={14} strokeWidth={1.8} />新建文件夹
                   </button>
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected || singleSelected.entryType !== 'file'} onClick={() => singleSelected && void downloadEntry(singleSelected)}>
-                    <Download size={15} />解密下载
+                    <Download size={14} strokeWidth={1.8} />解密下载
                   </button>
                   <button className="secondary-button" type="button" disabled={busy || !previewableSelected} onClick={() => {
                     if (directory && previewableSelected) {
                       onPreview(directory.repoId, previewableSelected, () => void downloadEntry(previewableSelected))
                     }
                   }}>
-                    <Eye size={15} />预览
+                    <Eye size={14} strokeWidth={1.8} />预览
                   </button>
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected} onClick={() => {
                     if (singleSelected) {
+                      setCreatingFolder(false)
                       setRenameName(singleSelected.name)
                     }
                   }}>
-                    <Pencil size={15} />重命名
+                    <Pencil size={14} strokeWidth={1.8} />重命名
                   </button>
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected} onClick={() => singleSelected && setRelocation({ entry: singleSelected, isMove: true })}>
-                    <FolderInput size={15} />移动
+                    <FolderInput size={14} strokeWidth={1.8} />移动
                   </button>
                   <button className="secondary-button" type="button" disabled={busy || !singleSelected} onClick={() => singleSelected && setRelocation({ entry: singleSelected, isMove: false })}>
-                    <Copy size={15} />复制
+                    <Copy size={14} strokeWidth={1.8} />复制
                   </button>
                   <button className="danger-button" type="button" disabled={busy || selected.length === 0} onClick={() => setConfirmingDelete(true)}>
-                    <Trash2 size={15} />删除
+                    <Trash2 size={14} strokeWidth={1.8} />删除
                   </button>
                 </div>
 
                 {confirmingDelete && selected.length > 0 ? (
-                  <div className="vault-relocation">
+                  <div className="vault-relocation vault-relocation--danger">
                     <span>确定删除所选 {selected.length} 个加密项目吗？</span>
                     <button className="danger-button" type="button" disabled={busy} onClick={() => void deleteEntries()}>
                       确认删除
@@ -438,37 +447,81 @@ export function VaultDialog({
                   </div>
                 ) : null}
 
-                <div className="vault-inline-forms">
-                  <label>
-                    <span>新建文件夹</span>
-                    <input value={folderName} placeholder="文件夹名称" onChange={(event) => setFolderName(event.target.value)} />
-                    <button className="secondary-button" type="button" disabled={busy || !folderName.trim()} onClick={() => void createFolder()}>
-                      <FolderPlus size={15} />新建
-                    </button>
-                  </label>
-                  {renameName ? (
-                    <label>
-                      <span>新名称</span>
-                      <input autoFocus value={renameName} onChange={(event) => setRenameName(event.target.value)} />
-                      <button className="primary-button" type="button" disabled={busy || !renameName.trim()} onClick={() => void renameEntry()}>
-                        保存
-                      </button>
-                    </label>
-                  ) : null}
-                </div>
+                {creatingFolder || renameName ? (
+                  <div className="vault-inline-forms">
+                    {creatingFolder ? (
+                      <label>
+                        <span>新建文件夹</span>
+                        <input
+                          autoFocus
+                          value={folderName}
+                          placeholder="文件夹名称"
+                          onChange={(event) => setFolderName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !busy && folderName.trim()) {
+                              event.preventDefault()
+                              void createFolder()
+                            } else if (event.key === 'Escape') {
+                              setCreatingFolder(false)
+                              setFolderName('')
+                            }
+                          }}
+                        />
+                        <button className="primary-button" type="button" disabled={busy || !folderName.trim()} onClick={() => void createFolder()}>
+                          新建
+                        </button>
+                        <button className="secondary-button" type="button" disabled={busy} onClick={() => { setCreatingFolder(false); setFolderName('') }}>
+                          取消
+                        </button>
+                      </label>
+                    ) : null}
+                    {renameName ? (
+                      <label>
+                        <span>新名称</span>
+                        <input
+                          autoFocus
+                          value={renameName}
+                          onChange={(event) => setRenameName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !busy && renameName.trim()) {
+                              event.preventDefault()
+                              void renameEntry()
+                            } else if (event.key === 'Escape') {
+                              setRenameName('')
+                            }
+                          }}
+                        />
+                        <button className="primary-button" type="button" disabled={busy || !renameName.trim()} onClick={() => void renameEntry()}>
+                          保存
+                        </button>
+                        <button className="secondary-button" type="button" disabled={busy} onClick={() => setRenameName('')}>
+                          取消
+                        </button>
+                      </label>
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             )}
 
             <div className="vault-file-list" role="list" aria-label={`${directory.repoName} 内容`}>
-              {loading ? <p className="vault-muted">正在解密文件夹内容…</p> : null}
+              {!loading && directory.entries.length > 0 ? (
+                <div className="vault-file-header" aria-hidden="true">
+                  <span />
+                  <span>名称</span>
+                  <span className="file-cell--size">大小</span>
+                  <span>修改时间</span>
+                </div>
+              ) : null}
+              {loading ? <p className="vault-muted vault-muted--padded">正在解密文件夹内容…</p> : null}
               {!loading && directory.skippedEntries > 0 ? (
-                <p className="vault-muted" role="status">
+                <p className="vault-muted vault-muted--padded" role="status">
                   有 {directory.skippedEntries} 个项目无法解密，已隐藏。它们可能不是由此保险箱创建，或使用了其他 Safe Key。
                 </p>
               ) : null}
               {!loading && directory.entries.length === 0 && directory.skippedEntries === 0 ? (
                 <div className="vault-empty">
-                  <Folder size={28} />
+                  <Folder size={22} strokeWidth={1.7} />
                   <strong>此加密文件夹为空</strong>
                 </div>
               ) : null}
@@ -502,9 +555,9 @@ export function VaultDialog({
                       }
                     }}
                   >
-                    {entry.entryType === 'dir' ? <Folder size={22} /> : <File size={22} />}
+                    <FileTypeIcon kind={entry.entryType === 'dir' ? 'folder' : fileKindByName(entry.name)} />
                     <span className="vault-file-row__name" translate="no">{entry.name}</span>
-                    <span>{entry.entryType === 'dir' ? '文件夹' : formatBytes(entry.size)}</span>
+                    <span className="file-cell--size">{entry.entryType === 'dir' ? '文件夹' : formatBytes(entry.size)}</span>
                     <span>{formatModified(entry.modified)}</span>
                   </button>
                 )

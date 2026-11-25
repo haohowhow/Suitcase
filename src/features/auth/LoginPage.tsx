@@ -3,7 +3,7 @@ import {
   Eye,
   EyeOff,
   LockKeyhole,
-  Monitor,
+  Palette,
   ShieldCheck,
 } from 'lucide-react'
 import { BrandMark } from '../../components/BrandMark'
@@ -52,25 +52,17 @@ export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, on
 
   return (
     <main className="auth-layout">
-      <section className="auth-story" aria-label="Koofr 安全连接说明">
-        <div className="auth-story__brand">
-          <BrandMark />
-        </div>
-
-        <div className="auth-story__copy">
-          <h2>Koofr 桌面客户端</h2>
-          <p>浏览、传输和同步 Koofr 中的文件。大文件可以分卷续传，保险箱内容只在本机解密。</p>
-        </div>
-
-        <div className="auth-privacy">
-          <ShieldCheck aria-hidden="true" />
-          <p>密码不会写入网页存储；选择记住密码后，<br />将由 Windows 凭据管理器保护。</p>
-        </div>
-      </section>
+      <div className="auth-topbar">
+        <button className="auth-theme" type="button" onClick={onThemeClick}>
+          <Palette size={15} strokeWidth={1.75} aria-hidden="true" />
+          外观主题
+        </button>
+      </div>
 
       <section className="auth-panel">
         <form className="auth-form" autoComplete="off" noValidate onSubmit={submit}>
           <header className="auth-form__heading">
+            <BrandMark />
             <h1>登录 Koofr</h1>
             <p>使用邮箱和应用专用密码连接你的云端文件。</p>
           </header>
@@ -118,7 +110,7 @@ export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, on
                 disabled={busy}
                 onClick={() => setShowPassword((visible) => !visible)}
               >
-                {showPassword ? <EyeOff /> : <Eye />}
+                {showPassword ? <EyeOff size={16} strokeWidth={1.75} /> : <Eye size={16} strokeWidth={1.75} />}
               </button>
             </span>
           </div>
@@ -136,24 +128,27 @@ export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, on
             </span>
           </label>
 
-          <div className={`auth-error${visibleError ? ' auth-error--visible' : ''}`} role="alert">
-            {visibleError}
-          </div>
+          {visibleError ? (
+            <div className="auth-error auth-error--visible" role="alert">
+              {visibleError}
+            </div>
+          ) : null}
 
           <button className="auth-submit" type="submit" disabled={busy}>
             {busy ? <><span className="auth-spinner" />正在连接…</> : '登录'}
           </button>
 
-          <p className="auth-hint">
-            <LockKeyhole aria-hidden="true" />
-            请使用 Koofr 设置中生成的应用专用密码。
-          </p>
+          <footer className="auth-footnotes" aria-label="Koofr 安全连接说明">
+            <p className="auth-hint">
+              <LockKeyhole size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span>请使用 Koofr 设置中生成的应用专用密码。</span>
+            </p>
+            <p className="auth-hint">
+              <ShieldCheck size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span>密码不会写入网页存储；选择记住密码后，将由 Windows 凭据管理器保护。</span>
+            </p>
+          </footer>
         </form>
-
-        <button className="auth-theme" type="button" onClick={onThemeClick}>
-          <Monitor aria-hidden="true" />
-          外观
-        </button>
       </section>
     </main>
   )

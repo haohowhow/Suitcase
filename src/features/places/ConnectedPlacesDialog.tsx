@@ -1,4 +1,4 @@
-import { CheckCircle2, Cloud, Copy, Database, ExternalLink, HardDrive } from 'lucide-react'
+import { Cloud, Copy, Database, ExternalLink, HardDrive } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Modal } from '../../components/Modal'
 import { formatStorageMegabytes } from '../../utils/format'
@@ -39,7 +39,7 @@ export function ConnectedPlacesDialog({ mounts, onClose }: ConnectedPlacesDialog
           {connected.map(({ mount, provider }) => (
             <article className="place-card" data-provider={provider.id} key={mount.id}>
               <span className="place-card__icon" aria-hidden="true">
-                {provider.id === 'koofr' ? <Database /> : provider.id === 'other' ? <HardDrive /> : <Cloud />}
+                {provider.id === 'koofr' ? <Database size={16} strokeWidth={1.8} /> : provider.id === 'other' ? <HardDrive size={16} strokeWidth={1.8} /> : <Cloud size={16} strokeWidth={1.8} />}
               </span>
               <span className="place-card__body">
                 <span className="place-card__title">
@@ -47,7 +47,7 @@ export function ConnectedPlacesDialog({ mounts, onClose }: ConnectedPlacesDialog
                   <small>{provider.label}</small>
                 </span>
                 <span className={`place-card__status${mount.online ? ' place-card__status--online' : ''}`}>
-                  <CheckCircle2 aria-hidden="true" />
+                  <span className="place-card__dot" aria-hidden="true" />
                   {mount.online ? '在线' : '暂时离线'}
                 </span>
                 <small>

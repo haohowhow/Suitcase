@@ -274,7 +274,7 @@ export const FileWorkspace = memo(function FileWorkspace({
           ))}
         </nav>
         <label className="search-box">
-          <Search size={18} />
+          <Search size={15} strokeWidth={1.8} />
           <input
             type="search"
             value={query}
@@ -294,21 +294,21 @@ export const FileWorkspace = memo(function FileWorkspace({
               aria-expanded={newMenuOpen}
               onClick={() => setNewMenuOpen((open) => !open)}
             >
-              新建<ChevronDown size={16} />
+              新建<ChevronDown size={14} strokeWidth={1.8} />
             </button>
             {newMenuOpen ? (
               <div className="new-menu" role="menu">
                 <button role="menuitem" type="button" onClick={() => { onCreateFolder(); setNewMenuOpen(false) }}>
-                  <Folder size={17} />新建文件夹
+                  <Folder size={15} strokeWidth={1.75} />新建文件夹
                 </button>
               </div>
             ) : null}
           </div>
           <button className="icon-button icon-button--bordered" type="button" aria-label="刷新当前文件夹" disabled={loading} onClick={onRefresh}>
-            <RefreshCw className={loading ? 'icon-spin' : ''} size={19} />
+            <RefreshCw className={loading ? 'icon-spin' : ''} size={15} strokeWidth={1.8} />
           </button>
           <button className="icon-button icon-button--bordered theme-button-mobile" type="button" aria-label="外观主题" onClick={onThemeOpen}>
-            <Palette size={19} />
+            <Palette size={15} strokeWidth={1.8} />
           </button>
         </div>
       </div>
@@ -323,33 +323,38 @@ export const FileWorkspace = memo(function FileWorkspace({
           <div className="selection-toolbar" aria-label="所选文件操作">
             <strong>{selectedFiles.length}</strong><span>已选中</span><i />
             <button type="button" disabled={!downloadableSelection} onClick={() => downloadableSelection && onDownload(downloadableSelection)}>
-              <ArrowDownToLine size={18} />下载
+              <ArrowDownToLine size={15} strokeWidth={1.8} />下载
             </button>
             <button type="button" disabled={!previewableSelection} onClick={() => previewableSelection && onPreview(previewableSelection)}>
-              <Eye size={18} />预览
+              <Eye size={15} strokeWidth={1.8} />预览
             </button>
             <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onShare(singleSelection)}>
-              <Share2 size={17} />分享
+              <Share2 size={15} strokeWidth={1.8} />分享
             </button>
             <button type="button" disabled={!singleSelection} onClick={() => singleSelection && onRename(singleSelection)}>
-              <Pencil size={17} />重命名
+              <Pencil size={15} strokeWidth={1.8} />重命名
             </button>
             <button type="button" onClick={() => onMove(selectedFiles)}>
-              <FolderInput size={17} />移动
+              <FolderInput size={15} strokeWidth={1.8} />移动
             </button>
             {onCopy ? (
               <button type="button" onClick={() => onCopy(selectedFiles)}>
-                <Copy size={17} />复制
+                <Copy size={15} strokeWidth={1.8} />复制
               </button>
             ) : null}
             <button className="selection-action--danger" type="button" onClick={() => onDelete(selectedFiles)}>
-              <Trash2 size={17} />删除
+              <Trash2 size={15} strokeWidth={1.8} />删除
             </button>
           </div>
         ) : null}
       </div>
 
-      <section className="file-list" role="grid" aria-label="文件列表" aria-busy={loading}>
+      <section
+        className={`file-list${selectedFiles.length > 0 ? ' file-list--has-selection' : ''}`}
+        role="grid"
+        aria-label="文件列表"
+        aria-busy={loading}
+      >
         <div className="file-row file-row--header" role="row">
           <button
             className={`checkbox${allVisibleSelected ? ' checkbox--checked' : ''}`}
@@ -359,7 +364,7 @@ export const FileWorkspace = memo(function FileWorkspace({
             onClick={toggleAll}
             aria-label="全选当前文件"
           >
-            {allVisibleSelected ? <Check size={13} /> : null}
+            {allVisibleSelected ? <Check size={12} strokeWidth={2.4} /> : null}
           </button>
           <span role="columnheader" aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
             <button
@@ -368,7 +373,7 @@ export const FileWorkspace = memo(function FileWorkspace({
               onClick={() => toggleSort('name')}
             >
               名称
-              {sortKey === 'name' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'name' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
           <span role="columnheader" aria-sort={sortKey === 'modified' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
@@ -378,17 +383,17 @@ export const FileWorkspace = memo(function FileWorkspace({
               onClick={() => toggleSort('modified')}
             >
               修改时间
-              {sortKey === 'modified' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'modified' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
-          <span role="columnheader" aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+          <span className="file-cell--size" role="columnheader" aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
             <button
               className={`column-sort${sortKey === 'size' ? ' column-sort--active' : ''}`}
               type="button"
               onClick={() => toggleSort('size')}
             >
               大小
-              {sortKey === 'size' ? (sortDir === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />) : null}
+              {sortKey === 'size' ? (sortDir === 'asc' ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />) : null}
             </button>
           </span>
           <span role="columnheader" aria-hidden="true" />
@@ -402,9 +407,9 @@ export const FileWorkspace = memo(function FileWorkspace({
               <strong>..</strong>
             </button>
             <span role="gridcell">返回上一级目录</span>
-            <span role="gridcell" />
+            <span className="file-cell--size" role="gridcell" />
             <button className="row-action" type="button" aria-label="返回上一级目录" onClick={() => onNavigate(parentDirectory(path))}>
-              <ArrowUp size={18} />
+              <ArrowUp size={15} strokeWidth={1.8} />
             </button>
           </div>
         ) : null}
@@ -424,7 +429,7 @@ export const FileWorkspace = memo(function FileWorkspace({
                 onClick={() => toggleSelection(file.path)}
                 aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}
               >
-                {selected ? <Check size={13} /> : null}
+                {selected ? <Check size={12} strokeWidth={2.4} /> : null}
               </button>
               <button
                 className="file-name file-name--button"
@@ -436,14 +441,14 @@ export const FileWorkspace = memo(function FileWorkspace({
                 <strong translate="no">{file.name}</strong>
               </button>
               <span role="gridcell">{formatModified(file.modified)}</span>
-              <span role="gridcell">{directory ? '-' : formatBytes(file.size)}</span>
+              <span className="file-cell--size" role="gridcell">{directory ? '-' : formatBytes(file.size)}</span>
               {previewable ? (
                 <div className="row-actions" role="gridcell">
                   <button className="row-action" type="button" aria-label={`预览 ${file.name}`} onClick={() => onPreview(file)}>
-                    <Eye size={17} />
+                    <Eye size={15} strokeWidth={1.8} />
                   </button>
                   <button className="row-action" type="button" aria-label={`下载 ${file.name}`} onClick={() => onDownload(file)}>
-                    <ArrowDownToLine size={17} />
+                    <ArrowDownToLine size={15} strokeWidth={1.8} />
                   </button>
                 </div>
               ) : (
@@ -453,7 +458,7 @@ export const FileWorkspace = memo(function FileWorkspace({
                   aria-label={directory ? `打开 ${file.name}` : `下载 ${file.name}`}
                   onClick={() => directory ? onNavigate(file.path) : onDownload(file)}
                 >
-                  {directory ? <ChevronRight size={19} /> : <ArrowDownToLine size={18} />}
+                  {directory ? <ChevronRight size={16} strokeWidth={1.8} /> : <ArrowDownToLine size={15} strokeWidth={1.8} />}
                 </button>
               )}
             </div>
@@ -462,7 +467,7 @@ export const FileWorkspace = memo(function FileWorkspace({
 
         {loading && visibleFiles.length === 0 ? (
           <div className="empty-state">
-            <RefreshCw className="icon-spin" size={27} />
+            <RefreshCw className="icon-spin" size={20} strokeWidth={1.7} />
             <strong>正在读取 Koofr 文件</strong>
             <span>请稍候</span>
           </div>
@@ -470,7 +475,7 @@ export const FileWorkspace = memo(function FileWorkspace({
 
         {!loading && error ? (
           <div className="empty-state empty-state--error">
-            <FileText size={27} />
+            <FileText size={20} strokeWidth={1.7} />
             <strong>无法显示这个文件夹</strong>
             <span>{error}</span>
             <button className="secondary-button" type="button" onClick={onRefresh}>重试</button>
@@ -479,7 +484,7 @@ export const FileWorkspace = memo(function FileWorkspace({
 
         {!loading && !error && visibleFiles.length === 0 ? (
           <div className="empty-state">
-            {query ? <Search size={27} /> : <Folder size={27} />}
+            {query ? <Search size={20} strokeWidth={1.7} /> : <Folder size={20} strokeWidth={1.7} />}
             <strong>{query ? '没有匹配的项目' : '这个文件夹是空的'}</strong>
             <span>{query ? '试试筛选其他文件名' : '上传文件或新建文件夹以开始使用'}</span>
           </div>

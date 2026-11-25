@@ -901,9 +901,10 @@ function App() {
               title="打开传输面板"
               onClick={() => setTransferVisible(true)}
             >
-              <ArrowDownToLine size={20} />
+              <ArrowDownToLine size={15} strokeWidth={1.85} />
+              <span className="transfer-reopen__label">传输</span>
               {activeDownloadCount > 0 ? (
-                <span>{activeDownloadCount}</span>
+                <span className="transfer-reopen__badge">{activeDownloadCount}</span>
               ) : null}
             </button>
           ) : null}
