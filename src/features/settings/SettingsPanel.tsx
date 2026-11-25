@@ -445,7 +445,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Palette aria-hidden="true" />
               <div>
                 <h3>外观</h3>
-                <p>主题色、界面密度和动效偏好，仅保存在本机。</p>
+                <p>自定义界面配色、语言、显示密度与动画效果。</p>
               </div>
             </header>
 
@@ -997,7 +997,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             </div>
             {settings.cacheMode === 'disk' ? (
               <p className="settings-note">
-                磁盘缓存会保存文件名和云端路径，但不会保存密码或文件内容。
+                本地磁盘缓存仅保存目录列表，不占用实际文件的存储空间。
               </p>
             ) : null}
 
@@ -1093,7 +1093,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </p>
             ) : null}
             <div className="settings-path-actions">
-              <small>请选择一个空的本地文件夹，且不能位于当前数据文件夹之内或包含它。</small>
+              <small>请选择一个空的本地文件夹（不能与当前数据目录互相嵌套）。</small>
               <button
                 type="button"
                 aria-label="保存数据位置"
@@ -1112,9 +1112,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Bug aria-hidden="true" />
               <div>
                 <h3>诊断日志</h3>
-                <p>
-                  帮助排查上传、下载和网络问题；不会记录密码、邮箱、文件名或完整路径。
-                </p>
+                <p>记录应用运行与网络连接状态，便于排查传输异常。</p>
               </div>
             </header>
 
@@ -1201,7 +1199,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <KeyRound aria-hidden="true" />
               <div>
                 <h3>保存的登录信息</h3>
-                <p>应用专用密码仅保存在 Windows 凭据管理器中，不会写入设置文件。</p>
+                <p>管理已保存的自动登录账号，密码由系统凭据管理器安全保存。</p>
               </div>
             </header>
             {settings.savedEmail ? (
@@ -1278,9 +1276,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               disabled={busy || !onLinkDefaultsChange}
               onChange={(next) => updateLinks({ requirePassword: next })}
             />
-            <p className="settings-note">
-              说明：这些默认值只会在创建链接时预先填好，Koofr 的分享规则仍然适用。
-            </p>
           </section>
         ) : null}
 
@@ -1290,7 +1285,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Bell aria-hidden="true" />
               <div>
                 <h3>通知</h3>
-                <p>使用 Windows 系统通知，只显示任务名称，不包含文件的完整路径。</p>
+                <p>设置传输完成提醒、任务栏角标与桌面悬浮窗。</p>
               </div>
             </header>
 
@@ -1359,7 +1354,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <ShieldCheck aria-hidden="true" />
               <div>
                 <h3>隐私与安全</h3>
-                <p>本机隐私偏好；账户凭据仍保留在 Windows 凭据管理器中。</p>
+                <p>设置长时间无操作时的自动退出保护。</p>
               </div>
             </header>
 

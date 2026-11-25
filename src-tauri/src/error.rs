@@ -133,6 +133,29 @@ impl AppError {
     pub fn safe_log_fields(&self) -> Map<String, Value> {
         let mut fields = Map::new();
         match self {
+            Self::InvalidInput(field) => {
+                fields.insert("invalidField".to_owned(), Value::from(*field));
+            }
+            Self::NotFound => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("requested file, folder, mount point, or vault handle not found"),
+                );
+            }
+            Self::IncompleteTransfer => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("remote transfer ended before all expected bytes were received"),
+                );
+            }
+            Self::Integrity => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from(
+                        "download checksum verification failed; temporary part was not published",
+                    ),
+                );
+            }
             Self::RemoteStatus { status } => {
                 fields.insert("httpStatus".to_owned(), Value::from(status.as_u16()));
             }
@@ -141,6 +164,12 @@ impl AppError {
                 fields.insert("isConnect".to_owned(), Value::Bool(error.is_connect()));
                 fields.insert("isRequest".to_owned(), Value::Bool(error.is_request()));
                 fields.insert("isBody".to_owned(), Value::Bool(error.is_body()));
+            }
+            Self::NetworkStalled => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("network connection stalled without progress"),
+                );
             }
             Self::Io(error) => {
                 fields.insert(
@@ -158,6 +187,52 @@ impl AppError {
                 );
                 fields.insert("jsonLine".to_owned(), Value::from(error.line() as u64));
                 fields.insert("jsonColumn".to_owned(), Value::from(error.column() as u64));
+                fields.insert(
+                    "diagnostic".to_owned(),
+                    Value::String(safe_decode_diagnostic(error)),
+                );
+            }
+            Self::Initialization => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("backend state or platform subsystem initialization failed"),
+                );
+            }
+            Self::Dialog => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("native file or folder picker dialog failed"),
+                );
+            }
+            Self::LocalData => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("local application data or state persistence failed"),
+                );
+            }
+            Self::CredentialStore => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("Windows Credential Manager operation failed"),
+                );
+            }
+            Self::LocalOpen => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("failed to open downloaded local target via OS shell"),
+                );
+            }
+            Self::VaultCrypto => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("vault decryption failed; Safe Key, salt, or ciphertext mismatch"),
+                );
+            }
+            Self::VaultPrompt => {
+                fields.insert(
+                    "detail".to_owned(),
+                    Value::from("Windows CredUIPromptForCredentialsW failed"),
+                );
             }
             _ => {}
         }
@@ -205,12 +280,12 @@ impl From<AppError> for CommandError {
                 "无法确认当前 Koofr 账户，请重新登录后重试。",
             ),
             AppError::InvalidInput(_) => {
-                Self::new("invalid_input", "请求中包含无效的路径、名称或标识。")
+                Self::new("invalid_input", "输入的路径或名称无效，请检查后重试。")
             }
             AppError::Conflict | AppError::DuplicateTransfer => {
                 Self::new("conflict", "目标已存在或操作正在进行。")
             }
-            AppError::NotFound => Self::new("not_found", "指定的文件、文件夹或挂载点不存在。"),
+            AppError::NotFound => Self::new("not_found", "找不到指定的文件、文件夹或存储位置。"),
             AppError::PreviewUnsupported => Self::new(
                 "preview_unsupported",
                 "暂不支持直接预览此文件格式，请下载后打开。",
@@ -229,7 +304,9 @@ impl From<AppError> for CommandError {
             AppError::IncompleteTransfer => {
                 Self::new("incomplete_transfer", "传输未完整结束，请重试。")
             }
-            AppError::Integrity => Self::new("integrity_error", "下载内容校验失败，文件未发布。"),
+            AppError::Integrity => {
+                Self::new("integrity_error", "下载的文件校验未通过，未保存到本地。")
+            }
             AppError::RemoteStatus { .. } => {
                 Self::new("remote_error", "Koofr 暂时无法完成此操作。")
             }
@@ -241,7 +318,9 @@ impl From<AppError> for CommandError {
                 Self::new("invalid_response", "Koofr 返回了无法识别的数据。")
                     .with_diagnostic(safe_decode_diagnostic(&error))
             }
-            AppError::Initialization => Self::new("initialization_error", "后端初始化失败。"),
+            AppError::Initialization => {
+                Self::new("initialization_error", "应用启动初始化失败，请重启后再试。")
+            }
             AppError::Dialog => Self::new("dialog_error", "无法打开本地文件选择窗口。"),
             AppError::LocalData => Self::new("local_data_error", "无法读取或保存本地应用数据。"),
             AppError::CredentialStore => Self::new(
@@ -258,12 +337,11 @@ impl From<AppError> for CommandError {
             }
             AppError::VaultCrypto => Self::new(
                 "vault_crypto_error",
-                "保险箱内容无法安全解密，Safe Key、Salt 或密文可能不匹配。",
+                "无法解密保险箱内容，请确认 Safe Key 是否正确。",
             ),
-            AppError::VaultPrompt => Self::new(
-                "vault_prompt_error",
-                "无法打开 Windows Safe Key 安全输入窗口。",
-            ),
+            AppError::VaultPrompt => {
+                Self::new("vault_prompt_error", "无法打开密码输入窗口，请重试。")
+            }
         }
     }
 }
@@ -404,5 +482,38 @@ mod tests {
 
         assert!(diagnostic.contains("字段类型不匹配：收到 string"));
         assert!(!diagnostic.contains(private_value));
+    }
+
+    #[test]
+    fn safe_log_fields_preserve_redacted_technical_details() {
+        let invalid = AppError::InvalidInput("rclone crypt section").safe_log_fields();
+        assert_eq!(
+            invalid.get("invalidField").and_then(|value| value.as_str()),
+            Some("rclone crypt section")
+        );
+
+        let integrity = AppError::Integrity.safe_log_fields();
+        assert!(
+            integrity
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .is_some_and(|detail| detail.contains("not published"))
+        );
+
+        let vault_crypto = AppError::VaultCrypto.safe_log_fields();
+        assert!(
+            vault_crypto
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .is_some_and(|detail| detail.contains("salt") && detail.contains("ciphertext"))
+        );
+
+        let initialization = AppError::Initialization.safe_log_fields();
+        assert!(
+            initialization
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .is_some_and(|detail| detail.contains("initialization"))
+        );
     }
 }

@@ -4,7 +4,6 @@ import {
   EyeOff,
   LockKeyhole,
   Palette,
-  ShieldCheck,
 } from 'lucide-react'
 import { BrandMark } from '../../components/BrandMark'
 
@@ -142,10 +141,6 @@ export const LoginPage = memo(function LoginPage({ busy, error, initialEmail, on
             <p className="auth-hint">
               <LockKeyhole size={14} strokeWidth={1.75} aria-hidden="true" />
               <span>请使用 Koofr 设置中生成的应用专用密码。</span>
-            </p>
-            <p className="auth-hint">
-              <ShieldCheck size={14} strokeWidth={1.75} aria-hidden="true" />
-              <span>密码不会写入网页存储；选择记住密码后，将由 Windows 凭据管理器保护。</span>
             </p>
           </footer>
         </form>

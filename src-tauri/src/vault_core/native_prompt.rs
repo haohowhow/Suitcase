@@ -1,7 +1,8 @@
-use tauri::WebviewWindow;
+use serde_json::Map;
+use tauri::{Manager, WebviewWindow};
 use zeroize::Zeroizing;
 
-use crate::error::AppError;
+use crate::{AppState, error::AppError};
 
 #[cfg(windows)]
 use windows_sys::Win32::{
@@ -25,15 +26,30 @@ pub async fn prompt_safe_key(
     window: &WebviewWindow,
     safe_box_id: &str,
     safe_box_name: &str,
-    action: &str,
+    caption: &str,
+    message: &str,
 ) -> Result<Option<Zeroizing<String>>, AppError> {
-    let hwnd = window.hwnd().map_err(|_| AppError::VaultPrompt)?.0 as isize;
-    let caption = wide("Koofr 私人保险箱");
-    let message = wide(&format!(
-        "{action}“{safe_box_name}”\nSafe Key 只会交给本机 Rust 后端。"
-    ));
+    let logger = window.state::<AppState>().logger.clone();
+    let hwnd = match window.hwnd() {
+        Ok(hwnd) => hwnd.0 as isize,
+        Err(_) => {
+            let mut fields = Map::new();
+            fields.insert("reason".to_owned(), "hwnd_unavailable".into());
+            logger.error(
+                "vault",
+                "native_prompt_failed",
+                None,
+                &AppError::VaultPrompt,
+                fields,
+            );
+            return Err(AppError::VaultPrompt);
+        }
+    };
+    let caption = wide(caption);
+    let message = wide(message);
     let target = wide(&format!("KoofrGUI:Vault:{safe_box_id}"));
     let username_seed = safe_box_name.to_owned();
+    let task_logger = logger.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut username = Zeroizing::new(vec![0_u16; 514]);
@@ -78,20 +94,55 @@ pub async fn prompt_safe_key(
             return Ok(None);
         }
         if status != NO_ERROR {
+            let mut fields = Map::new();
+            fields.insert("reason".to_owned(), "credui_prompt_failed".into());
+            fields.insert("win32Error".to_owned(), status.into());
+            task_logger.error(
+                "vault",
+                "native_prompt_failed",
+                None,
+                &AppError::VaultPrompt,
+                fields,
+            );
             return Err(AppError::VaultPrompt);
         }
         let length = password
             .iter()
             .position(|unit| *unit == 0)
             .unwrap_or(password.len());
-        let value = String::from_utf16(&password[..length]).map_err(|_| AppError::VaultPrompt)?;
+        let value = match String::from_utf16(&password[..length]) {
+            Ok(value) => value,
+            Err(_) => {
+                let mut fields = Map::new();
+                fields.insert("reason".to_owned(), "utf16_decode_failed".into());
+                task_logger.error(
+                    "vault",
+                    "native_prompt_failed",
+                    None,
+                    &AppError::VaultPrompt,
+                    fields,
+                );
+                return Err(AppError::VaultPrompt);
+            }
+        };
         if value.is_empty() {
             return Ok(None);
         }
         Ok(Some(Zeroizing::new(value)))
     })
     .await
-    .map_err(|_| AppError::VaultPrompt)?
+    .map_err(|_| {
+        let mut fields = Map::new();
+        fields.insert("reason".to_owned(), "prompt_task_join_failed".into());
+        logger.error(
+            "vault",
+            "native_prompt_failed",
+            None,
+            &AppError::VaultPrompt,
+            fields,
+        );
+        AppError::VaultPrompt
+    })?
 }
 
 #[cfg(not(windows))]
@@ -99,7 +150,8 @@ pub async fn prompt_safe_key(
     _window: &WebviewWindow,
     _safe_box_id: &str,
     _safe_box_name: &str,
-    _action: &str,
+    _caption: &str,
+    _message: &str,
 ) -> Result<Option<Zeroizing<String>>, AppError> {
     Err(AppError::VaultPrompt)
 }

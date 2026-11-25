@@ -3,7 +3,6 @@ import {
   Copy,
   Download,
   Eye,
-  FileKey2,
   Folder,
   FolderInput,
   FolderPlus,
@@ -146,12 +145,12 @@ export function VaultDialog({
 
   const importVault = () => run(async () => {
     setVaults(await koofr.importVaultRcloneConfig())
-    onNotice('rclone 保险箱已导入。')
-  }, '无法导入 rclone crypt 配置。')
+    onNotice('保险箱已导入。')
+  }, '无法导入保险箱配置。')
 
   const exportVault = (repoId: string) => run(async () => {
     const exported = await koofr.exportVaultRcloneConfig(repoId)
-    if (exported) onNotice('rclone 配置已导出。该文件可用于解密保险箱，请像密码一样妥善保管。')
+    if (exported) onNotice('配置已导出，请妥善保管该文件。')
   }, '无法导出 rclone 配置。')
 
   const removeVault = (repoId: string) => run(async () => {
@@ -259,11 +258,6 @@ export function VaultDialog({
   return (
     <Modal title="Koofr Vault" actionLabel="关闭" extraWide onClose={onClose}>
       <div className="vault-workspace">
-        <div className="vault-security-note">
-          <FileKey2 size={15} strokeWidth={1.8} />
-          <span>Safe Key 只在 Windows 系统安全窗口中输入，不会显示在应用界面中。</span>
-        </div>
-
         {error ? <div className="vault-error" role="alert">{error}</div> : null}
 
         {!directory ? (
@@ -303,7 +297,7 @@ export function VaultDialog({
                 <div className="vault-empty">
                   <Lock size={22} strokeWidth={1.7} />
                   <strong>还没有保险箱</strong>
-                  <span>可以在当前文件夹创建一个，或导入之前导出的 rclone crypt 配置。</span>
+                  <span>可在当前文件夹新建保险箱，或导入已有的 rclone 配置文件。</span>
                 </div>
               ) : null}
               {vaults.map((vault) => (
@@ -344,7 +338,7 @@ export function VaultDialog({
                   </div>
                   {removeRepoId === vault.id ? (
                     <div className="vault-remove-confirm">
-                      <span>只从本应用的列表中移除，不会删除 Koofr 中的加密文件。请输入“移除保险箱”，然后再次验证 Safe Key：</span>
+                      <span>移除后不会删除 Koofr 中的加密文件。请输入“移除保险箱”并验证 Safe Key：</span>
                       <input value={removeConfirmation} onChange={(event) => setRemoveConfirmation(event.target.value)} />
                       <button
                         className="danger-button"

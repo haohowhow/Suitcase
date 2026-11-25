@@ -1115,10 +1115,8 @@ function App() {
           onAction={() => void respondToFloatingPrompt(true)}
         >
           <div className="floating-window-prompt">
-            <p>
-              悬浮窗会置顶显示上传、下载和暂停状态，只同步任务数量与汇总百分比，不包含文件名或路径。
-            </p>
-            <p>可拖动到合适位置，单击可暂停或继续任务，双击打开主窗口。</p>
+            <p>开启后会在桌面置顶显示当前传输进度与状态，方便在后台传输时随时查看。</p>
+            <p>悬浮窗可自由拖动位置，单击暂停或继续任务，双击返回主窗口。</p>
           </div>
         </Modal>
       ) : null}
