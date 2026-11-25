@@ -64,8 +64,6 @@ pub enum AppError {
     VaultInvalidKey,
     #[error("vault cryptographic data is invalid")]
     VaultCrypto,
-    #[error("the native Safe Key prompt failed")]
-    VaultPrompt,
 }
 
 impl From<reqwest::Error> for AppError {
@@ -126,7 +124,6 @@ impl AppError {
             Self::VaultLocked => "vault_locked",
             Self::VaultInvalidKey => "vault_invalid_key",
             Self::VaultCrypto => "vault_crypto_error",
-            Self::VaultPrompt => "vault_prompt_error",
         }
     }
 
@@ -226,12 +223,6 @@ impl AppError {
                 fields.insert(
                     "detail".to_owned(),
                     Value::from("vault decryption failed; Safe Key, salt, or ciphertext mismatch"),
-                );
-            }
-            Self::VaultPrompt => {
-                fields.insert(
-                    "detail".to_owned(),
-                    Value::from("Windows CredUIPromptForCredentialsW failed"),
                 );
             }
             _ => {}
@@ -339,9 +330,6 @@ impl From<AppError> for CommandError {
                 "vault_crypto_error",
                 "无法解密保险箱内容，请确认 Safe Key 是否正确。",
             ),
-            AppError::VaultPrompt => {
-                Self::new("vault_prompt_error", "无法打开密码输入窗口，请重试。")
-            }
         }
     }
 }

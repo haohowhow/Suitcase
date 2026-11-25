@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
@@ -12,22 +12,10 @@ use crate::{
     file_ops::{LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath},
     koofr_api::VaultRepoCreate,
     transfer::{self, TransferResult},
-    vault_core::{VaultDirectory, VaultSummary, prompt_safe_key},
+    vault_core::{VaultDirectory, VaultSummary},
 };
 
 type CommandResult<T> = Result<T, CommandError>;
-
-async fn vault_prompt_english(state: &AppState) -> bool {
-    crate::desktop::resolved_english(state.settings.appearance().await.language)
-}
-
-const fn vault_prompt_caption(english: bool) -> &'static str {
-    if english {
-        "Koofr Vault"
-    } else {
-        "Koofr 私人保险箱"
-    }
-}
 
 fn vault_command_error(state: &AppState, operation: &'static str, error: AppError) -> CommandError {
     state.logger.command_error("vault", operation, None, &error);
@@ -46,37 +34,29 @@ pub async fn list_vaults(state: State<'_, AppState>) -> CommandResult<Vec<VaultS
 
 #[tauri::command]
 pub async fn unlock_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     repo_id: String,
+    safe_key: String,
 ) -> CommandResult<VaultSummary> {
+    let safe_key = Zeroizing::new(safe_key);
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "unlock_vault",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
+    }
     let repos = state
         .api
         .list_vault_repos()
         .await
         .map_err(CommandError::from)?;
     state.vault.sync_repos(repos).await;
-    let repo = state
+    let _repo = state
         .vault
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let english = vault_prompt_english(&state).await;
-    let prompt_message = if english {
-        format!("Enter the Safe Key for “{}”.", repo.name)
-    } else {
-        format!("请输入“{}”的 Safe Key。", repo.name)
-    };
-    let safe_key = prompt_safe_key(
-        &window,
-        &repo.id,
-        &repo.name,
-        vault_prompt_caption(english),
-        &prompt_message,
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     state
         .logger
         .trace(
@@ -290,62 +270,26 @@ pub async fn download_vault_file(
 
 #[tauri::command]
 pub async fn create_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     mount_id: String,
     parent_path: String,
     name: String,
+    safe_key: String,
 ) -> CommandResult<VaultSummary> {
+    let safe_key = Zeroizing::new(safe_key);
     let mount_id = MountId::parse(mount_id).map_err(CommandError::from)?;
     let parent_path = RemotePath::parse(parent_path).map_err(CommandError::from)?;
     let name = RemoteName::parse(name).map_err(CommandError::from)?;
-    let english = vault_prompt_english(&state).await;
-    let caption = vault_prompt_caption(english);
-    let first_message = if english {
-        format!(
-            "Create a Safe Key for “{}” (at least 8 characters).",
-            name.as_str()
-        )
-    } else {
-        format!("请为“{}”设置 Safe Key（至少 8 个字符）。", name.as_str())
-    };
-    let prompt_id = uuid::Uuid::new_v4().to_string();
-    let first = prompt_safe_key(&window, &prompt_id, name.as_str(), caption, &first_message)
-        .await
-        .map_err(CommandError::from)?
-        .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
-    if first.chars().count() < 8 {
+    if safe_key.chars().count() < 8 {
         return Err(vault_command_error(
             &state,
             "create_vault",
             AppError::InvalidInput("vault Safe Key length"),
         ));
     }
-    let confirm_message = if english {
-        format!("Re-enter the Safe Key for “{}” to confirm.", name.as_str())
-    } else {
-        format!("请再次输入“{}”的 Safe Key 以确认。", name.as_str())
-    };
-    let second = prompt_safe_key(
-        &window,
-        &prompt_id,
-        name.as_str(),
-        caption,
-        &confirm_message,
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
-    if first.as_str() != second.as_str() {
-        return Err(vault_command_error(
-            &state,
-            "create_vault",
-            AppError::VaultInvalidKey,
-        ));
-    }
     let salt = vault_crypto::random_password::random_password(128)
         .map_err(|_| vault_command_error(&state, "create_vault", AppError::VaultCrypto))?;
-    let cipher = VaultCipher::new(first.as_str(), Some(&salt));
+    let cipher = VaultCipher::new(safe_key.as_str(), Some(&salt));
     let (password_validator, password_validator_encrypted) = cipher
         .generate_validator()
         .map_err(|error| vault_command_error(&state, "create_vault", error))?;
@@ -386,22 +330,30 @@ pub async fn create_vault(
     state.vault.sync_repos(repos).await;
     state
         .vault
-        .unlock(&created.id, first.as_str())
+        .unlock(&created.id, safe_key.as_str())
         .await
         .map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub async fn remove_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     repo_id: String,
     confirmation: String,
+    safe_key: String,
 ) -> CommandResult<Vec<VaultSummary>> {
+    let safe_key = Zeroizing::new(safe_key);
     if confirmation != "移除保险箱" {
         return Err(CommandError::from(AppError::InvalidInput(
             "vault remove confirmation",
         )));
+    }
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "remove_vault",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
     }
     let repos = state
         .api
@@ -414,25 +366,6 @@ pub async fn remove_vault(
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let english = vault_prompt_english(&state).await;
-    let prompt_message = if english {
-        format!(
-            "Enter the Safe Key for “{}” to remove this vault.",
-            repo.name
-        )
-    } else {
-        format!("请输入“{}”的 Safe Key 以确认移除。", repo.name)
-    };
-    let safe_key = prompt_safe_key(
-        &window,
-        &repo.id,
-        &repo.name,
-        vault_prompt_caption(english),
-        &prompt_message,
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     state
         .vault
         .unlock(&repo.id, safe_key.as_str())
@@ -453,11 +386,19 @@ pub async fn remove_vault(
 
 #[tauri::command]
 pub async fn export_vault_rclone_config(
-    window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AppState>,
     repo_id: String,
+    safe_key: String,
 ) -> CommandResult<bool> {
+    let safe_key = Zeroizing::new(safe_key);
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "export_vault_rclone_config",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
+    }
     let repos = state
         .api
         .list_vault_repos()
@@ -469,25 +410,6 @@ pub async fn export_vault_rclone_config(
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let english = vault_prompt_english(&state).await;
-    let prompt_message = if english {
-        format!(
-            "Enter the Safe Key for “{}” to export its configuration.",
-            repo.name
-        )
-    } else {
-        format!("请输入“{}”的 Safe Key 以导出配置。", repo.name)
-    };
-    let safe_key = prompt_safe_key(
-        &window,
-        &repo.id,
-        &repo.name,
-        vault_prompt_caption(english),
-        &prompt_message,
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     let cipher = VaultCipher::new(safe_key.as_str(), repo.salt.as_deref());
     if !cipher
         .validates(&repo.password_validator, &repo.password_validator_encrypted)
