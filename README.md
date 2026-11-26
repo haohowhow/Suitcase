@@ -1,8 +1,8 @@
 <div align="center">
 
-# Koofr-GUI
+# Suitcase
 
-**Windows 优先的 Koofr 桌面文件管理客户端**
+**非官方 Windows 优先的 Koofr 桌面文件管理客户端（Unofficial Windows Client for Koofr）**
 
 基于 Tauri v2、React、TypeScript 与 Rust 构建，目标是提供贴近 Windows 原生文件管理器的操作体验，而非网页界面的简单封装。
 
@@ -19,7 +19,7 @@
 
 ## 目录
 
-- [Koofr-GUI](#koofr-gui)
+- [Suitcase](#suitcase)
   - [目录](#目录)
   - [简介](#简介)
   - [截图](#截图)
@@ -43,7 +43,7 @@
 
 [Koofr](https://koofr.eu) 是一家欧洲的云存储服务商，支持把 Google Drive、OneDrive、Dropbox 等第三方存储聚合到同一个账户。
 
-Koofr-GUI 是一个第三方、Windows 优先、面向原生文件管理器体验的替代客户端，与 Koofr 官方无关联。Koofr 官方已提供桌面客户端，本项目则提供另一种更贴近 Windows 原生文件管理器操作习惯的选择。当前版本已实现 Koofr 文件管理、可续传传输、分享链接管理、常用文件本地预览，以及与 Koofr Vault / rclone crypt 互操作的端到端加密工作区。
+Suitcase 是一个第三方、Windows 优先、面向原生文件管理器体验的替代客户端，与 Koofr 官方无关联。Koofr 官方已提供桌面客户端，本项目则提供另一种更贴近 Windows 原生文件管理器操作习惯的选择。当前版本已实现 Koofr 文件管理、可续传传输、分享链接管理、常用文件本地预览，以及与 Koofr Vault / rclone crypt 互操作的端到端加密工作区。
 
 ## 截图
 
@@ -118,7 +118,7 @@ Koofr-GUI 是一个第三方、Windows 优先、面向原生文件管理器体�
 
 ## 下载与安装
 
-已发布的安装包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) 下载最新的 NSIS 安装包（例如 `Koofr GUI_<version>_x64-setup.exe`）。
+已发布的安装包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) 下载最新的 NSIS 安装包（例如 `Suitcase_<version>_x64-setup.exe`）。
 
 > ⚠️ **未签名警告**：安装包当前不做代码签名，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库的 Releases 页面下载，不要使用第三方镜像。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
 
@@ -160,7 +160,7 @@ npm run dev
 
 ```powershell
 npm run check                # 完整质量检查：lint + 测试 + Rust fmt/clippy
-npm run build:desktop        # 生成 src-tauri/target/release/koofr-gui.exe
+npm run build:desktop        # 生成 src-tauri/target/release/suitcase.exe
 npm run build:installer      # 显式生成 NSIS 安装包
 ```
 
@@ -215,7 +215,7 @@ npm run build:installer      # 显式生成 NSIS 安装包
 
 ## 数据存储
 
-应用数据默认保存在 Windows 用户目录下（`identifier = net.koofr.desktop.gui`），也可在设置中改为已有的空目录：
+应用数据默认保存在 Windows 用户目录下（`identifier = app.suitcase.desktop`），也可在设置中改为已有的空目录：
 
 ```
 <应用工作目录>\
@@ -224,11 +224,11 @@ npm run build:installer      # 显式生成 NSIS 安装包
 ├─ download-history.json        # 按账户隔离的下载历史、文件位置与限量速度采样
 ├─ sync-state.sqlite3           # 按账户隔离的同步组、基线、问题与操作日志（WAL）
 ├─ cache/metadata-cache.json    # 磁盘元数据缓存
-└─ logs/koofr-gui*.jsonl        # 脱敏诊断日志
+└─ logs/suitcase*.jsonl         # 脱敏诊断日志
 ```
 
-默认工作目录为 `%LOCALAPPDATA%\net.koofr.desktop.gui`。其旁边另有一个体积很小的
-`net.koofr.desktop.gui.work-directory.json` 定位文件，用于应用重启后定位自定义
+默认工作目录为 `%LOCALAPPDATA%\app.suitcase.desktop`。其旁边另有一个体积很小的
+`app.suitcase.desktop.work-directory.json` 定位文件，用于应用重启后定位自定义
 工作目录；全量迁移不会迁移该定位文件。迁移在下次启动时、任何工作文件被打开前执行，
 支持跨磁盘复制，并在成功切换后清理旧目录；目标目录必须为空，失败时保留可用副本并在下次启动时重试。
 
@@ -249,7 +249,9 @@ npm run build:installer      # 显式生成 NSIS 安装包
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 Koofr-GUI 贡献者
+[MIT](LICENSE) © 2026 Suitcase 贡献者
+
+第三方组件许可证及随包文本说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [`licenses/`](licenses/)。
 
 本项目与 Koofr d.o.o. 无关联。“Koofr”是 [Koofr d.o.o.](https://koofr.eu) 的商标。
 

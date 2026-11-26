@@ -101,7 +101,7 @@ pub(super) fn file_json(name: &str, entry_type: &str, size: i64) -> serde_json::
 
 pub(super) async fn temporary_parent(label: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "koofr-gui-folder-download-{label}-{}",
+        "suitcase-folder-download-{label}-{}",
         uuid::Uuid::new_v4()
     ));
     tokio::fs::create_dir(&path)

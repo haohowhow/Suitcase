@@ -72,7 +72,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("Koofr GUI")
+        .tooltip("Suitcase")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -390,7 +390,7 @@ fn floating_context_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri
         app,
         FLOATING_MENU_OPEN_ID,
         if english {
-            "Open Koofr GUI"
+            "Open Suitcase"
         } else {
             "打开应用"
         },
@@ -413,7 +413,7 @@ fn floating_context_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri
         app,
         FLOATING_MENU_QUIT_ID,
         if english {
-            "Quit Koofr GUI"
+            "Quit Suitcase"
         } else {
             "退出应用"
         },
@@ -445,9 +445,9 @@ fn tray_menu<R: Runtime>(app: &AppHandle<R>, english: bool) -> tauri::Result<Men
         app,
         "show",
         if english {
-            "Show Koofr GUI"
+            "Show Suitcase"
         } else {
-            "显示 Koofr GUI"
+            "显示 Suitcase"
         },
         true,
         None::<&str>,
@@ -546,9 +546,9 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
                 "仍有排队或运行中的传输。仍要退出吗？可续传的任务会暂停，再次登录后可在传输面板继续；文件夹下载会停止。"
             })
             .title(if english {
-                "Quit Koofr GUI"
+                "Quit Suitcase"
             } else {
-                "退出 Koofr GUI"
+                "退出 Suitcase"
             })
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancel)

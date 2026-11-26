@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::error::AppError;
 
-const SERVICE_NAME: &str = "Koofr-GUI";
+const SERVICE_NAME: &str = "Suitcase";
 
 #[derive(Clone)]
 pub struct CredentialManager {

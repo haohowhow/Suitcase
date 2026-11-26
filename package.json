@@ -1,7 +1,8 @@
 {
-  "name": "koofr-gui",
+  "name": "suitcase",
   "private": true,
   "version": "2.7.0",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": "^22.12.0 || ^24.0.0",

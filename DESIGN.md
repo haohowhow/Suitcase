@@ -1,10 +1,10 @@
-# Koofr-GUI Design System
+# Suitcase Design System
 
-This document defines the design system and visual standards for Koofr-GUI. It serves as the canonical engineering contract for the user interface. Developers must follow these specifications to maintain a consistent, accessible, and high-performance desktop experience. Any updates to the visual styles or layout parameters must be recorded here and synchronized with the CSS variables in `src/styles.css`.
+This document defines the design system and visual standards for Suitcase (Unofficial Windows Client for Koofr). It serves as the canonical engineering contract for the user interface. Developers must follow these specifications to maintain a consistent, accessible, and high-performance desktop experience. Any updates to the visual styles or layout parameters must be recorded here and synchronized with the CSS variables in `src/styles.css`.
 
 ## 1. Atmosphere & Identity
 
-Koofr-GUI should feel like a calm Windows file manager: compact, dependable, and immediately legible during long file operations. Its signature is Koofr green used sparingly as an operational signal against cool neutral surfaces; downloads and destructive actions favor clarity over decoration.
+Suitcase should feel like a calm Windows file manager: compact, dependable, and immediately legible during long file operations. Its signature is Koofr green used sparingly as an operational signal against cool neutral surfaces; downloads and destructive actions favor clarity over decoration.
 
 ## 2. Color
 
@@ -164,7 +164,7 @@ All spacing derives from a 4px base.
 
 - **Structure**: a 252×64 Windows always-on-top progress pill that contracts to a 52×52 rounded square while paused or idle. The whole surface is the left-button drag target; there is no separate drag strip. Visual reference: [`docs/assets/floating-transfer-prototype.png`](docs/assets/floating-transfer-prototype.png).
 - **States**: weighted upload/download/mixed progress, indeterminate total, paused, short completion acknowledgement, and idle.
-- **Context menu**: right-click opens the native Windows menu for opening Koofr GUI, closing the floating window, or safely quitting the application.
+- **Context menu**: right-click opens the native Windows menu for opening Suitcase, closing the floating window, or safely quitting the application.
 - **Privacy**: receives only direction, task count, aggregate percentage, theme/language, and a completion counter; never a file name or path.
 - **Motion**: window form retargets from its current presentation size with a critically damped response; icons use restrained micro feedback. Reduced motion keeps the state change but removes spatial transition.
 - **Surface**: one warm off-white structural material with a single neutral outline and restrained inset highlight. Icons are unframed, percentage is plain text, and active progress is a thin bottom-edge fill; no nested rounded rectangles, decorative gradient, looping pulse, or stacked glass.

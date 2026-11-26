@@ -28,7 +28,7 @@ use models::{
 pub use public_links::{PublicLink, PublicLinkKind};
 pub use vault::{VaultRepo, VaultRepoCreate};
 
-const USER_AGENT: &str = concat!("Koofr-GUI/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Suitcase/", env!("CARGO_PKG_VERSION"));
 /// Upper bound for a whole metadata request (listing, rename, delete, ...). Without
 /// it a connection that stops answering would hang the caller forever.
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
@@ -778,7 +778,7 @@ mod tests {
         ));
         response.assert_async().await;
 
-        let path = directory.join("koofr-gui.jsonl");
+        let path = directory.join("suitcase.jsonl");
         let payload = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
                 let payload = std::fs::read_to_string(&path).unwrap_or_default();

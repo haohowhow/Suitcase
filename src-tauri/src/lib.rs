@@ -61,8 +61,8 @@ pub fn cleanup_native_sync_roots_for_uninstall() -> bool {
     else {
         return false;
     };
-    let default_directory = local_app_data.join("net.koofr.desktop.gui");
-    let locator_path = local_app_data.join("net.koofr.desktop.gui.work-directory.json");
+    let default_directory = local_app_data.join("app.suitcase.desktop");
+    let locator_path = local_app_data.join("app.suitcase.desktop.work-directory.json");
     let current_directory = match std::fs::symlink_metadata(&locator_path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
             std::fs::read(&locator_path)
@@ -332,7 +332,7 @@ pub fn run() {
             stream_commands::close_file_preview,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Koofr GUI");
+        .expect("error while running Suitcase");
 }
 
 async fn handle_stream_request(

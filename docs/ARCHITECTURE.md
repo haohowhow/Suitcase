@@ -1,6 +1,6 @@
 # 架构说明
 
-本文档说明 Koofr-GUI 的整体架构、数据流、传输恢复设计与安全边界，适合需要了解整体结构或评估安全性的读者。
+本文档说明 Suitcase 的整体架构、数据流、传输恢复设计与安全边界，适合需要了解整体结构或评估安全性的读者。
 
 ## 目录
 
@@ -173,7 +173,7 @@ src-tauri/src/
 
 - `connect_koofr(email, password, remember)` 将邮箱与 Koofr **应用专用密码**（不是主账户密码）POST 到 `https://app.koofr.net/token`。
 - 成功后 Rust 内存保留单会话令牌（session token），**永不发送到前端**。
-- `remember=true` 时，密码通过 `keyring-core` 与 `windows-native-keyring-store` 写入 Windows 凭据管理器，服务名为 `Koofr-GUI`，账号名为邮箱地址。
+- `remember=true` 时，密码通过 `keyring-core` 与 `windows-native-keyring-store` 写入 Windows 凭据管理器，服务名为 `Suitcase`，账号名为邮箱地址。
 - 下次启动时 `restore_saved_login()` 从凭据管理器读回密码，并重新请求一次 `/token`。
 - `disconnect_koofr()` 执行主动断开（含空闲自动登出）：将所有传输按“暂停”停止并最多等待 3 秒以便保存状态，停止同步循环，用 `zeroize` 清理会话令牌缓冲区，并清空 LocalAccessManager 中未消费的授权。可续传任务保留分片与 checkpoint，同一账户再次登录后可继续。`connect_koofr()` 切换账户时同样先暂停现有传输。
 - 进程退出时同样执行 zeroize。
@@ -331,7 +331,7 @@ src-tauri/src/
 默认工作目录为 Tauri `app_local_data_dir`。用户可在设置中选择另一个已有的空目录，
 并决定是否将当前工作目录中的设置、传输检查点、下载历史、缓存、日志及其他文件全量
 迁移过去。变更不会在运行中搬动已打开的文件，而是写入默认数据目录旁的
-`net.koofr.desktop.gui.work-directory.json` 定位记录，并在下次启动、构造 `AppState` 之前执行迁移。
+`app.suitcase.desktop.work-directory.json` 定位记录，并在下次启动、构造 `AppState` 之前执行迁移。
 
 全量迁移先递归复制到目标同级的应用专用暂存目录，拒绝符号链接与特殊文件；写入迁移
 标记后再激活目标，最后清理旧目录。该设计既支持跨卷移动，也能在进程或 I/O 中断后区分
@@ -361,7 +361,7 @@ src-tauri/src/
 
 `AppLogger` 使用独立后台线程写入当前工作目录的 `logs/`，不阻塞 Tauri 命令或传输任务。设置页可指定记录级别、保留天数与单文件大小上限，也可查看占用情况并一键清理。
 
-- 活动文件为 `koofr-gui.jsonl`，达到大小上限后按带时间戳与随机 ID 的文件名轮转。
+- 活动文件为 `suitcase.jsonl`，达到大小上限后按带时间戳与随机 ID 的文件名轮转。
 - 轮转文件按保留天数自动清理；默认保留 14 天，单文件上限 10 MB。
 - 常规传输日志记录 session ID、transfer ID、方向、终态、字节数、稳定错误码，以及脱敏后的 HTTP 状态、I/O 类别与网络失败分类。
 - 调试级别使用 `operation_started` 和 `operation_finished` 记录阶段、耗时和结果。用同一 session ID 内的 `fields.operationId` 配对。网络阶段区分收到 HTTP 响应头与读取、解析 JSON 响应。网络标签使用固定操作名。
@@ -372,7 +372,7 @@ src-tauri/src/
 ### 凭据存储
 
 - **会话令牌**：仅存于 Rust 进程内存，使用 `zeroize` 清理。
-- **应用专用密码**（用户勾选“记住我”时）：Windows 凭据管理器，服务名为 `Koofr-GUI`，账号名为邮箱地址。
+- **应用专用密码**（用户勾选“记住我”时）：Windows 凭据管理器，服务名为 `Suitcase`，账号名为邮箱地址。
 - **服务端返回的错误响应正文**：读取一次取得错误码后立即丢弃，不写入日志。
 
 认证失败或用户勾选“忘记我”时，从 Credential Manager 删除对应记录。
@@ -477,15 +477,15 @@ Vault：`list_vaults`, `unlock_vault`, `lock_vault`, `list_vault_files`, `create
 ├─ download-history.json        # 按账户隔离的下载历史、目标位置与限量速度采样
 ├─ sync-state.sqlite3           # 同步组、占位符条目、设备标识、双边基线、问题与操作日志（WAL）
 ├─ cache/metadata-cache.json    # 磁盘缓存
-└─ logs/koofr-gui*.jsonl        # 诊断日志
+└─ logs/suitcase*.jsonl         # 诊断日志
 ```
 
-默认位置旁另保留 `%LOCALAPPDATA%\net.koofr.desktop.gui.work-directory.json` 定位
+默认位置旁另保留 `%LOCALAPPDATA%\app.suitcase.desktop.work-directory.json` 定位
 记录；使用自定义工作目录时，该文件仍留在原位。
 
 **Windows 凭据管理器**（不位于上述目录）：
 
-- 服务名 `Koofr-GUI`，账号名 `<email>`：用户勾选“记住我”时保存的应用专用密码。
+- 服务名 `Suitcase`，账号名 `<email>`：用户勾选“记住我”时保存的应用专用密码。
 
 **下载临时文件**（位于用户配置的下载目录下）：
 

@@ -232,7 +232,7 @@ mod windows {
         }
         let root_path = root;
         let root = wide(root_path);
-        let provider_name = wide_str("Koofr GUI");
+        let provider_name = wide_str("Suitcase");
         let provider_version = wide_str(env!("CARGO_PKG_VERSION"));
         let root_identity = format!("KFG1:{pair_id}").into_bytes();
         let registration = CF_SYNC_REGISTRATION {
@@ -319,7 +319,10 @@ mod windows {
             .iter()
             .position(|value| *value == 0)
             .unwrap_or(info.ProviderName.len());
-        if String::from_utf16_lossy(&info.ProviderName[..provider_length]) != "Koofr GUI" {
+        if !matches!(
+            String::from_utf16_lossy(&info.ProviderName[..provider_length]).as_str(),
+            "Suitcase" | "Koofr GUI"
+        ) {
             return false;
         }
         let identity_length = info.SyncRootIdentityLength as usize;

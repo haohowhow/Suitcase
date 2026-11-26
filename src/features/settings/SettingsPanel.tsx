@@ -542,7 +542,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             </header>
 
             <SwitchRow
-              label="开机启动 Koofr GUI"
+              label="开机启动 Suitcase"
               hint={settings.nativeSyncBackgroundRequired ? '使用按需同步时必须开启，以便登录后资源管理器能继续访问在线文件' : '登录 Windows 后自动在后台启动'}
               checked={settings.launchAtLogin}
               disabled={busy || !onGeneralChange || settings.nativeSyncBackgroundRequired}
@@ -1338,7 +1338,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 />
                 <SwitchRow
                   label="双击打开应用"
-                  hint="双击悬浮窗回到 Koofr GUI 主窗口"
+                  hint="双击悬浮窗回到 Suitcase 主窗口"
                   checked={settings.floatingWindowDoubleClickOpenEnabled}
                   disabled={busy || !onNotificationChange}
                   onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
@@ -1443,8 +1443,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <header className="settings-section__heading">
               <Info aria-hidden="true" />
               <div>
-                <h3>关于 Koofr GUI</h3>
-                <p>版本信息与项目链接。</p>
+                <h3>关于 Suitcase</h3>
+                <p>版本信息与项目链接。Suitcase 是非官方第三方客户端，与 Koofr d.o.o. 无关联。</p>
               </div>
             </header>
             {versionInfo ? (

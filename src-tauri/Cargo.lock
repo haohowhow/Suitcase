@@ -2472,44 +2472,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "koofr-gui"
-version = "2.7.0"
-dependencies = [
- "cc",
- "chardetng",
- "data-encoding",
- "encoding_rs",
- "filetime",
- "futures-util",
- "httpmock",
- "image",
- "keyring-core",
- "md-5",
- "notify",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-single-instance",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "trash",
- "url",
- "uuid",
- "vault-crypto",
- "windows-native-keyring-store",
- "windows-sys 0.61.2",
- "zeroize",
-]
-
-[[package]]
 name = "kqueue"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4409,6 +4371,44 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "suitcase"
+version = "2.7.0"
+dependencies = [
+ "cc",
+ "chardetng",
+ "data-encoding",
+ "encoding_rs",
+ "filetime",
+ "futures-util",
+ "httpmock",
+ "image",
+ "keyring-core",
+ "md-5",
+ "notify",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-single-instance",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "trash",
+ "url",
+ "uuid",
+ "vault-crypto",
+ "windows-native-keyring-store",
+ "windows-sys 0.61.2",
+ "zeroize",
+]
 
 [[package]]
 name = "swift-rs"

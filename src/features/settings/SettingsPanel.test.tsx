@@ -12,7 +12,7 @@ const SETTINGS: AppSettings = {
   savedEmail: null,
   downloadDirectory: 'C:\\Users\\Test\\Downloads',
   askDownloadLocation: true,
-  workDirectory: 'C:\\Users\\Test\\AppData\\Koofr-GUI',
+  workDirectory: 'C:\\Users\\Test\\AppData\\Suitcase',
   pendingWorkDirectory: null,
   pendingWorkDirectoryMove: false,
   workDirectoryMigrationFailed: false,
@@ -212,7 +212,7 @@ describe('SettingsPanel new sections', () => {
     renderSettings({ onGeneralChange })
     await user.click(screen.getByRole('tab', { name: '通用' }))
 
-    await user.click(screen.getByRole('switch', { name: '开机启动 Koofr GUI' }))
+    await user.click(screen.getByRole('switch', { name: '开机启动 Suitcase' }))
 
     expect(onGeneralChange).toHaveBeenCalledWith({
       launchAtLogin: true,

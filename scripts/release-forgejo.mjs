@@ -60,7 +60,7 @@ export async function uploadDraft({ tag, commit, body, assets }, api) {
     release = await api('POST', '/releases', {
       tag_name: tag,
       target_commitish: commit,
-      name: `Koofr GUI ${tag}`,
+      name: `Suitcase ${tag}`,
       body,
       draft: true,
       prerelease: false,

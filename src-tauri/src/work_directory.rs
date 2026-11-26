@@ -11,7 +11,7 @@ use crate::error::AppError;
 
 const LOCATOR_VERSION: u8 = 1;
 const LOCATOR_FILE_NAME: &str = "work-directory.json";
-const MIGRATION_DIRECTORY_PREFIX: &str = ".koofr-gui-migration-";
+const MIGRATION_DIRECTORY_PREFIX: &str = ".suitcase-migration-";
 const MIGRATION_MARKER_PREFIX: &str = ".koofr-work-migration-";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -230,7 +230,7 @@ fn apply_pending_change(locator_path: &Path, locator: &mut StoredLocator) -> Res
     }
     fs::write(
         stage.join(format!("{MIGRATION_MARKER_PREFIX}{}", pending.migration_id)),
-        b"Koofr-GUI work directory migration",
+        b"Suitcase work directory migration",
     )
     .map_err(|_| AppError::LocalData)?;
     fs::remove_dir(&target).map_err(|_| AppError::LocalData)?;
@@ -403,7 +403,7 @@ mod tests {
             .expect("write history");
         std::fs::write(default.join("cache").join("metadata-cache.json"), b"cache")
             .expect("write cache");
-        std::fs::write(default.join("logs").join("koofr-gui.jsonl"), b"log").expect("write log");
+        std::fs::write(default.join("logs").join("suitcase.jsonl"), b"log").expect("write log");
         std::fs::write(
             default
                 .join("future-data")
@@ -424,7 +424,7 @@ mod tests {
         assert!(target.join("transfer-checkpoints.json").is_file());
         assert!(target.join("download-history.json").is_file());
         assert!(target.join("cache").join("metadata-cache.json").is_file());
-        assert!(target.join("logs").join("koofr-gui.jsonl").is_file());
+        assert!(target.join("logs").join("suitcase.jsonl").is_file());
         assert!(
             target
                 .join("future-data")

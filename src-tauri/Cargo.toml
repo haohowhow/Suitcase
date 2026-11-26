@@ -1,13 +1,14 @@
 [package]
-name = "koofr-gui"
+name = "suitcase"
 version = "2.7.0"
-description = "Windows-first desktop client for Koofr"
-authors = ["Koofr-GUI contributors"]
+description = "Unofficial Windows-first desktop client for Koofr"
+authors = ["Suitcase contributors"]
+license = "MIT"
 edition = "2024"
 rust-version = "1.88"
 
 [lib]
-name = "koofr_gui_lib"
+name = "suitcase_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

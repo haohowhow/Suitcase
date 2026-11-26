@@ -1,8 +1,8 @@
 <div align="center">
 
-# Koofr-GUI
+# Suitcase
 
-**Windows-first desktop client for Koofr**
+**Unofficial Windows-first desktop client for Koofr**
 
 Built with Tauri v2, React, TypeScript, and Rust. The goal is a native file-manager experience rather than a thin wrapper around the web interface.
 
@@ -19,7 +19,7 @@ Built with Tauri v2, React, TypeScript, and Rust. The goal is a native file-mana
 
 ## Table of contents
 
-- [Koofr-GUI](#koofr-gui)
+- [Suitcase](#suitcase)
   - [Table of contents](#table-of-contents)
   - [Overview](#overview)
   - [Screenshots](#screenshots)
@@ -43,7 +43,7 @@ Built with Tauri v2, React, TypeScript, and Rust. The goal is a native file-mana
 
 [Koofr](https://koofr.eu) is a European cloud storage provider that aggregates Google Drive, OneDrive, Dropbox, and other third-party accounts under a single login.
 
-Koofr-GUI is an unaffiliated, Windows-first alternative client built around a native file-manager experience. Koofr offers its own desktop applications; this project provides a different option that follows Windows file-manager conventions more closely. The current version covers Koofr file management, resumable transfers, public-link management, local preview for common file types, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
+Suitcase is an unaffiliated, Windows-first alternative client built around a native file-manager experience. Koofr offers its own desktop applications; this project provides a different option that follows Windows file-manager conventions more closely. The current version covers Koofr file management, resumable transfers, public-link management, local preview for common file types, and an end-to-end encrypted workspace interoperable with Koofr Vault and rclone crypt.
 
 ## Screenshots
 
@@ -118,7 +118,7 @@ Koofr-GUI is an unaffiliated, Windows-first alternative client built around a na
 
 ## Download
 
-Published installers, where available, are listed on the Releases page. Download the latest NSIS installer from the [Releases page](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) (for example, `Koofr GUI_<version>_x64-setup.exe`).
+Published installers, where available, are listed on the Releases page. Download the latest NSIS installer from the [Releases page](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) (for example, `Suitcase_<version>_x64-setup.exe`).
 
 > ⚠️ **Unsigned binaries**: release builds are not code-signed, and Windows SmartScreen may report an unknown publisher. Download only from this repository's Releases page, never from third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification steps.
 
@@ -160,7 +160,7 @@ Release builds:
 
 ```powershell
 npm run check                # full quality gate: lint + tests + Rust fmt/clippy
-npm run build:desktop        # produces src-tauri/target/release/koofr-gui.exe
+npm run build:desktop        # produces src-tauri/target/release/suitcase.exe
 npm run build:installer      # builds the NSIS installer explicitly
 ```
 
@@ -215,7 +215,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design and data fl
 
 ## Where data is stored
 
-Application data defaults to the current Windows user's local data directory (`identifier = net.koofr.desktop.gui`) and can be changed to an existing empty directory in Settings:
+Application data defaults to the current Windows user's local data directory (`identifier = app.suitcase.desktop`) and can be changed to an existing empty directory in Settings:
 
 ```text
 <application work directory>\
@@ -224,10 +224,10 @@ Application data defaults to the current Windows user's local data directory (`i
 ├─ download-history.json        # account-scoped download history, locations, and bounded speed samples
 ├─ sync-state.sqlite3           # account-scoped sync pairs, baselines, issues, and operations (WAL)
 ├─ cache/metadata-cache.json    # disk metadata cache
-└─ logs/koofr-gui*.jsonl        # redacted diagnostic logs
+└─ logs/suitcase*.jsonl         # redacted diagnostic logs
 ```
 
-The default work directory is `%LOCALAPPDATA%\net.koofr.desktop.gui`. A small adjacent `%LOCALAPPDATA%\net.koofr.desktop.gui.work-directory.json` locator allows the application to find a custom directory after a restart; this locator is not migrated with the work data. A full migration runs on the next start before any work file is opened, supports cross-volume copies, and removes the old directory only after the switch succeeds. The destination must be empty; if migration fails, a usable copy is retained and the migration is retried on the next start.
+The default work directory is `%LOCALAPPDATA%\app.suitcase.desktop`. A small adjacent `%LOCALAPPDATA%\app.suitcase.desktop.work-directory.json` locator allows the application to find a custom directory after a restart; this locator is not migrated with the work data. A full migration runs on the next start before any work file is opened, supports cross-volume copies, and removes the old directory only after the switch succeeds. The destination must be empty; if migration fails, a usable copy is retained and the migration is retried on the next start.
 
 **Credentials are not stored in the work directory.** The Koofr app-specific password is held by the Windows Credential Manager, survives reinstalls and rebuilds, and is not part of work-directory migration.
 
@@ -245,7 +245,9 @@ The default work directory is `%LOCALAPPDATA%\net.koofr.desktop.gui`. A small ad
 
 ## License
 
-[MIT](LICENSE) © 2026 Koofr-GUI contributors
+[MIT](LICENSE) © 2026 Suitcase contributors
+
+Third-party component notices and bundled license texts are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`licenses/`](licenses/).
 
 This project is **not affiliated** with Koofr d.o.o. "Koofr" is a trademark of [Koofr d.o.o.](https://koofr.eu).
 

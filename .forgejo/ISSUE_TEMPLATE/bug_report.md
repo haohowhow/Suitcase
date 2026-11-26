@@ -11,7 +11,7 @@ assignees: ''
 
 ## 环境 / Environment
 
-- Koofr-GUI 版本 / version:
+- Suitcase 版本 / version:
 - 操作系统 / OS (Windows 10 / 11, x64):
 - 获取方式 / Downloaded from: <!-- Releases 页面 / 自行构建 / 其他 -->
 - 是否升级自更早版本 / Upgraded from an earlier version:

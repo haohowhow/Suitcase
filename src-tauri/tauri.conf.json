@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Koofr GUI",
+  "productName": "Suitcase",
   "version": "2.7.0",
-  "identifier": "net.koofr.desktop.gui",
+  "identifier": "app.suitcase.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Koofr",
+        "title": "Suitcase",
         "width": 1280,
         "height": 720,
         "minWidth": 980,
@@ -36,6 +36,7 @@
     },
     "resources": {
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../licenses": "licenses",
       "third_party/libraw-0.21.1": "third_party/libraw-0.21.1"
     }
   }

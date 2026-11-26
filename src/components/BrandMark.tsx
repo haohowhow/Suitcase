@@ -38,7 +38,7 @@ export function BrandMark({ compact = false }: BrandMarkProps) {
           <rect className="brand-mark__clasp" x="27.5" y="33.5" width="9" height="5.5" rx="2.75" />
         </svg>
       </span>
-      <strong translate="no">Koofr</strong>
+      <strong translate="no">Suitcase</strong>
     </div>
   )
 }

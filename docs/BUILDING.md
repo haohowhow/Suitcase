@@ -1,6 +1,6 @@
 # 构建指南
 
-Windows 上从源码构建 Koofr-GUI 的完整流程。所有命令均在仓库根目录执行，示例使用 PowerShell。
+Windows 上从源码构建 Suitcase 的完整流程。所有命令均在仓库根目录执行，示例使用 PowerShell。
 
 ## 目录
 
@@ -14,7 +14,7 @@ Windows 上从源码构建 Koofr-GUI 的完整流程。所有命令均在仓库�
 
 ## 1. 环境要求
 
-Koofr-GUI 基于 Tauri v2、React、TypeScript 与 Rust，需要以下组件：
+Suitcase 基于 Tauri v2、React、TypeScript 与 Rust，需要以下组件：
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
@@ -127,7 +127,7 @@ npm run build:desktop
 `npm run build:desktop` 通过 Tauri 自动触发前端生产构建，随后编译 Rust 发布版本，并以 `--no-bundle` 仅生成 exe。成功后产物位于：
 
 ```text
-src-tauri/target/release/koofr-gui.exe
+src-tauri/target/release/suitcase.exe
 ```
 
 ### 4.3 NSIS 安装包
@@ -139,7 +139,7 @@ npm run build:installer
 生成 NSIS 安装包到：
 
 ```text
-src-tauri/target/release/bundle/nsis/Koofr GUI_<version>_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Suitcase_<version>_x64-setup.exe
 ```
 
 `tauri.conf.json` 中保留了 NSIS 配置。本地 `build:desktop` 不生成安装包，以便加快迭代。当前流程为在 Windows 本机构建并上传 Forgejo Release 草稿，详见 [RELEASING.md](RELEASING.md)。
@@ -184,7 +184,7 @@ npm run verify:quick    # lint + 分卷上传测试 + 前端构建
 
 ## 6. 清理构建产物
 
-清理命令仅删除仓库内固定、可重新生成的目录。执行前**必须退出**开发服务器与正在运行的 `koofr-gui.exe`，否则 Windows 可能因文件占用而无法删除 Rust 产物。
+清理命令仅删除仓库内固定、可重新生成的目录。执行前**必须退出**开发服务器与正在运行的 `suitcase.exe`，否则 Windows 可能因文件占用而无法删除 Rust 产物。
 
 如需预览清理范围而不实际删除：
 
@@ -237,7 +237,7 @@ npm ci
 - `package-lock.json`、`src-tauri/Cargo.lock`
 - Git 内部文件
 - Windows 凭据管理器中保存的 Koofr 凭据
-- `%LOCALAPPDATA%\net.koofr.desktop.gui\` 中的应用设置与缓存
+- `%LOCALAPPDATA%\app.suitcase.desktop\` 中的应用设置与缓存
 - 用户下载目录中的 `.koofr-part-*` 临时文件
 
 如需清理上述内容，请手动操作，或使用应用内的“清除缓存 / 忘记登录”功能。
@@ -269,7 +269,7 @@ taskkill /PID <PID> /F
 
 ### 清理时出现 `EPERM` 或“文件正在使用”
 
-请关闭 Vite、Tauri、`koofr-gui.exe` 以及可能正在扫描构建目录的工具（IDE 索引、杀毒软件），然后重新执行清理。请勿手动删除不熟悉的系统目录；项目脚本只操作仓库内的白名单路径。
+请关闭 Vite、Tauri、`suitcase.exe` 以及可能正在扫描构建目录的工具（IDE 索引、杀毒软件），然后重新执行清理。请勿手动删除不熟悉的系统目录；项目脚本只操作仓库内的白名单路径。
 
 ### 首次编译 Rust 耗时较长
 

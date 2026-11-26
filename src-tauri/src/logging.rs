@@ -11,8 +11,8 @@ use serde_json::{Map, Value};
 
 use crate::{error::AppError, settings::LogLevel};
 
-const ACTIVE_LOG_FILE: &str = "koofr-gui.jsonl";
-const LOG_FILE_PREFIX: &str = "koofr-gui";
+const ACTIVE_LOG_FILE: &str = "suitcase.jsonl";
+const LOG_FILE_PREFIX: &str = "suitcase";
 const LOG_FILE_SUFFIX: &str = ".jsonl";
 
 #[derive(Clone, Debug)]
@@ -504,7 +504,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         let payload =
-            std::fs::read_to_string(directory.join("koofr-gui.jsonl")).expect("read active log");
+            std::fs::read_to_string(directory.join("suitcase.jsonl")).expect("read active log");
         assert!(!payload.contains("\"errorCode\":\"cancelled\""));
         assert!(payload.contains("\"operation\":\"import_rclone_config\""));
         assert!(payload.contains("\"invalidField\":\"rclone crypt section\""));

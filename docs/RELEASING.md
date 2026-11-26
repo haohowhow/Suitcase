@@ -36,7 +36,7 @@ npm run check
 npm run build:installer
 ```
 
-构建产物位于 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri 的 `productName`，例如 `Koofr GUI_<version>_x64-setup.exe`。请在本机验证安装、启动与关键操作；自动化检查不能替代 GUI 验收。
+构建产物位于 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri 的 `productName`，例如 `Suitcase_<version>_x64-setup.exe`。请在本机验证安装、启动与关键操作；自动化检查不能替代 GUI 验收。
 
 ### 3. 提交并推送标签
 
@@ -91,7 +91,7 @@ try {
 3. 同时下载 `SHA256SUMS`，计算并比对完整 SHA-256：
 
    ```powershell
-   Get-FileHash 'Koofr GUI_<version>_x64-setup.exe' -Algorithm SHA256
+   Get-FileHash 'Suitcase_<version>_x64-setup.exe' -Algorithm SHA256
    ```
 
 哈希校验只能确认文件与发布页面公布的文件一致，不等同于代码签名。发布包仍可能触发 Windows SmartScreen 未知发布者提示。
