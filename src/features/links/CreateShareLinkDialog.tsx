@@ -4,7 +4,7 @@ import { Modal } from '../../components/Modal'
 import { commandErrorMessage } from '../../services/koofr'
 import { publicLinks } from '../../services/publicLinks'
 import type { PublicLink, PublicLinkKind, RemoteFile } from '../../types/backend'
-import { isDirectory } from '../files/filePresentation'
+import { isDirectory } from '../../utils/format'
 
 interface CreateShareLinkDialogProps {
   readonly mountId: string
@@ -25,6 +25,8 @@ export function CreateShareLinkDialog({
 }: CreateShareLinkDialogProps) {
   const directory = isDirectory(file)
   const [kind, setKind] = useState<PublicLinkKind>(directory ? defaultKind : 'download')
+  const [selectedExpireDays, setSelectedExpireDays] = useState(expireDays)
+  const [selectedRequirePassword, setSelectedRequirePassword] = useState(requirePassword)
   const [created, setCreated] = useState<PublicLink | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -36,8 +38,8 @@ export function CreateShareLinkDialog({
     try {
       setCreated(await publicLinks.create(mountId, file.path, {
         kind: directory ? kind : 'download',
-        expireDays,
-        requirePassword,
+        expireDays: selectedExpireDays,
+        requirePassword: selectedRequirePassword,
       }))
     } catch (createError) {
       setError(commandErrorMessage(createError, '无法为所选项目创建分享链接。'))
@@ -74,17 +76,52 @@ export function CreateShareLinkDialog({
         </div>
 
         {!created ? (
-          <label className="create-share-kind">
-            分享方式
-            {directory ? (
-              <select value={kind} onChange={(event) => setKind(event.target.value as PublicLinkKind)} disabled={busy}>
-                <option value="download">发送下载链接</option>
-                <option value="upload">接收文件链接</option>
+          <>
+            <label className="create-share-kind">
+              分享方式
+              {directory ? (
+                <select value={kind} onChange={(event) => setKind(event.target.value as PublicLinkKind)} disabled={busy}>
+                  <option value="download">发送下载链接</option>
+                  <option value="upload">接收文件链接</option>
+                </select>
+              ) : (
+                <span><Share2 aria-hidden="true" />发送下载链接</span>
+              )}
+            </label>
+            <label className="create-share-kind">
+              链接有效期
+              <select
+                aria-label="链接有效期"
+                value={selectedExpireDays}
+                onChange={(event) => setSelectedExpireDays(Number(event.target.value))}
+                disabled={busy}
+              >
+                <option value={0}>永不过期</option>
+                <option value={1}>1 天</option>
+                <option value={7}>7 天</option>
+                <option value={30}>30 天</option>
+                <option value={90}>90 天</option>
+                <option value={365}>365 天</option>
               </select>
-            ) : (
-              <span><Share2 aria-hidden="true" />发送下载链接</span>
-            )}
-          </label>
+            </label>
+            <div className="download-dialog__preference">
+              <span>
+                <strong>设置密码</strong>
+                <small>创建后自动生成一次性分享密码</small>
+              </span>
+              <button
+                className={`settings-switch${selectedRequirePassword ? ' settings-switch--on' : ''}`}
+                type="button"
+                role="switch"
+                aria-checked={selectedRequirePassword}
+                aria-label="设置密码"
+                disabled={busy}
+                onClick={() => setSelectedRequirePassword((current) => !current)}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+          </>
         ) : (
           <div className="create-share-result" role="status">
             <strong>链接已创建</strong>

@@ -1,13 +1,11 @@
+import { StrictMode, type ComponentType } from 'react'
+import { createRoot } from 'react-dom/client'
+import './styles.css'
+
 if (import.meta.env.DEV) {
   void import('react-grab')
   void import('react-scan')
 }
-
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App'
-import { FloatingTransferWindow } from './features/transfers/FloatingTransferWindow'
-import './styles.css'
 
 const isFloatingWindow = new URLSearchParams(window.location.search).get('view') === 'transfer-float'
 if (isFloatingWindow) {
@@ -15,12 +13,23 @@ if (isFloatingWindow) {
   document.body.classList.add('floating-window-body')
 }
 
-const rootComponent = isFloatingWindow
-  ? <FloatingTransferWindow />
-  : <App />
+const rootElement = document.getElementById('root')!
+const root = createRoot(rootElement)
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {rootComponent}
-  </StrictMode>,
-)
+async function bootstrap() {
+  let RootComponent: ComponentType
+  if (isFloatingWindow) {
+    const mod = await import('./features/transfers/FloatingTransferWindow')
+    RootComponent = mod.FloatingTransferWindow
+  } else {
+    const mod = await import('./App')
+    RootComponent = mod.default
+  }
+  root.render(
+    <StrictMode>
+      <RootComponent />
+    </StrictMode>,
+  )
+}
+
+void bootstrap()

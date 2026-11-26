@@ -72,14 +72,17 @@ export function useKoofrWorkspace(enabled: boolean) {
 
   const loadDirectory = useCallback(async (mountId: string, path: string, forceRefresh = false) => {
     const requestId = ++requestSequence.current
-    setState((current) => ({
-      ...current,
-      activeMountId: mountId,
-      path,
-      files: [],
-      status: 'loading',
-      error: '',
-    }))
+    setState((current) => {
+      const sameLocation = current.activeMountId === mountId && current.path === path
+      return {
+        ...current,
+        activeMountId: mountId,
+        path,
+        files: sameLocation ? current.files : [],
+        status: 'loading',
+        error: '',
+      }
+    })
 
     try {
       const files = await koofr.listFiles(mountId, path, forceRefresh)

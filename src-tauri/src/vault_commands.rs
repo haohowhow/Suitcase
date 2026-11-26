@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
@@ -12,10 +12,15 @@ use crate::{
     file_ops::{LocalDownloadPath, LocalUploadPath, MountId, RemoteName, RemotePath},
     koofr_api::VaultRepoCreate,
     transfer::{self, TransferResult},
-    vault_core::{VaultDirectory, VaultSummary, prompt_safe_key},
+    vault_core::{VaultDirectory, VaultSummary},
 };
 
 type CommandResult<T> = Result<T, CommandError>;
+
+fn vault_command_error(state: &AppState, operation: &'static str, error: AppError) -> CommandError {
+    state.logger.command_error("vault", operation, None, &error);
+    CommandError::from(error)
+}
 
 #[tauri::command]
 pub async fn list_vaults(state: State<'_, AppState>) -> CommandResult<Vec<VaultSummary>> {
@@ -23,31 +28,35 @@ pub async fn list_vaults(state: State<'_, AppState>) -> CommandResult<Vec<VaultS
         .api
         .list_vault_repos()
         .await
-        .map_err(CommandError::from)?;
+        .map_err(|error| vault_command_error(&state, "list_vaults", error))?;
     Ok(state.vault.sync_repos(repos).await)
 }
 
 #[tauri::command]
 pub async fn unlock_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     repo_id: String,
+    safe_key: String,
 ) -> CommandResult<VaultSummary> {
+    let safe_key = Zeroizing::new(safe_key);
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "unlock_vault",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
+    }
     let repos = state
         .api
         .list_vault_repos()
         .await
         .map_err(CommandError::from)?;
     state.vault.sync_repos(repos).await;
-    let repo = state
+    let _repo = state
         .vault
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let safe_key = prompt_safe_key(&window, &repo.id, &repo.name, "请输入 Safe Key 以解锁")
-        .await
-        .map_err(CommandError::from)?
-        .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     state
         .logger
         .trace(
@@ -57,7 +66,7 @@ pub async fn unlock_vault(
             state.vault.unlock(&repo_id, safe_key.as_str()),
         )
         .await
-        .map_err(CommandError::from)
+        .map_err(|error| vault_command_error(&state, "unlock_vault", error))
 }
 
 #[tauri::command]
@@ -261,47 +270,29 @@ pub async fn download_vault_file(
 
 #[tauri::command]
 pub async fn create_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     mount_id: String,
     parent_path: String,
     name: String,
+    safe_key: String,
 ) -> CommandResult<VaultSummary> {
+    let safe_key = Zeroizing::new(safe_key);
     let mount_id = MountId::parse(mount_id).map_err(CommandError::from)?;
     let parent_path = RemotePath::parse(parent_path).map_err(CommandError::from)?;
     let name = RemoteName::parse(name).map_err(CommandError::from)?;
-    let prompt_id = uuid::Uuid::new_v4().to_string();
-    let first = prompt_safe_key(
-        &window,
-        &prompt_id,
-        name.as_str(),
-        "请设置至少 8 个字符的 Safe Key",
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
-    if first.chars().count() < 8 {
-        return Err(CommandError::from(AppError::InvalidInput(
-            "vault Safe Key length",
-        )));
-    }
-    let second = prompt_safe_key(
-        &window,
-        &prompt_id,
-        name.as_str(),
-        "请再次输入 Safe Key 进行确认",
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
-    if first.as_str() != second.as_str() {
-        return Err(CommandError::from(AppError::VaultInvalidKey));
+    if safe_key.chars().count() < 8 {
+        return Err(vault_command_error(
+            &state,
+            "create_vault",
+            AppError::InvalidInput("vault Safe Key length"),
+        ));
     }
     let salt = vault_crypto::random_password::random_password(128)
-        .map_err(|_| CommandError::from(AppError::VaultCrypto))?;
-    let cipher = VaultCipher::new(first.as_str(), Some(&salt));
-    let (password_validator, password_validator_encrypted) =
-        cipher.generate_validator().map_err(CommandError::from)?;
+        .map_err(|_| vault_command_error(&state, "create_vault", AppError::VaultCrypto))?;
+    let cipher = VaultCipher::new(safe_key.as_str(), Some(&salt));
+    let (password_validator, password_validator_encrypted) = cipher
+        .generate_validator()
+        .map_err(|error| vault_command_error(&state, "create_vault", error))?;
     let repo_path = parent_path.join(&name).map_err(CommandError::from)?;
     let created_folder = match state
         .api
@@ -339,22 +330,30 @@ pub async fn create_vault(
     state.vault.sync_repos(repos).await;
     state
         .vault
-        .unlock(&created.id, first.as_str())
+        .unlock(&created.id, safe_key.as_str())
         .await
         .map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub async fn remove_vault(
-    window: WebviewWindow,
     state: State<'_, AppState>,
     repo_id: String,
     confirmation: String,
+    safe_key: String,
 ) -> CommandResult<Vec<VaultSummary>> {
+    let safe_key = Zeroizing::new(safe_key);
     if confirmation != "移除保险箱" {
         return Err(CommandError::from(AppError::InvalidInput(
             "vault remove confirmation",
         )));
+    }
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "remove_vault",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
     }
     let repos = state
         .api
@@ -367,15 +366,6 @@ pub async fn remove_vault(
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let safe_key = prompt_safe_key(
-        &window,
-        &repo.id,
-        &repo.name,
-        "请输入 Safe Key 以移除保险箱注册",
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     state
         .vault
         .unlock(&repo.id, safe_key.as_str())
@@ -396,11 +386,19 @@ pub async fn remove_vault(
 
 #[tauri::command]
 pub async fn export_vault_rclone_config(
-    window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AppState>,
     repo_id: String,
+    safe_key: String,
 ) -> CommandResult<bool> {
+    let safe_key = Zeroizing::new(safe_key);
+    if safe_key.is_empty() {
+        return Err(vault_command_error(
+            &state,
+            "export_vault_rclone_config",
+            AppError::InvalidInput("vault Safe Key"),
+        ));
+    }
     let repos = state
         .api
         .list_vault_repos()
@@ -412,21 +410,16 @@ pub async fn export_vault_rclone_config(
         .repo_for_unlock(&repo_id)
         .await
         .map_err(CommandError::from)?;
-    let safe_key = prompt_safe_key(
-        &window,
-        &repo.id,
-        &repo.name,
-        "请输入 Safe Key 以导出 rclone 配置",
-    )
-    .await
-    .map_err(CommandError::from)?
-    .ok_or_else(|| CommandError::from(AppError::Cancelled))?;
     let cipher = VaultCipher::new(safe_key.as_str(), repo.salt.as_deref());
     if !cipher
         .validates(&repo.password_validator, &repo.password_validator_encrypted)
-        .map_err(CommandError::from)?
+        .map_err(|error| vault_command_error(&state, "export_vault_rclone_config", error))?
     {
-        return Err(CommandError::from(AppError::VaultInvalidKey));
+        return Err(vault_command_error(
+            &state,
+            "export_vault_rclone_config",
+            AppError::VaultInvalidKey,
+        ));
     }
     let Some(file_path) = app
         .dialog()
@@ -500,19 +493,28 @@ pub async fn import_vault_rclone_config(
         .await
         .map_err(AppError::from)
         .map_err(CommandError::from)?;
-    let text = std::str::from_utf8(&bytes)
-        .map_err(|_| CommandError::from(AppError::InvalidInput("rclone config encoding")))?;
-    let parsed = parse_rclone_config(text).map_err(CommandError::from)?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| {
+        vault_command_error(
+            &state,
+            "import_vault_rclone_config",
+            AppError::InvalidInput("rclone config encoding"),
+        )
+    })?;
+    let parsed = parse_rclone_config(text)
+        .map_err(|error| vault_command_error(&state, "import_vault_rclone_config", error))?;
     let safe_key = Zeroizing::new(
-        vault_crypto::rclone_obscure::reveal(&parsed.password)
-            .map_err(|_| CommandError::from(AppError::VaultCrypto))?,
+        vault_crypto::rclone_obscure::reveal(&parsed.password).map_err(|_| {
+            vault_command_error(&state, "import_vault_rclone_config", AppError::VaultCrypto)
+        })?,
     );
     let salt = parsed
         .password2
         .as_deref()
         .map(vault_crypto::rclone_obscure::reveal)
         .transpose()
-        .map_err(|_| CommandError::from(AppError::VaultCrypto))?;
+        .map_err(|_| {
+            vault_command_error(&state, "import_vault_rclone_config", AppError::VaultCrypto)
+        })?;
     let remote_path = RemotePath::parse(parsed.remote_path).map_err(CommandError::from)?;
     let mounts = state.api.list_mounts().await.map_err(CommandError::from)?;
     let mount = mounts

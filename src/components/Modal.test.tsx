@@ -100,4 +100,14 @@ describe('Modal', () => {
     expect(onSecondary).toHaveBeenCalledOnce()
     expect(onPrimary).toHaveBeenCalledOnce()
   })
+
+  it('preserves explicit autoFocus on form inputs inside the dialog', () => {
+    render(
+      <Modal title="新建文件夹" actionLabel="创建文件夹" onClose={vi.fn()}>
+        <input autoFocus aria-label="文件夹名称" />
+      </Modal>,
+    )
+
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '文件夹名称' }))
+  })
 })

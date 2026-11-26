@@ -43,7 +43,6 @@ describe('SyncWorkspace', () => {
     service.listFiles.mockImplementation(async (_mountId: string, path: string) => path === '/'
       ? [{ path: '/Projects', name: 'Projects', entryType: 'dir' }]
       : [])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
   const renderWorkspace = () => render(<SyncWorkspace mounts={mounts} defaultMountId="primary" defaultRemotePath="/" sync={sync} />)
 
@@ -69,6 +68,7 @@ describe('SyncWorkspace', () => {
     await user.click(screen.getByRole('button', { name: '暂停同步' }))
     await waitFor(() => expect(service.setSyncPairPaused).toHaveBeenCalledWith('pair-1', true))
     await user.click(screen.getByRole('button', { name: '移除同步' }))
+    await user.click(screen.getByRole('button', { name: '确认移除' }))
     await waitFor(() => expect(service.removeSyncPair).toHaveBeenCalledWith('pair-1'))
     expect(service).not.toHaveProperty('deleteEntry')
   })
@@ -119,7 +119,9 @@ describe('SyncWorkspace', () => {
     const onDemandSync = { ...sync, pairs: [{ ...pair, syncMode: 'onDemand' as const, nativeConnected: true }] }
     const rendered = render(<SyncWorkspace mounts={mounts} defaultMountId="primary" defaultRemotePath="/" sync={onDemandSync} />)
     await user.click(rendered.getByRole('button', { name: '移除同步' }))
-    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining('仅在线的文件会从本机移除'))
+    expect(rendered.getByText(/仅在线的文件会从本机移除/)).not.toBeNull()
+    await user.click(rendered.getByRole('button', { name: '确认移除' }))
+    await waitFor(() => expect(service.removeSyncPair).toHaveBeenCalledWith('pair-1'))
   })
   it.each(['classic', 'onDemand'] as const)('shows an accurate visible task queue for %s sync', async (syncMode) => {
     service.listSyncTasks.mockResolvedValue([

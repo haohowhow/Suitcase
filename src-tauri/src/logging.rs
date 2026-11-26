@@ -160,6 +160,21 @@ impl AppLogger {
         self.record(LogLevel::Error, target, event, transfer_id, fields);
     }
 
+    pub fn command_error(
+        &self,
+        target: &'static str,
+        operation: &'static str,
+        transfer_id: Option<&str>,
+        error: &AppError,
+    ) {
+        if matches!(error, AppError::Cancelled | AppError::TransferPaused) {
+            return;
+        }
+        let mut fields = Map::new();
+        fields.insert("operation".to_owned(), operation.into());
+        self.error(target, "command_failed", transfer_id, error, fields);
+    }
+
     fn record(
         &self,
         level: LogLevel,
@@ -463,6 +478,39 @@ mod tests {
             .map(|entry| entry.expect("entry").file_name())
             .collect::<BTreeSet<_>>();
         assert!(remaining.is_empty());
+        std::fs::remove_dir_all(directory).expect("remove log directory");
+    }
+
+    #[tokio::test]
+    async fn command_error_logs_technical_details_and_skips_cancellations() {
+        let directory = std::env::temp_dir().join(format!("koofr-logs-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create log directory");
+        let logger = AppLogger::initialize(LogConfig {
+            directory: directory.clone(),
+            level: LogLevel::Info,
+            retention_days: 7,
+            max_file_bytes: 64 * 1024,
+        })
+        .expect("initialize logger");
+
+        logger.command_error("vault", "unlock", None, &AppError::Cancelled);
+        logger.command_error(
+            "vault",
+            "import_rclone_config",
+            None,
+            &AppError::InvalidInput("rclone crypt section"),
+        );
+        logger.command_error("vault", "decrypt", None, &AppError::VaultCrypto);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let payload =
+            std::fs::read_to_string(directory.join("koofr-gui.jsonl")).expect("read active log");
+        assert!(!payload.contains("\"errorCode\":\"cancelled\""));
+        assert!(payload.contains("\"operation\":\"import_rclone_config\""));
+        assert!(payload.contains("\"invalidField\":\"rclone crypt section\""));
+        assert!(payload.contains("\"errorCode\":\"vault_crypto_error\""));
+        assert!(payload.contains("Safe Key, salt, or ciphertext mismatch"));
+
         std::fs::remove_dir_all(directory).expect("remove log directory");
     }
 }

@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
-import { fileKindByName, formatBytes } from '../files/filePresentation'
+import { fileKindByName, formatBytes } from '../../utils/format'
 import type { RecoveryKind } from '../../types/backend'
 import type { FileKind, TransferItem } from '../../types/files'
 
@@ -233,6 +233,14 @@ function SpeedChart({ item }: { readonly item: TransferItem }) {
   const pointList = points.map((point) => (
     `${point.x.toFixed(1)},${point.y.toFixed(1)}`
   )).join(' ')
+  const smoothCurve = smoothPath(points)
+  const firstPoint = points[0]
+  const lastPoint = points.at(-1)
+  const areaPath = firstPoint && lastPoint
+    ? mode === 'line'
+      ? `M ${firstPoint.x.toFixed(1)} ${CHART_BOTTOM} L ${ points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ') } L ${lastPoint.x.toFixed(1)} ${CHART_BOTTOM} Z`
+      : `${smoothCurve} L ${lastPoint.x.toFixed(1)} ${CHART_BOTTOM} L ${firstPoint.x.toFixed(1)} ${CHART_BOTTOM} Z`
+    : ''
   const direction = item.direction === 'upload' ? '上传' : '下载'
   const nextMode = mode === 'line' ? '平滑' : '折线'
 
@@ -247,10 +255,11 @@ function SpeedChart({ item }: { readonly item: TransferItem }) {
         <line x1="0" y1="16" x2="300" y2="16" />
         <line x1="0" y1="47" x2="300" y2="47" />
         <line x1="0" y1="78" x2="300" y2="78" />
+        {areaPath ? <path className="transfer-speed-chart__area" d={areaPath} /> : null}
         {mode === 'line' ? (
           <polyline points={pointList} />
         ) : (
-          <path className="transfer-speed-chart__curve" d={smoothPath(points)} />
+          <path className="transfer-speed-chart__curve" d={smoothCurve} />
         )}
       </svg>
       <span className="transfer-speed-chart__peak">峰值 {formatRate(max)}/s</span>
@@ -316,13 +325,13 @@ export const TransferPanel = memo(function TransferPanel({
           <span>{runningCount > 0 ? `${runningCount} 项进行中` : '当前没有进行中的任务'}</span>
         </div>
         <button className="icon-button" type="button" aria-label="关闭传输面板" onClick={onClose}>
-          <X size={19} />
+          <X size={16} strokeWidth={1.8} />
         </button>
       </div>
 
       <div className="transfer-toolbar">
         <label className="transfer-search">
-          <Search size={16} aria-hidden="true" />
+          <Search size={15} strokeWidth={1.8} aria-hidden="true" />
           <input
             type="search"
             value={query}
@@ -339,7 +348,7 @@ export const TransferPanel = memo(function TransferPanel({
           title="清除已完成"
           onClick={onClearFinished}
         >
-          <Trash2 size={16} />
+          <Trash2 size={15} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -357,6 +366,7 @@ export const TransferPanel = memo(function TransferPanel({
           return (
             <div
               className={`transfer-item${selectedId === item.id ? ' transfer-item--selected' : ''}`}
+              data-direction={item.direction}
               key={item.id}
               role="option"
               aria-selected={selectedId === item.id}
@@ -373,7 +383,7 @@ export const TransferPanel = memo(function TransferPanel({
               <div className="transfer-item__content">
                 <strong translate="no" title={item.name}>{item.name}</strong>
                 <div className="transfer-item__meta">
-                  <span>{stateLabels[item.state]}</span>
+                  <span className={`transfer-item__state transfer-item__state--${item.state}`}>{stateLabels[item.state]}</span>
                   {splitProgressLabel(item) ? <span>{splitProgressLabel(item)}</span> : null}
                   <span>{formatBytes(item.totalBytes ?? item.bytesTransferred)}</span>
                 </div>
@@ -397,7 +407,7 @@ export const TransferPanel = memo(function TransferPanel({
                       onPause(item.id)
                     }}
                   >
-                    <Pause size={16} />
+                    <Pause size={15} strokeWidth={1.8} />
                   </button>
                 ) : null}
                 {recovery && (item.state === 'paused' || item.state === 'failed') ? (
@@ -411,7 +421,7 @@ export const TransferPanel = memo(function TransferPanel({
                       onResume(item.id)
                     }}
                   >
-                    <recovery.Icon size={16} />
+                    <recovery.Icon size={15} strokeWidth={1.8} />
                   </button>
                 ) : null}
                 {item.direction === 'download' && item.state === 'completed' ? (
@@ -425,7 +435,7 @@ export const TransferPanel = memo(function TransferPanel({
                       onOpenFolder(item.id)
                     }}
                   >
-                    <FolderOpen size={16} />
+                    <FolderOpen size={15} strokeWidth={1.8} />
                   </button>
                 ) : null}
               </div>
@@ -435,7 +445,7 @@ export const TransferPanel = memo(function TransferPanel({
 
         {filteredItems.length === 0 ? (
           <div className="transfer-empty">
-            <Search size={25} />
+            <Search size={20} strokeWidth={1.7} />
             <strong>{items.length === 0 ? '传输列表为空' : '没有匹配的传输'}</strong>
             <span>{items.length === 0 ? '新的传输任务会显示在这里' : '试试其他文件名或路径'}</span>
           </div>
@@ -455,11 +465,21 @@ export const TransferPanel = memo(function TransferPanel({
           <dl className="transfer-detail__paths">
             <div>
               <dt>来源</dt>
-              <dd title={selected.remotePath ?? undefined}>{selected.remotePath ? `Koofr · ${selected.remotePath}` : 'Koofr'}</dd>
+              <dd
+                title={selected.remotePath ?? undefined}
+                translate={selected.remotePath ? 'no' : undefined}
+              >
+                {selected.remotePath ? `Koofr · ${selected.remotePath}` : 'Koofr'}
+              </dd>
             </div>
             <div>
               <dt>文件位置</dt>
-              <dd title={selected.localPath ?? undefined}>{selected.localPath ?? '完成后可用'}</dd>
+              <dd
+                title={selected.localPath ?? undefined}
+                translate={selected.localPath ? 'no' : undefined}
+              >
+                {selected.localPath ?? '完成后可用'}
+              </dd>
             </div>
           </dl>
 

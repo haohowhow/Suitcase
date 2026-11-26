@@ -10,7 +10,7 @@ interface ThemePickerProps {
 export function ThemePicker({ value, onChange }: ThemePickerProps) {
   return (
     <div className="theme-picker">
-      <p className="theme-picker__intro">选择应用的强调色。设置只保存在这台设备上。</p>
+      <p className="theme-picker__intro">选择应用的界面强调色。</p>
       <div className="theme-picker__grid" role="radiogroup" aria-label="颜色主题">
         {themes.map((theme) => {
           const selected = theme.id === value

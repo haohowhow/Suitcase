@@ -490,7 +490,24 @@ pub async fn create_sync_pair(
 pub fn get_native_sync_capability(
     state: State<'_, AppState>,
 ) -> CommandResult<crate::cloud_files::NativeSyncCapability> {
-    Ok(state.sync.native_capability())
+    let (capability, hresult) = state.sync.native_capability();
+    if !capability.supported {
+        let mut fields = serde_json::Map::new();
+        fields.insert(
+            "detail".to_owned(),
+            serde_json::Value::from("Windows Cloud Files API (CfGetPlatformInfo) unavailable"),
+        );
+        if let Some(code) = hresult {
+            fields.insert(
+                "hresult".to_owned(),
+                serde_json::Value::String(format!("0x{:08X}", code as u32)),
+            );
+        }
+        state
+            .logger
+            .warn("sync", "cloud_files_api_unavailable", None, fields);
+    }
+    Ok(capability)
 }
 
 #[tauri::command]

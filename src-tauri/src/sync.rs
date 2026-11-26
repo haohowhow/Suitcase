@@ -1381,8 +1381,8 @@ impl SyncManager {
         summary(pair, None, false)
     }
 
-    pub fn native_capability(&self) -> cloud_files::NativeSyncCapability {
-        cloud_files::capability()
+    pub fn native_capability(&self) -> (cloud_files::NativeSyncCapability, Option<i32>) {
+        cloud_files::capability_with_hresult()
     }
 
     pub async fn create_on_demand_pair(
@@ -2783,7 +2783,15 @@ impl SyncManager {
         }
         let _ = self.clear_tasks(pair_id);
         let offline = error.is_network() || matches!(error, AppError::NotAuthenticated);
+        let state = app.state::<AppState>();
+        let mut log_fields = Map::new();
+        log_fields.insert("nativeSync".to_owned(), native.into());
         if offline {
+            log_fields.insert("errorCode".to_owned(), error.log_code().into());
+            log_fields.extend(error.safe_log_fields());
+            state
+                .logger
+                .warn("sync", "sync_cycle_offline", None, log_fields);
             if pair.status != "offline" {
                 let _ = self.store.update_progress(
                     pair_id,
@@ -2799,6 +2807,9 @@ impl SyncManager {
                 );
             }
         } else {
+            state
+                .logger
+                .error("sync", "sync_cycle_failed", None, error, log_fields);
             let _ = self.store.add_issue(
                 pair_id,
                 "",
@@ -2933,11 +2944,21 @@ impl SyncManager {
             Err(error) => {
                 if validate_local_root_sync(&pair.local_root).is_err() {
                     if pair.status != "paused" {
+                        let mut fields = Map::new();
+                        fields.insert("reason".to_owned(), "local_sync_root_unavailable".into());
+                        fields.insert("errorCode".to_owned(), error.log_code().into());
+                        fields.extend(error.safe_log_fields());
+                        app.state::<AppState>().logger.warn(
+                            "sync",
+                            "sync_root_unavailable",
+                            None,
+                            fields,
+                        );
                         self.store.add_issue(
                             pair_id,
                             "",
                             "sync_root_unavailable",
-                            "本地同步根目录不可用，已暂停同步。",
+                            "本地同步文件夹不可用，已暂停同步。",
                         )?;
                     }
                     self.store.update_progress(
@@ -4836,7 +4857,7 @@ fn sync_task_summary(index: usize, action: &Action) -> SyncTaskSummary {
     let display_name = relative
         .rsplit('/')
         .find(|segment| !segment.is_empty())
-        .unwrap_or("同步根")
+        .unwrap_or("同步文件夹")
         .to_owned();
     let direction = match action {
         Action::Upload { .. }

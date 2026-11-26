@@ -524,8 +524,8 @@ export const koofr = {
     return invoke<VaultSummary[]>('list_vaults')
   },
 
-  unlockVault(repoId: string) {
-    return invoke<VaultSummary>('unlock_vault', { repoId })
+  unlockVault(repoId: string, safeKey: string) {
+    return invoke<VaultSummary>('unlock_vault', { repoId, safeKey })
   },
 
   lockVault(repoId: string) {
@@ -557,16 +557,16 @@ export const koofr = {
     return invoke<void>('delete_vault_entries', { repoId, entryIds })
   },
 
-  createVault(mountId: string, parentPath: string, name: string) {
-    return invoke<VaultSummary>('create_vault', { mountId, parentPath, name })
+  createVault(mountId: string, parentPath: string, name: string, safeKey: string) {
+    return invoke<VaultSummary>('create_vault', { mountId, parentPath, name, safeKey })
   },
 
-  removeVault(repoId: string, confirmation: string) {
-    return invoke<VaultSummary[]>('remove_vault', { repoId, confirmation })
+  removeVault(repoId: string, confirmation: string, safeKey: string) {
+    return invoke<VaultSummary[]>('remove_vault', { repoId, confirmation, safeKey })
   },
 
-  exportVaultRcloneConfig(repoId: string) {
-    return invoke<boolean>('export_vault_rclone_config', { repoId })
+  exportVaultRcloneConfig(repoId: string, safeKey: string) {
+    return invoke<boolean>('export_vault_rclone_config', { repoId, safeKey })
   },
 
   importVaultRcloneConfig() {
@@ -774,5 +774,10 @@ export const koofr = {
 
   openMainWindowFromFloating() {
     return invoke<void>('open_main_window_from_floating')
+  },
+
+  runWindowCommand(command: 'minimize' | 'toggleMaximize' | 'close') {
+    if (!isTauriRuntime()) return
+    void getCurrentWindow()[command]()
   },
 }

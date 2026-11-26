@@ -74,12 +74,19 @@ export function DownloadDestinationDialog({
         <span className="path-field__control">
           <input
             id="download-directory"
+            autoFocus
             value={directory}
             disabled={busy}
             title={directory}
             aria-invalid={displayedError ? true : undefined}
             aria-describedby={displayedError ? 'download-directory-error' : 'download-directory-hint'}
             onChange={(event) => setDirectory(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !busy && !browsing && trimmedDirectory) {
+                event.preventDefault()
+                onConfirm(trimmedDirectory, askEveryTime)
+              }
+            }}
           />
           <button
             type="button"

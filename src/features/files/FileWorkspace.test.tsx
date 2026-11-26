@@ -16,6 +16,7 @@ const defaultCallbacks = {
   onShare: vi.fn(),
   onRename: vi.fn(),
   onMove: vi.fn(),
+  onCopy: vi.fn(),
   onDelete: vi.fn(),
 }
 
@@ -115,7 +116,7 @@ describe('FileWorkspace', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: '选择 report.pdf' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 report.pdf' }))
     await user.click(screen.getByRole('button', { name: '分享' }))
 
     expect(onShare).toHaveBeenCalledWith(file)
@@ -188,5 +189,66 @@ describe('FileWorkspace', () => {
     expect(onDownload).toHaveBeenCalledWith(unsupported)
     expect(screen.getByRole('button', { name: '预览 report.pdf' })).not.toBeNull()
     expect(screen.getByRole('button', { name: '下载 report.pdf' })).not.toBeNull()
+  })
+
+  it('selects folders on single click, opens on double click, supports sorting and copy', async () => {
+    const user = userEvent.setup()
+    const folder: RemoteFile = {
+      name: 'Docs',
+      entryType: 'dir',
+      modified: 100,
+      size: 0,
+      contentType: '',
+      hash: '',
+      path: '/Docs',
+    }
+    const small: RemoteFile = {
+      name: 'a.txt',
+      entryType: 'file',
+      modified: 100,
+      size: 10,
+      contentType: 'text/plain',
+      hash: '',
+      path: '/a.txt',
+    }
+    const large: RemoteFile = {
+      name: 'b.txt',
+      entryType: 'file',
+      modified: 200,
+      size: 5000,
+      contentType: 'text/plain',
+      hash: '',
+      path: '/b.txt',
+    }
+    const onNavigate = vi.fn()
+    const onCopy = vi.fn()
+    render(
+      <FileWorkspace
+        mounts={[]}
+        activeMountId="mount-1"
+        path="/"
+        files={[small, large, folder]}
+        loading={false}
+        error=""
+        lastSyncedAt={null}
+        {...defaultCallbacks}
+        onNavigate={onNavigate}
+        onCopy={onCopy}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Docs' }))
+    expect(onNavigate).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '复制' }))
+    expect(onCopy).toHaveBeenCalledWith([folder])
+
+    await user.dblClick(screen.getByRole('button', { name: 'Docs' }))
+    expect(onNavigate).toHaveBeenCalledWith('/Docs')
+
+    await user.click(screen.getByRole('button', { name: '大小' }))
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows[0].textContent).toContain('Docs')
+    expect(rows[1].textContent).toContain('b.txt')
+    expect(rows[2].textContent).toContain('a.txt')
   })
 })

@@ -198,22 +198,32 @@ mod windows {
     }
 
     pub fn capability() -> NativeSyncCapability {
+        capability_with_hresult().0
+    }
+
+    pub fn capability_with_hresult() -> (NativeSyncCapability, Option<i32>) {
         let mut info = CF_PLATFORM_INFO::default();
         let result = unsafe { CfGetPlatformInfo(&mut info) };
         if failed(result) {
-            return NativeSyncCapability {
-                supported: false,
-                reason: Some("当前 Windows 未启用 Cloud Files API。".to_owned()),
-                build_number: None,
-                integration_number: None,
-            };
+            return (
+                NativeSyncCapability {
+                    supported: false,
+                    reason: Some("当前 Windows 系统不支持按需同步功能。".to_owned()),
+                    build_number: None,
+                    integration_number: None,
+                },
+                Some(result),
+            );
         }
-        NativeSyncCapability {
-            supported: true,
-            reason: None,
-            build_number: Some(info.BuildNumber),
-            integration_number: Some(info.IntegrationNumber),
-        }
+        (
+            NativeSyncCapability {
+                supported: true,
+                reason: None,
+                build_number: Some(info.BuildNumber),
+                integration_number: Some(info.IntegrationNumber),
+            },
+            None,
+        )
     }
 
     pub fn register(root: &Path, pair_id: &str) -> Result<(), AppError> {
@@ -1092,11 +1102,12 @@ mod windows {
 
 #[cfg(windows)]
 pub use windows::{
-    CloudConnection, capability, complete_cancelled, complete_delete_error,
-    complete_delete_network_error, complete_delete_success, complete_network_error,
-    complete_placeholders_cancelled, complete_placeholders_error, complete_unsuccessful, connect,
-    convert_to_placeholder, create_placeholders, is_owned_sync_root, placeholder_state, register,
-    set_pinned, transfer_data, transfer_placeholders, unregister, update_placeholder,
+    CloudConnection, capability, capability_with_hresult, complete_cancelled,
+    complete_delete_error, complete_delete_network_error, complete_delete_success,
+    complete_network_error, complete_placeholders_cancelled, complete_placeholders_error,
+    complete_unsuccessful, connect, convert_to_placeholder, create_placeholders,
+    is_owned_sync_root, placeholder_state, register, set_pinned, transfer_data,
+    transfer_placeholders, unregister, update_placeholder,
 };
 
 #[cfg(all(windows, test))]
@@ -1117,12 +1128,20 @@ pub struct PlaceholderState {
 
 #[cfg(not(windows))]
 pub fn capability() -> NativeSyncCapability {
-    NativeSyncCapability {
-        supported: false,
-        reason: Some("按需同步仅支持 Windows 10/11。".to_owned()),
-        build_number: None,
-        integration_number: None,
-    }
+    capability_with_hresult().0
+}
+
+#[cfg(not(windows))]
+pub fn capability_with_hresult() -> (NativeSyncCapability, Option<i32>) {
+    (
+        NativeSyncCapability {
+            supported: false,
+            reason: Some("按需同步仅支持 Windows 10/11。".to_owned()),
+            build_number: None,
+            integration_number: None,
+        },
+        None,
+    )
 }
 
 #[cfg(not(windows))]

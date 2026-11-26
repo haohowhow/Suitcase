@@ -10,5 +10,7 @@ describe('isPreviewableFile', () => {
     expect(isPreviewableFile({ name: 'design.psd', contentType: 'image/vnd.adobe.photoshop', entryType: 'file' })).toBe(false)
     expect(isPreviewableFile({ name: 'novel.epub', contentType: 'application/epub+zip', entryType: 'file' })).toBe(false)
     expect(isPreviewableFile({ name: 'photo.jpg', contentType: 'image/jpeg', entryType: 'dir' })).toBe(false)
+    expect(isPreviewableFile({ name: 'pdf', contentType: '', entryType: 'file' })).toBe(false)
+    expect(isPreviewableFile({ name: 'go', contentType: '', entryType: 'file' })).toBe(false)
   })
 })

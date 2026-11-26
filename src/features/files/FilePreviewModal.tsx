@@ -11,23 +11,27 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import {
-  GlobalWorkerOptions,
-  PDFDataRangeTransport,
-  getDocument,
-  type PDFDocumentProxy,
-  type RenderTask,
-} from 'pdfjs-dist'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLatestRef } from '../../hooks/useLatestRef'
 import { koofr } from '../../services/koofr'
 import type { FilePreviewInfo, PreviewTextResult } from '../../types/backend'
-import { formatBytes } from './filePresentation'
+import { formatBytes } from '../../utils/format'
 
-GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null
+
+function loadPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url,
+      ).toString()
+      return pdfjs
+    })
+  }
+  return pdfjsPromise
+}
 
 const PDF_CMAP_URL = new URL('/pdfjs/cmaps/', document.baseURI).toString()
 const PDF_STANDARD_FONT_URL = new URL('/pdfjs/standard_fonts/', document.baseURI).toString()
@@ -102,31 +106,34 @@ export function sanitizeSvgForPreview(source: string) {
   return new XMLSerializer().serializeToString(document)
 }
 
-class PreviewPdfTransport extends PDFDataRangeTransport {
-  readonly #url: string
-  readonly #controller = new AbortController()
-  readonly #onFailure: () => void
+function createPreviewPdfTransport(
+  PDFDataRangeTransportCtor: typeof import('pdfjs-dist').PDFDataRangeTransport,
+  length: number,
+  url: string,
+  onFailure: () => void,
+) {
+  const controller = new AbortController()
+  class PreviewPdfTransport extends PDFDataRangeTransportCtor {
+    constructor() {
+      super(length, null, false)
+    }
 
-  constructor(length: number, url: string, onFailure: () => void) {
-    super(length, null, false)
-    this.#url = url
-    this.#onFailure = onFailure
-  }
+    requestDataRange(begin: number, end: number) {
+      void fetchRange(url, begin, end, controller.signal)
+        .then((data) => this.onDataRange(begin, data))
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            onFailure()
+            this.abort()
+          }
+        })
+    }
 
-  requestDataRange(begin: number, end: number) {
-    void fetchRange(this.#url, begin, end, this.#controller.signal)
-      .then((data) => this.onDataRange(begin, data))
-      .catch(() => {
-        if (!this.#controller.signal.aborted) {
-          this.#onFailure()
-          this.abort()
-        }
-      })
+    abort() {
+      controller.abort()
+    }
   }
-
-  abort() {
-    this.#controller.abort()
-  }
+  return new PreviewPdfTransport()
 }
 
 export function FilePreviewModal({
@@ -136,31 +143,48 @@ export function FilePreviewModal({
   onDownload,
 }: FilePreviewModalProps) {
   const [error, setError] = useState('')
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useLatestRef(onClose)
+  const titleId = useId()
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
+    const previousFocus = document.activeElement
+    const dialog = dialogRef.current
+    if (dialog && typeof dialog.showModal === 'function') dialog.showModal()
+    else dialog?.setAttribute('open', '')
+    closeButtonRef.current?.focus({ preventScroll: true })
     return () => {
-      document.removeEventListener('keydown', handleKeyDown)
+      if (dialog?.open && typeof dialog.close === 'function') dialog.close()
+      if (previousFocus instanceof HTMLElement) previousFocus.focus()
       // App owns the session. StrictMode's mount probe must not close it.
     }
-  }, [onClose])
+  }, [])
 
   return (
-    <div className="file-preview-overlay" onClick={onClose}>
+    <dialog
+      ref={dialogRef}
+      className="file-preview-overlay"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault()
+        onCloseRef.current()
+      }}
+      onClick={(event) => {
+        if (event.target === dialogRef.current) onCloseRef.current()
+      }}
+    >
       <div className="file-preview-container" onClick={(event) => event.stopPropagation()}>
         <header className="file-preview-header">
           <div>
-            <strong translate="no" title={fileName}>{fileName}</strong>
+            <strong id={titleId} translate="no" title={fileName}>{fileName}</strong>
             <span>{formatBytes(previewInfo.fileSize)}</span>
           </div>
           <div className="file-preview-header-actions">
             <button type="button" className="secondary-button" onClick={onDownload}>
               <ArrowDownToLine size={16} />下载
             </button>
-            <button className="icon-button file-preview-close" type="button" aria-label="关闭" onClick={onClose}>
+            <button ref={closeButtonRef} className="icon-button file-preview-close" type="button" aria-label="关闭" onClick={onClose}>
               <X size={20} />
             </button>
           </div>
@@ -197,7 +221,7 @@ export function FilePreviewModal({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   )
 }
 
@@ -212,30 +236,39 @@ function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => v
 
   useEffect(() => {
     let disposed = false
-    const transport = new PreviewPdfTransport(
-      info.fileSize,
-      koofr.filePreviewUrl(info.sessionId),
-      () => {
-        if (!disposed) onErrorRef.current()
-      },
-    )
-    const task = getDocument({
-      range: transport,
-      rangeChunkSize: RANGE_SIZE,
-      cMapUrl: PDF_CMAP_URL,
-      cMapPacked: true,
-      standardFontDataUrl: PDF_STANDARD_FONT_URL,
-      wasmUrl: PDF_WASM_URL,
-      disableStream: true,
-      disableAutoFetch: true,
-      maxImageSize: 80_000_000,
-      isImageDecoderSupported: false,
-      useWorkerFetch: false,
-      useWasm: false,
-    })
-    void task.promise
-      .then((pdf) => {
-        if (!disposed) setDocument(pdf)
+    let activeTransport: { abort: () => void } | null = null
+    let activeTask: { destroy: () => Promise<void> } | null = null
+
+    void loadPdfJs()
+      .then((pdfjs) => {
+        if (disposed) return
+        const transport = createPreviewPdfTransport(
+          pdfjs.PDFDataRangeTransport,
+          info.fileSize,
+          koofr.filePreviewUrl(info.sessionId),
+          () => {
+            if (!disposed) onErrorRef.current()
+          },
+        )
+        activeTransport = transport
+        const task = pdfjs.getDocument({
+          range: transport,
+          rangeChunkSize: RANGE_SIZE,
+          cMapUrl: PDF_CMAP_URL,
+          cMapPacked: true,
+          standardFontDataUrl: PDF_STANDARD_FONT_URL,
+          wasmUrl: PDF_WASM_URL,
+          disableStream: true,
+          disableAutoFetch: true,
+          maxImageSize: 80_000_000,
+          isImageDecoderSupported: false,
+          useWorkerFetch: false,
+          useWasm: false,
+        })
+        activeTask = task
+        return task.promise.then((pdf) => {
+          if (!disposed) setDocument(pdf)
+        })
       })
       .catch(() => {
         if (!disposed) onErrorRef.current()
@@ -245,8 +278,8 @@ function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => v
       })
     return () => {
       disposed = true
-      transport.abort()
-      void task.destroy()
+      activeTransport?.abort()
+      void activeTask?.destroy()
     }
   }, [info.fileSize, info.sessionId, onErrorRef])
 
@@ -257,11 +290,15 @@ function PdfPreview({ info, onError }: { info: FilePreviewInfo; onError: () => v
     const render = async () => {
       const pdfPage = await document.getPage(page)
       if (cancelled || !canvasRef.current) return
-      const viewport = pdfPage.getViewport({ scale })
+      const dpr = Math.min(window.devicePixelRatio || 1, 3)
+      const cssViewport = pdfPage.getViewport({ scale })
+      const renderViewport = dpr === 1 ? cssViewport : pdfPage.getViewport({ scale: scale * dpr })
       const canvas = canvasRef.current
-      canvas.width = Math.ceil(viewport.width)
-      canvas.height = Math.ceil(viewport.height)
-      renderTask = pdfPage.render({ canvas, viewport })
+      canvas.width = Math.ceil(renderViewport.width)
+      canvas.height = Math.ceil(renderViewport.height)
+      canvas.style.width = `${Math.ceil(cssViewport.width)}px`
+      canvas.style.height = `${Math.ceil(cssViewport.height)}px`
+      renderTask = pdfPage.render({ canvas, viewport: renderViewport })
       await renderTask.promise
     }
     void render().catch(() => {

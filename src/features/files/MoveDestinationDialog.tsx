@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderInput, RefreshCw } from 'lucide-react'
+import { ChevronRight, Copy, Folder, FolderInput, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '../../components/Modal'
 import { commandErrorMessage, koofr } from '../../services/koofr'
@@ -10,8 +10,13 @@ interface MoveDestinationDialogProps {
   readonly mountId: string
   readonly mounts: KoofrMount[]
   readonly busy: boolean
+  readonly mode?: 'move' | 'copy'
   readonly onClose: () => void
   readonly onConfirm: (destinationMountId: string, destinationDirectory: string) => void
+}
+
+function isSelfOrDescendant(targetPath: string, folderPath: string) {
+  return targetPath === folderPath || targetPath.startsWith(`${folderPath}/`)
 }
 
 export function MoveDestinationDialog({
@@ -19,9 +24,11 @@ export function MoveDestinationDialog({
   mountId,
   mounts,
   busy,
+  mode = 'move',
   onClose,
   onConfirm,
 }: MoveDestinationDialogProps) {
+  const isCopy = mode === 'copy'
   const [currentMountId, setCurrentMountId] = useState(mountId)
   const [currentPath, setCurrentPath] = useState('/')
   const [folders, setFolders] = useState<RemoteFile[]>([])
@@ -84,24 +91,37 @@ export function MoveDestinationDialog({
     return segments.length === 0 ? '/' : `/${segments.slice(0, -1).join('/')}`
   }, [files])
 
-  const isSameLocation = currentMountId === mountId && currentPath === parentDir
+  const selectedDirectories = useMemo(
+    () => files.filter(isDirectory).map((file) => file.path),
+    [files],
+  )
+
+  const isSameLocation = !isCopy && currentMountId === mountId && currentPath === parentDir
+  const isInsideMovedFolder =
+    !isCopy
+    && currentMountId === mountId
+    && selectedDirectories.some((folderPath) => isSelfOrDescendant(currentPath, folderPath))
 
   const currentMountName = mounts.find((m) => m.id === currentMountId)?.name ?? currentMountId
 
   return (
     <Modal
-      title="移动到…"
-      actionLabel={busy ? '正在移动…' : '移动到此处'}
-      actionDisabled={busy || isSameLocation || loading}
+      title={isCopy ? '复制到…' : '移动到…'}
+      actionLabel={
+        busy
+          ? (isCopy ? '正在复制…' : '正在移动…')
+          : (isCopy ? '复制到此处' : '移动到此处')
+      }
+      actionDisabled={busy || isSameLocation || isInsideMovedFolder || loading}
       onClose={onClose}
       onAction={() => onConfirm(currentMountId, currentPath)}
     >
       <div className="move-dialog__summary">
         <span className="move-dialog__icon">
-          <FolderInput aria-hidden="true" />
+          {isCopy ? <Copy aria-hidden="true" /> : <FolderInput aria-hidden="true" />}
         </span>
         <span>
-          <small>移动目标</small>
+          <small>{isCopy ? '复制目标' : '移动目标'}</small>
           <strong translate="no" title={namesSummary}>{namesSummary}</strong>
         </span>
       </div>
@@ -146,7 +166,7 @@ export function MoveDestinationDialog({
         </div>
 
         <div className="move-dialog__current">
-          移动至 <strong><bdi translate="no">{currentMountName}</bdi> / {crumbs.length > 0 ? <bdi translate="no">{crumbs.map((c) => c.label).join(' / ')}</bdi> : '根目录'}</strong>
+          {isCopy ? '复制至' : '移动至'} <strong><bdi translate="no">{currentMountName}</bdi> / {crumbs.length > 0 ? <bdi translate="no">{crumbs.map((c) => c.label).join(' / ')}</bdi> : '根目录'}</strong>
         </div>
 
         {loading ? (
@@ -171,21 +191,27 @@ export function MoveDestinationDialog({
           </div>
         ) : (
           <div className="move-dialog__folder-list">
-            {folders.map((folder) => (
-              <button
-                key={folder.path}
-                translate="no"
-                type="button"
-                className="move-dialog__folder-row"
-                disabled={busy}
-                onClick={() => navigate(folder.path)}
-                title={folder.name}
-              >
-                <Folder size={18} />
-                <span>{folder.name}</span>
-                <ChevronRight size={16} />
-              </button>
-            ))}
+            {folders.map((folder) => {
+              const blockedSelfMove =
+                !isCopy
+                && currentMountId === mountId
+                && selectedDirectories.some((folderPath) => isSelfOrDescendant(folder.path, folderPath))
+              return (
+                <button
+                  key={folder.path}
+                  translate="no"
+                  type="button"
+                  className="move-dialog__folder-row"
+                  disabled={busy || blockedSelfMove}
+                  onClick={() => navigate(folder.path)}
+                  title={folder.name}
+                >
+                  <Folder size={18} />
+                  <span>{folder.name}</span>
+                  <ChevronRight size={16} />
+                </button>
+              )
+            })}
           </div>
         )}
       </div>

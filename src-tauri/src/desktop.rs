@@ -541,7 +541,7 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
         let confirmed = app
             .dialog()
             .message(if english {
-                "Transfers are still queued or running. Quit anyway? Resumable transfers                  are paused and can be continued from the Transfers panel after you sign                  in again; folder downloads stop."
+                "Transfers are still queued or running. Quit anyway? Resumable transfers are paused and can be continued from the Transfers panel after you sign in again; folder downloads stop."
             } else {
                 "仍有排队或运行中的传输。仍要退出吗？可续传的任务会暂停，再次登录后可在传输面板继续；文件夹下载会停止。"
             })
@@ -581,7 +581,7 @@ fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-fn resolved_english(language: InterfaceLanguage) -> bool {
+pub(crate) fn resolved_english(language: InterfaceLanguage) -> bool {
     match language {
         InterfaceLanguage::EnUs => true,
         InterfaceLanguage::ZhCn => false,

@@ -1,5 +1,3 @@
-mod native_prompt;
-
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -15,8 +13,6 @@ use crate::{
     file_ops::{MountId, RemoteName, RemotePath},
     koofr_api::{KoofrApi, VaultRepo},
 };
-
-pub use native_prompt::prompt_safe_key;
 
 const ROOT_HANDLE: &str = "root";
 const DEFAULT_AUTO_LOCK: Duration = Duration::from_secs(60 * 60);

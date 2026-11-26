@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 interface ModalProps {
@@ -32,6 +32,7 @@ export function Modal({
   extraWide = false,
   className,
 }: ModalProps) {
+  const titleId = useId()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
@@ -45,7 +46,21 @@ export function Modal({
     const dialog = dialogRef.current
     if (dialog && typeof dialog.showModal === 'function') dialog.showModal()
     else dialog?.setAttribute('open', '')
-    closeButtonRef.current?.focus({ preventScroll: true })
+
+    // Preserve explicit autoFocus on form inputs inside the dialog; otherwise
+    // focus the visible close button rather than the transparent backdrop.
+    const autoFocusTarget = dialog?.querySelector<HTMLElement>('[autofocus]')
+    const activeInsideDialog =
+      dialog !== null
+      && document.activeElement instanceof HTMLElement
+      && dialog.contains(document.activeElement)
+      && !document.activeElement.classList.contains('modal-dismiss-surface')
+    if (autoFocusTarget) {
+      autoFocusTarget.focus({ preventScroll: true })
+    } else if (!activeInsideDialog) {
+      closeButtonRef.current?.focus({ preventScroll: true })
+    }
+
     return () => {
       if (dialog?.open && typeof dialog.close === 'function') dialog.close()
       if (previousFocus instanceof HTMLElement) previousFocus.focus()
@@ -56,7 +71,7 @@ export function Modal({
     <dialog
       ref={dialogRef}
       className="modal-backdrop"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault()
         onCloseRef.current()
@@ -72,10 +87,12 @@ export function Modal({
       <section
         className={`modal${wide ? ' modal--wide' : ''}${extraWide ? ' modal--extra-wide' : ''}${className ? ` ${className}` : ''}`}
       >
-        <button ref={closeButtonRef} className="icon-button modal__close" type="button" aria-label="关闭" onClick={onClose}>
-          <X size={18} />
-        </button>
-        <h2 id="modal-title">{title}</h2>
+        <header className="modal__header">
+          <h2 id={titleId}>{title}</h2>
+          <button ref={closeButtonRef} className="icon-button modal__close" type="button" aria-label="关闭" onClick={onClose}>
+            <X size={16} strokeWidth={1.8} />
+          </button>
+        </header>
         <div className="modal__content">{children}</div>
         <div className="modal__actions">
           {secondaryActionLabel ? (
