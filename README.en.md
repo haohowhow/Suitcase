@@ -13,8 +13,6 @@ Built with Tauri v2, React, TypeScript, and Rust. The goal is a native file-mana
 
 [中文](README.md) · [Download](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
-Returning to development or handing off: start with [Project status](docs/PROJECT_STATUS.md) and the [Agent handoff guide](docs/AGENT_HANDOFF.md) (both in Chinese).
-
 </div>
 
 ---
@@ -37,7 +35,6 @@ Returning to development or handing off: start with [Project status](docs/PROJEC
   - [Architecture \& security boundary](#architecture--security-boundary)
   - [Where data is stored](#where-data-is-stored)
   - [Roadmap](#roadmap)
-  - [Contributing](#contributing)
   - [Security](#security)
   - [License](#license)
   - [Acknowledgements](#acknowledgements)
@@ -241,14 +238,6 @@ The default work directory is `%LOCALAPPDATA%\net.koofr.desktop.gui`. A small ad
 - [ ] Code signing / SmartScreen reputation
 - [ ] macOS support
 - [ ] Linux support
-
-## Contributing
-
-Issues and pull requests are welcome. Before opening a pull request:
-
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
-2. Run `npm run check`; lint, tests, Rust fmt, and clippy must all pass.
-3. Any new Tauri command must validate paths, identifiers, and operation scope on the Rust side.
 
 ## Security
 

@@ -13,8 +13,6 @@
 
 [English](README.en.md) · [下载安装包](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
-恢复开发或交接：先读 [项目进度与恢复工作](docs/PROJECT_STATUS.md)，再读 [Agent 接手指南](docs/AGENT_HANDOFF.md)。
-
 </div>
 
 ---
@@ -37,7 +35,6 @@
   - [架构与安全边界](#架构与安全边界)
   - [数据存储](#数据存储)
   - [路线图](#路线图)
-  - [参与贡献](#参与贡献)
   - [报告安全问题](#报告安全问题)
   - [许可证](#许可证)
   - [致谢](#致谢)
@@ -245,14 +242,6 @@ npm run build:installer      # 显式生成 NSIS 安装包
 - [ ] 代码签名 / SmartScreen 信誉
 - [ ] macOS 支持
 - [ ] Linux 支持
-
-## 参与贡献
-
-欢迎提交 Issue 与 Pull Request。提交前请：
-
-1. 阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-2. 执行 `npm run check`，确保 lint、测试、Rust fmt / clippy 全部通过。
-3. 新增 Tauri 命令时，Rust 侧必须校验路径、标识符与操作范围。
 
 ## 报告安全问题
 

@@ -36,11 +36,11 @@ npm run check
 npm run build:installer
 ```
 
-构建产物位于 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri 的 `productName`，例如 `Koofr GUI_<version>_x64-setup.exe`。请使用本机人工验证安装、启动与关键操作；代理端的检查不能替代 GUI 验收。
+构建产物位于 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri 的 `productName`，例如 `Koofr GUI_<version>_x64-setup.exe`。请在本机验证安装、启动与关键操作；自动化检查不能替代 GUI 验收。
 
 ### 3. 提交并推送标签
 
-确认工作区、版本与测试结果后，由维护者提交版本变更，再执行：
+确认工作区、版本与测试结果后，提交版本变更，再执行：
 
 ```powershell
 git tag v<version>

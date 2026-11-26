@@ -6,8 +6,8 @@ labels: enhancement
 assignees: ''
 ---
 
-<!-- 请先阅读 README 的“路线图”与“尚未实现的功能”章节，以及 CONTRIBUTING.md 中“已明确不属于本项目范围”的内容。
-     Please read the Roadmap and "Not yet implemented" sections of the README, and the out-of-scope list in CONTRIBUTING.md. -->
+<!-- 请先阅读 README 的“路线图”与“尚未实现的功能”章节。
+     Please read the Roadmap and "Not yet implemented" sections of the README. -->
 
 ## 待解决的问题 / Problem
 

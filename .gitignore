@@ -2,10 +2,17 @@
 # machine- or workflow-specific project context and must not be committed.
 /AGENTS.md
 /CLAUDE.md
+/GEMINI.md
 /.agents/
 /.claude/
+/.codex/
+/.codex-tmp/
+/.cursor/
+/.cursorrules
 /.omo/
 /skills-lock.json
+/docs/AGENT_HANDOFF.md
+/docs/PROJECT_STATUS.md
 
 # Frontend dependencies and build output.
 /node_modules/

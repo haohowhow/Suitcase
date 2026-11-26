@@ -148,7 +148,7 @@ src-tauri/target/release/bundle/nsis/Koofr GUI_<version>_x64-setup.exe
 
 ## 5. 质量检查
 
-### 完整检查（提交 PR 前执行）
+### 完整检查
 
 ```powershell
 npm run check
