@@ -33,7 +33,6 @@ describe('CollectionWorkspace preview behavior', () => {
         lastSyncedAt={null}
         busy={false}
         onRefresh={vi.fn()}
-        onThemeOpen={vi.fn()}
         onOpenLocation={vi.fn()}
         onDownload={vi.fn()}
         onPreview={onPreview}

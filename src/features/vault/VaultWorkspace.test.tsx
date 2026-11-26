@@ -1,14 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { VaultDialog } from './VaultDialog'
+import type { KoofrMount } from '../../types/backend'
+import { VaultWorkspace } from './VaultWorkspace'
 
 const mocks = vi.hoisted(() => ({
   listVaults: vi.fn(),
   unlockVault: vi.fn(),
   createVault: vi.fn(),
   listVaultFiles: vi.fn(),
+  listFiles: vi.fn(),
 }))
 
 vi.mock('../../services/koofr', () => ({
@@ -19,8 +20,20 @@ vi.mock('../../services/koofr', () => ({
     unlockVault: mocks.unlockVault,
     createVault: mocks.createVault,
     listVaultFiles: mocks.listVaultFiles,
+    listFiles: mocks.listFiles,
   },
 }))
+
+const mounts: KoofrMount[] = [{
+  id: 'mount-1',
+  name: 'Koofr',
+  mountType: 'device',
+  spaceTotal: 1000,
+  spaceUsed: 200,
+  online: true,
+  isPrimary: true,
+  isShared: false,
+}]
 
 const lockedVault = {
   id: 'repo-opaque-id',
@@ -38,7 +51,7 @@ async function unlockViaModal(user: ReturnType<typeof userEvent.setup>, safeKey 
   await user.click(unlockButtons[unlockButtons.length - 1])
 }
 
-describe('VaultDialog', () => {
+describe('VaultWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.listVaults.mockResolvedValue([lockedVault])
@@ -52,15 +65,16 @@ describe('VaultDialog', () => {
       entries: [],
       skippedEntries: 0,
     })
+    mocks.listFiles.mockResolvedValue([])
   })
 
-  it('opens an in-app Safe Key modal to unlock and opens the opaque root handle', async () => {
+  it('opens an in-app Safe Key modal to unlock and renders the decrypted workspace', async () => {
     const user = userEvent.setup()
     render(
-      <VaultDialog
-        mountId="mount-1"
-        parentPath="/"
-        onClose={vi.fn()}
+      <VaultWorkspace
+        mounts={mounts}
+        defaultMountId="mount-1"
+        defaultParentPath="/"
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
         onPreview={vi.fn()}
@@ -76,22 +90,24 @@ describe('VaultDialog', () => {
     expect(screen.getByText('此加密文件夹为空')).not.toBeNull()
   })
 
-  it('validates and submits Safe Key in a unified create modal', async () => {
+  it('creates a vault through the setup modal and Safe Key confirmation modal', async () => {
     const user = userEvent.setup()
     render(
-      <VaultDialog
-        mountId="mount-1"
-        parentPath="/Docs"
-        onClose={vi.fn()}
+      <VaultWorkspace
+        mounts={mounts}
+        defaultMountId="mount-1"
+        defaultParentPath="/Docs"
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
         onPreview={vi.fn()}
       />,
     )
 
+    await screen.findByText('工作资料')
+    await user.click(screen.getByRole('button', { name: '新建保险箱' }))
     const nameInput = await screen.findByPlaceholderText('输入新保险箱名称')
     await user.type(nameInput, '机密归档')
-    await user.click(screen.getByRole('button', { name: /^创建$/ }))
+    await user.click(screen.getByRole('button', { name: '下一步' }))
 
     const keyInput = await screen.findByLabelText(/Safe Key（至少 8 个字符）/)
     const confirmInput = screen.getByLabelText('确认 Safe Key')
@@ -137,10 +153,10 @@ describe('VaultDialog', () => {
     })
     const onPreview = vi.fn()
     render(
-      <VaultDialog
-        mountId="mount-1"
-        parentPath="/"
-        onClose={vi.fn()}
+      <VaultWorkspace
+        mounts={mounts}
+        defaultMountId="mount-1"
+        defaultParentPath="/"
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
         onPreview={onPreview}
@@ -148,9 +164,9 @@ describe('VaultDialog', () => {
     )
 
     await unlockViaModal(user)
-    const row = (await screen.findByText('secret.pdf')).closest('button')
-    expect(row).not.toBeNull()
-    if (row) await user.dblClick(row)
+    const rowButton = (await screen.findByText('secret.pdf')).closest('button')
+    expect(rowButton).not.toBeNull()
+    if (rowButton) await user.dblClick(rowButton)
 
     expect(onPreview).toHaveBeenCalledWith(lockedVault.id, entry, expect.any(Function))
   })
@@ -166,10 +182,10 @@ describe('VaultDialog', () => {
       skippedEntries: 2,
     })
     render(
-      <VaultDialog
-        mountId="mount-1"
-        parentPath="/"
-        onClose={vi.fn()}
+      <VaultWorkspace
+        mounts={mounts}
+        defaultMountId="mount-1"
+        defaultParentPath="/"
         onNotice={vi.fn()}
         onTransferStarted={vi.fn()}
         onPreview={vi.fn()}

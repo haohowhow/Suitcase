@@ -7,14 +7,13 @@ import {
   Eye,
   FileText,
   FolderOpen,
-  Palette,
   RefreshCw,
   RotateCcw,
   Search,
   Share2,
   Trash2,
 } from 'lucide-react'
-import { memo, useDeferredValue, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useDeferredValue, useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { isPreviewableFile } from '../../preview'
 import type { LocatedFile, RemoteFile, TrashItem } from '../../types/backend'
@@ -34,8 +33,8 @@ interface CollectionWorkspaceProps {
   diagnostic: string
   lastSyncedAt: Date | null
   busy: boolean
+  headerTabs?: ReactNode
   onRefresh: () => void
-  onThemeOpen: () => void
   onOpenLocation: (file: LocatedFile) => void
   onDownload: (file: LocatedFile) => void
   onPreview: (file: LocatedFile) => void
@@ -122,8 +121,8 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
   diagnostic,
   lastSyncedAt,
   busy,
+  headerTabs,
   onRefresh,
-  onThemeOpen,
   onOpenLocation,
   onDownload,
   onPreview,
@@ -260,6 +259,7 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
   return (
     <main className="workspace collection-workspace">
       <div className="workspace__topbar collection-workspace__topbar">
+        {headerTabs ?? null}
         <label className="search-box collection-search">
           <Search size={15} strokeWidth={1.8} />
           <input
@@ -283,9 +283,6 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
           ) : null}
           <button className="icon-button icon-button--bordered" type="button" aria-label={`刷新${view}`} disabled={loading || busy} onClick={onRefresh}>
             <RefreshCw className={loading ? 'icon-spin' : ''} size={15} strokeWidth={1.8} />
-          </button>
-          <button className="icon-button icon-button--bordered theme-button-mobile" type="button" aria-label="外观主题" onClick={onThemeOpen}>
-            <Palette size={15} strokeWidth={1.8} />
           </button>
         </div>
       </div>

@@ -407,7 +407,7 @@ export function useAppSettings(
           settings.floatingWindowDoubleClickOpenEnabled,
         )
         setSettings(next)
-        showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在通用设置中开启悬浮窗')
+        showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在“通知与悬浮窗”设置中开启悬浮窗')
         return true
       } catch (error) {
         const message = commandErrorMessage(error, '无法保存悬浮窗设置。')

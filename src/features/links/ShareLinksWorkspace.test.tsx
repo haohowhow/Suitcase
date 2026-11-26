@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { KoofrMount, PublicLink } from '../../types/backend'
 import { publicLinks } from '../../services/publicLinks'
-import { ShareLinksDialog } from './ShareLinksDialog'
+import { ShareLinksWorkspace } from './ShareLinksWorkspace'
 
 vi.mock('../../services/publicLinks', () => ({
   publicLinks: {
@@ -35,23 +35,28 @@ const DOWNLOAD_LINK: PublicLink = {
   kind: 'download',
 }
 
-describe('ShareLinksDialog', () => {
+describe('ShareLinksWorkspace', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.mocked(publicLinks.list).mockResolvedValue([DOWNLOAD_LINK])
     vi.mocked(publicLinks.remove).mockResolvedValue()
   })
 
-  it('loads both kinds of links for the selected storage', async () => {
-    render(<ShareLinksDialog mounts={MOUNTS} onClose={vi.fn()} />)
+  it('loads links for the selected storage and supports filtering', async () => {
+    const user = userEvent.setup()
+    render(<ShareLinksWorkspace mounts={MOUNTS} />)
 
     expect((await screen.findByRole('textbox', { name: 'report.pdf 的链接地址' })).getAttribute('value'))
       .toBe(DOWNLOAD_LINK.shortUrl)
     expect(publicLinks.list).toHaveBeenCalledWith('mount_1')
+
+    await user.type(screen.getByRole('searchbox', { name: '筛选分享链接' }), 'missing')
+    expect(screen.getByText('没有匹配的下载链接')).not.toBeNull()
   })
 
   it('requires a second click before revoking a link', async () => {
     const user = userEvent.setup()
-    render(<ShareLinksDialog mounts={MOUNTS} onClose={vi.fn()} />)
+    render(<ShareLinksWorkspace mounts={MOUNTS} />)
 
     await screen.findByText('report.pdf')
     await user.click(screen.getByRole('button', { name: '撤销 report.pdf' }))

@@ -1,20 +1,19 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine } from 'lucide-react'
-import { AppSidebar } from './components/AppSidebar'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppSidebar, type NavView } from './components/AppSidebar'
 import { Modal } from './components/Modal'
 import { ThemePicker } from './components/ThemePicker'
 import { TitleBar } from './components/TitleBar'
+import { WorkspaceTabs, type WorkspaceTabItem } from './components/WorkspaceTabs'
 import { LoginPage } from './features/auth/LoginPage'
 import { CollectionWorkspace } from './features/files/CollectionWorkspace'
 import { FileWorkspace } from './features/files/FileWorkspace'
 import { CreateShareLinkDialog } from './features/links/CreateShareLinkDialog'
 import { MoveDestinationDialog } from './features/files/MoveDestinationDialog'
-import { isCollectionView, useKoofrCollections } from './features/files/useKoofrCollections'
+import { useKoofrCollections, type CollectionView } from './features/files/useKoofrCollections'
 import { useKoofrWorkspace } from './features/files/useKoofrWorkspace'
 import { DownloadDestinationDialog } from './features/transfers/DownloadDestinationDialog'
 import { SplitUploadDialog } from './features/transfers/SplitUploadDialog'
 import { TransferPanel } from './features/transfers/TransferPanel'
-import { countActiveDownloads } from './features/transfers/transferProgress'
 import { shouldPromptForFloatingWindow } from './features/transfers/floatingTransfer'
 import { isDirectory } from './utils/format'
 import {
@@ -46,18 +45,24 @@ const SettingsPanel = lazy(() =>
 const SyncWorkspace = lazy(() =>
   import('./features/sync/SyncWorkspace').then((m) => ({ default: m.SyncWorkspace })),
 )
-const VaultDialog = lazy(() =>
-  import('./features/vault/VaultDialog').then((m) => ({ default: m.VaultDialog })),
+const VaultWorkspace = lazy(() =>
+  import('./features/vault/VaultWorkspace').then((m) => ({ default: m.VaultWorkspace })),
 )
-const ShareLinksDialog = lazy(() =>
-  import('./features/links/ShareLinksDialog').then((m) => ({ default: m.ShareLinksDialog })),
+const ShareLinksWorkspace = lazy(() =>
+  import('./features/links/ShareLinksWorkspace').then((m) => ({ default: m.ShareLinksWorkspace })),
 )
-const ConnectedPlacesDialog = lazy(() =>
-  import('./features/places/ConnectedPlacesDialog').then((m) => ({ default: m.ConnectedPlacesDialog })),
+const ConnectedPlacesWorkspace = lazy(() =>
+  import('./features/places/ConnectedPlacesWorkspace').then((m) => ({ default: m.ConnectedPlacesWorkspace })),
 )
 
-type ModalKind = 'settings' | 'theme' | 'vault' | 'links' | 'places' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'copy' | 'delete' | 'emptyTrash' | null
+type ShareTab = 'items' | 'links'
+type ModalKind = 'settings' | 'theme' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'copy' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
+
+const SHARE_TABS: readonly WorkspaceTabItem<ShareTab>[] = [
+  { id: 'items', label: '共享项目' },
+  { id: 'links', label: '分享链接' },
+]
 
 export interface PendingDownload {
   readonly file: RemoteFile
@@ -77,7 +82,8 @@ interface FilePreviewState {
 }
 
 function App() {
-  const [activeItem, setActiveItem] = useState('我的文件')
+  const [activeView, setActiveView] = useState<NavView>('files')
+  const [shareTab, setShareTab] = useState<ShareTab>('items')
   const [authState, setAuthState] = useState<AuthState>('checking')
   const [loginError, setLoginError] = useState('')
   const [savedEmail, setSavedEmail] = useState('')
@@ -155,8 +161,17 @@ function App() {
   const [pendingDownload, setPendingDownload] = useState<PendingDownload | null>(null)
   const [pendingSplitUpload, setPendingSplitUpload] = useState<PendingSplitUpload | null>(null)
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null)
+  const collectionView: CollectionView | null =
+    activeView === 'recent'
+      ? '最近的文件'
+      : activeView === 'shared' && shareTab === 'items'
+        ? '已共享'
+        : activeView === 'trash'
+          ? '回收站'
+          : null
+
   const workspace = useKoofrWorkspace(authState === 'signedIn')
-  const collections = useKoofrCollections(authState === 'signedIn', activeItem)
+  const collections = useKoofrCollections(authState === 'signedIn', collectionView ?? '')
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
   const sync = useSyncManager(authState, showNotice)
 
@@ -218,9 +233,17 @@ function App() {
       setDownloadBusy(false)
     }
   }, [pendingDownload, setDownloadBusy, setDownloadError, setSettings, settings?.askDownloadLocation, startDownload])
-  const activeDownloadCount = countActiveDownloads(transfers)
   const activeTransferCount = transfers.filter((item) =>
     item.state === 'queued' || item.state === 'running' || item.state === 'retrying').length
+  const syncActiveCount = useMemo(
+    () => sync.pairs.filter((pair) =>
+      pair.status === 'syncing' || pair.status === 'scanning' || pair.status === 'initializing').length,
+    [sync.pairs],
+  )
+  const syncIssueCount = useMemo(
+    () => sync.pairs.reduce((sum, pair) => sum + pair.issueCount, 0),
+    [sync.pairs],
+  )
   // Read by the idle-logout timer without restarting it on every progress event.
   const activeTransferCountRef = useRef(0)
 
@@ -405,6 +428,8 @@ function App() {
       await koofr.disconnect()
       setModalKind(null)
       setFilePreview(null)
+      setActiveView('files')
+      setShareTab('items')
       setLoginError('')
       setTransfers([])
       setAuthState('signedOut')
@@ -648,7 +673,7 @@ function App() {
     const targetPath = isDirectory(file)
       ? file.path
       : segments.length <= 1 ? '/' : `/${segments.slice(0, -1).join('/')}`
-    setActiveItem('我的文件')
+    setActiveView('files')
     void workspace.loadDirectory(file.mountId, targetPath)
   }, [workspace.loadDirectory])
 
@@ -699,9 +724,9 @@ function App() {
     }
   }
 
-  const selectNavigation = useCallback((label: string) => {
-    setActiveItem(label)
-    if (label === '我的文件') {
+  const selectNavigation = useCallback((view: NavView) => {
+    setActiveView(view)
+    if (view === 'files') {
       if (workspace.activeMountId && workspace.path !== '/') {
         void workspace.loadDirectory(workspace.activeMountId, '/')
       }
@@ -709,14 +734,24 @@ function App() {
     }
   }, [workspace.activeMountId, workspace.loadDirectory, workspace.path])
 
+  const openMountFromPlaces = useCallback((mountId: string) => {
+    setActiveView('files')
+    void workspace.loadDirectory(mountId, '/')
+  }, [workspace.loadDirectory])
+
+  const handleRefreshMounts = useCallback(
+    () => void workspace.initialize(true),
+    [workspace.initialize],
+  )
+
   const handleOpenSettings = useCallback(() => {
     setModalKind('settings')
     void openSettings()
   }, [openSettings])
-  const handleOpenTheme = useCallback(() => setModalKind('theme'), [])
-  const handleOpenVault = useCallback(() => setModalKind('vault'), [])
-  const handleOpenLinks = useCallback(() => setModalKind('links'), [])
-  const handleOpenPlaces = useCallback(() => setModalKind('places'), [])
+  const handleToggleTransfers = useCallback(
+    () => setTransferVisible((visible) => !visible),
+    [setTransferVisible],
+  )
   const handleCloseTransfer = useCallback(() => setTransferVisible(false), [setTransferVisible])
   const handleMountChange = useCallback(
     (mountId: string) => void workspace.loadDirectory(mountId, '/'),
@@ -807,20 +842,22 @@ function App() {
       {authState === 'signedIn' ? (
         <div className="app-body">
           <AppSidebar
-            activeItem={activeItem}
+            activeView={activeView}
             onSelect={selectNavigation}
+            transferVisible={transferVisible}
+            activeTransferCount={activeTransferCount}
+            onToggleTransfers={handleToggleTransfers}
+            syncActiveCount={syncActiveCount}
+            syncIssueCount={syncIssueCount}
+            mountCount={workspace.mounts.length}
             onSettingsClick={handleOpenSettings}
-            onThemeClick={handleOpenTheme}
-            onVaultClick={handleOpenVault}
-            onLinksClick={handleOpenLinks}
-            onPlacesClick={handleOpenPlaces}
             onLogoutClick={logout}
             onHelpClick={openHelp}
             storageName={activeMount?.name ?? ''}
             storageUsed={activeMount?.spaceUsed ?? null}
             storageTotal={activeMount?.spaceTotal ?? null}
           />
-          {activeItem === '同步' ? (
+          {activeView === 'sync' ? (
             <Suspense fallback={<main className="workspace" />}>
               <SyncWorkspace
                 mounts={workspace.mounts}
@@ -829,9 +866,46 @@ function App() {
                 sync={sync}
               />
             </Suspense>
-          ) : isCollectionView(activeItem) ? (
+          ) : activeView === 'vault' ? (
+            <Suspense fallback={<main className="workspace" />}>
+              <VaultWorkspace
+                mounts={workspace.mounts}
+                defaultMountId={workspace.activeMountId}
+                defaultParentPath={workspace.path}
+                onNotice={showNotice}
+                onTransferStarted={startVaultTransfer}
+                onPreview={(repoId, entry, onDownload) => {
+                  void openVaultFilePreview(repoId, entry, onDownload)
+                }}
+              />
+            </Suspense>
+          ) : activeView === 'places' ? (
+            <Suspense fallback={<main className="workspace" />}>
+              <ConnectedPlacesWorkspace
+                mounts={workspace.mounts}
+                activeMountId={workspace.activeMountId}
+                loading={workspace.status === 'loading'}
+                onOpenMount={openMountFromPlaces}
+                onRefresh={handleRefreshMounts}
+              />
+            </Suspense>
+          ) : activeView === 'shared' && shareTab === 'links' ? (
+            <Suspense fallback={<main className="workspace" />}>
+              <ShareLinksWorkspace
+                mounts={workspace.mounts}
+                headerTabs={
+                  <WorkspaceTabs
+                    ariaLabel="共享视图"
+                    items={SHARE_TABS}
+                    activeId={shareTab}
+                    onChange={setShareTab}
+                  />
+                }
+              />
+            </Suspense>
+          ) : collectionView !== null ? (
             <CollectionWorkspace
-              view={activeItem}
+              view={collectionView}
               files={collections.files}
               trash={collections.trash}
               retentionDays={collections.retentionDays}
@@ -840,8 +914,15 @@ function App() {
               diagnostic={collections.diagnostic}
               lastSyncedAt={collections.lastSyncedAt}
               busy={operationBusy}
+              headerTabs={activeView === 'shared' ? (
+                <WorkspaceTabs
+                  ariaLabel="共享视图"
+                  items={SHARE_TABS}
+                  activeId={shareTab}
+                  onChange={setShareTab}
+                />
+              ) : undefined}
               onRefresh={handleCollectionRefresh}
-              onThemeOpen={handleOpenTheme}
               onOpenLocation={openLocatedFile}
               onDownload={handleCollectionDownload}
               onPreview={handleCollectionPreview}
@@ -862,7 +943,6 @@ function App() {
               onNavigate={handleNavigate}
               onRefresh={handleWorkspaceRefresh}
               onCreateFolder={openCreateFolder}
-              onThemeOpen={handleOpenTheme}
               onUpload={handleWorkspaceUpload}
               onDownload={handleWorkspaceDownload}
               onPreview={handleWorkspacePreview}
@@ -893,21 +973,6 @@ function App() {
             onOpenFolder={handleOpenDownloadedFolder}
             onClearFinished={handleClearFinishedTransfers}
           />
-          {!transferVisible ? (
-            <button
-              className="transfer-reopen"
-              type="button"
-              aria-label={activeDownloadCount > 0 ? `打开传输面板，${activeDownloadCount} 项正在下载` : '打开传输面板'}
-              title="打开传输面板"
-              onClick={() => setTransferVisible(true)}
-            >
-              <ArrowDownToLine size={15} strokeWidth={1.85} />
-              <span className="transfer-reopen__label">传输</span>
-              {activeDownloadCount > 0 ? (
-                <span className="transfer-reopen__badge">{activeDownloadCount}</span>
-              ) : null}
-            </button>
-          ) : null}
         </div>
       ) : null}
 
@@ -1072,33 +1137,6 @@ function App() {
             />
           </label>
         </Modal>
-      ) : null}
-
-      {authState === 'signedIn' && modalKind === 'vault' ? (
-        <Suspense fallback={null}>
-          <VaultDialog
-            mountId={workspace.activeMountId}
-            parentPath={workspace.path}
-            onClose={() => setModalKind(null)}
-            onNotice={showNotice}
-            onTransferStarted={startVaultTransfer}
-            onPreview={(repoId, entry, onDownload) => {
-              void openVaultFilePreview(repoId, entry, onDownload)
-            }}
-          />
-        </Suspense>
-      ) : null}
-
-      {authState === 'signedIn' && modalKind === 'links' ? (
-        <Suspense fallback={null}>
-          <ShareLinksDialog mounts={workspace.mounts} onClose={() => setModalKind(null)} />
-        </Suspense>
-      ) : null}
-
-      {authState === 'signedIn' && modalKind === 'places' ? (
-        <Suspense fallback={null}>
-          <ConnectedPlacesDialog mounts={workspace.mounts} onClose={() => setModalKind(null)} />
-        </Suspense>
       ) : null}
 
       {authState === 'signedIn' && modalKind === 'floatingPrompt' ? (

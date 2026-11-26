@@ -115,16 +115,13 @@ interface SettingsPanelProps {
 }
 
 type SectionId =
-  | 'appearance'
   | 'general'
+  | 'appearance'
   | 'download'
   | 'transfer'
-  | 'cache'
-  | 'logs'
-  | 'links'
   | 'notifications'
+  | 'storage'
   | 'security'
-  | 'history'
   | 'about'
 
 interface SectionMeta {
@@ -134,16 +131,13 @@ interface SectionMeta {
 }
 
 const SECTIONS: readonly SectionMeta[] = [
-  { id: 'appearance', label: '外观', icon: Palette },
   { id: 'general', label: '通用', icon: Cog },
+  { id: 'appearance', label: '外观', icon: Palette },
   { id: 'download', label: '下载', icon: Download },
   { id: 'transfer', label: '传输', icon: RefreshCw },
-  { id: 'cache', label: '缓存', icon: Database },
-  { id: 'logs', label: '诊断日志', icon: Bug },
-  { id: 'links', label: '分享链接', icon: LinkIcon },
-  { id: 'notifications', label: '通知', icon: Bell },
-  { id: 'security', label: '隐私与安全', icon: ShieldCheck },
-  { id: 'history', label: '历史', icon: History },
+  { id: 'notifications', label: '通知与悬浮窗', icon: Bell },
+  { id: 'storage', label: '存储与日志', icon: Database },
+  { id: 'security', label: '账户与安全', icon: ShieldCheck },
   { id: 'about', label: '关于', icon: Info },
 ]
 
@@ -207,7 +201,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
     onOpenExternalPage,
   } = props
 
-  const [activeSection, setActiveSection] = useState<SectionId>('appearance')
+  const [activeSection, setActiveSection] = useState<SectionId>('general')
   const [downloadDirectory, setDownloadDirectory] = useState(settings?.downloadDirectory ?? '')
   const [workDirectory, setWorkDirectory] = useState(
     settings?.pendingWorkDirectory ?? settings?.workDirectory ?? '',
@@ -538,7 +532,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Cog aria-hidden="true" />
               <div>
                 <h3>通用</h3>
-                <p>启动、托盘、悬浮窗与退出行为。</p>
+                <p>启动、托盘、退出确认与默认分享选项。</p>
               </div>
             </header>
 
@@ -576,48 +570,56 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             </p>
 
             <header className="settings-section__heading settings-section__heading--nested">
-              <AppWindow aria-hidden="true" />
+              <LinkIcon aria-hidden="true" />
               <div>
-                <h3>传输悬浮窗</h3>
-                <p>在桌面置顶显示传输状态并快速控制任务。</p>
+                <h3>分享链接默认值</h3>
+                <p>创建新链接时填入的默认选项，随时可以在弹窗中修改。</p>
               </div>
             </header>
 
+            <div className="settings-row">
+              <label htmlFor="settings-link-kind">
+                <strong>默认链接类型</strong>
+                <small>下载链接用于分享文件；接收文件链接允许他人向文件夹上传</small>
+              </label>
+              <select
+                id="settings-link-kind"
+                value={settings.linkDefaultKind}
+                disabled={busy || !onLinkDefaultsChange}
+                onChange={(event) =>
+                  updateLinks({ kind: event.target.value as LinkDefaultKind })}
+              >
+                <option value="download">下载链接</option>
+                <option value="upload">接收文件链接</option>
+              </select>
+            </div>
+            <div className="settings-row">
+              <label htmlFor="settings-link-expire">
+                <strong>默认有效期</strong>
+                <small>0 表示不过期</small>
+              </label>
+              <select
+                id="settings-link-expire"
+                value={settings.linkDefaultExpireDays}
+                disabled={busy || !onLinkDefaultsChange}
+                onChange={(event) =>
+                  updateLinks({ expireDays: Number(event.target.value) })}
+              >
+                <option value={0}>永不过期</option>
+                <option value={1}>1 天</option>
+                <option value={7}>7 天</option>
+                <option value={30}>30 天</option>
+                <option value={90}>90 天</option>
+                <option value={365}>365 天</option>
+              </select>
+            </div>
             <SwitchRow
-              label="显示传输悬浮窗"
-              hint="置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口"
-              checked={settings.floatingWindowEnabled}
-              disabled={busy || !onNotificationChange}
-              onChange={(next) => updateNotifications({
-                floatingWindowEnabled: next,
-                floatingWindowPrompted: true,
-              })}
+              label="默认要求密码"
+              hint="创建链接时预勾选“设置密码”"
+              checked={settings.linkDefaultRequirePassword}
+              disabled={busy || !onLinkDefaultsChange}
+              onChange={(next) => updateLinks({ requirePassword: next })}
             />
-            {settings.floatingWindowEnabled ? (
-              <>
-                <SwitchRow
-                  label="空闲或暂停时收为图标"
-                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
-                  checked={settings.floatingWindowCompactEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
-                />
-                <SwitchRow
-                  label="单击暂停或继续"
-                  hint="一键暂停或继续所有可暂停的传输"
-                  checked={settings.floatingWindowClickToggleEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
-                />
-                <SwitchRow
-                  label="双击打开应用"
-                  hint="双击悬浮窗回到 Suitcase 主窗口"
-                  checked={settings.floatingWindowDoubleClickOpenEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
-                />
-              </>
-            ) : null}
           </section>
         ) : null}
 
@@ -767,6 +769,59 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 <option value={30}>30 天</option>
               </select>
             </div>
+
+            <header className="settings-section__heading settings-section__heading--nested">
+              <History aria-hidden="true" />
+              <div>
+                <h3>下载历史</h3>
+                <p>控制传输面板保留下载完成记录的时长与数量。</p>
+              </div>
+            </header>
+
+            <div className="settings-row settings-row--compact-grid">
+              <label htmlFor="settings-history-days">
+                <strong>保留天数</strong>
+                <small>0 表示永久保留</small>
+              </label>
+              <select
+                id="settings-history-days"
+                value={settings.downloadHistoryKeepDays}
+                disabled={busy || !onHistoryPolicyChange}
+                onChange={(event) =>
+                  updateHistory({ keepDays: Number(event.target.value) })}
+              >
+                <option value={0}>永久</option>
+                <option value={7}>7 天</option>
+                <option value={30}>30 天</option>
+                <option value={90}>90 天</option>
+                <option value={365}>365 天</option>
+              </select>
+              <label htmlFor="settings-history-count">
+                <strong>最多保留条数</strong>
+                <small>0 表示不限</small>
+              </label>
+              <select
+                id="settings-history-count"
+                value={settings.downloadHistoryKeepCount}
+                disabled={busy || !onHistoryPolicyChange}
+                onChange={(event) =>
+                  updateHistory({ keepCount: Number(event.target.value) })}
+              >
+                <option value={0}>不限</option>
+                <option value={100}>100 条</option>
+                <option value={500}>500 条</option>
+                <option value={1000}>1000 条</option>
+                <option value={5000}>5000 条</option>
+              </select>
+            </div>
+            {onClearDownloadHistory ? (
+              <div className="settings-storage">
+                <button type="button" disabled={busy} onClick={onClearDownloadHistory}>
+                  <Trash2 aria-hidden="true" />
+                  清除已完成记录
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -1006,7 +1061,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
           </section>
         ) : null}
 
-        {activeSection === 'cache' ? (
+        {activeSection === 'storage' ? (
           <section className="settings-section">
             <header className="settings-section__heading">
               <Database aria-hidden="true" />
@@ -1148,12 +1203,8 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 保存并在重启后应用
               </button>
             </div>
-          </section>
-        ) : null}
 
-        {activeSection === 'logs' ? (
-          <section className="settings-section">
-            <header className="settings-section__heading">
+            <header className="settings-section__heading settings-section__heading--nested">
               <Bug aria-hidden="true" />
               <div>
                 <h3>诊断日志</h3>
@@ -1237,90 +1288,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 清除日志
               </button>
             </div>
-
-            <header
-              className="settings-section__heading settings-section__heading--nested"
-            >
-              <KeyRound aria-hidden="true" />
-              <div>
-                <h3>保存的登录信息</h3>
-                <p>管理已保存的自动登录账号，密码由系统凭据管理器安全保存。</p>
-              </div>
-            </header>
-            {settings.savedEmail ? (
-              <div className="saved-login">
-                <span className="saved-login__icon">
-                  <ShieldCheck aria-hidden="true" />
-                </span>
-                <span>
-                  <strong>{settings.savedEmail}</strong>
-                  <small>下次启动时自动连接</small>
-                </span>
-                <button type="button" disabled={busy} onClick={onForgetLogin}>
-                  删除
-                </button>
-              </div>
-            ) : (
-              <div className="saved-login saved-login--empty">
-                登录时勾选“保存密码”即可启用自动连接。
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {activeSection === 'links' ? (
-          <section className="settings-section">
-            <header className="settings-section__heading">
-              <LinkIcon aria-hidden="true" />
-              <div>
-                <h3>分享链接默认值</h3>
-                <p>创建新链接时填入的默认选项，随时可以在弹窗中修改。</p>
-              </div>
-            </header>
-
-            <div className="settings-row">
-              <label htmlFor="settings-link-kind">
-                <strong>默认链接类型</strong>
-                <small>下载链接用于分享文件；接收文件链接允许他人向文件夹上传</small>
-              </label>
-              <select
-                id="settings-link-kind"
-                value={settings.linkDefaultKind}
-                disabled={busy || !onLinkDefaultsChange}
-                onChange={(event) =>
-                  updateLinks({ kind: event.target.value as LinkDefaultKind })}
-              >
-                <option value="download">下载链接</option>
-                <option value="upload">接收文件链接</option>
-              </select>
-            </div>
-            <div className="settings-row">
-              <label htmlFor="settings-link-expire">
-                <strong>默认有效期</strong>
-                <small>0 表示不过期</small>
-              </label>
-              <select
-                id="settings-link-expire"
-                value={settings.linkDefaultExpireDays}
-                disabled={busy || !onLinkDefaultsChange}
-                onChange={(event) =>
-                  updateLinks({ expireDays: Number(event.target.value) })}
-              >
-                <option value={0}>永不过期</option>
-                <option value={1}>1 天</option>
-                <option value={7}>7 天</option>
-                <option value={30}>30 天</option>
-                <option value={90}>90 天</option>
-                <option value={365}>365 天</option>
-              </select>
-            </div>
-            <SwitchRow
-              label="默认要求密码"
-              hint="创建链接时预勾选“设置密码”"
-              checked={settings.linkDefaultRequirePassword}
-              disabled={busy || !onLinkDefaultsChange}
-              onChange={(next) => updateLinks({ requirePassword: next })}
-            />
           </section>
         ) : null}
 
@@ -1355,15 +1322,85 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({ trayBadge: next })}
             />
+
+            <header className="settings-section__heading settings-section__heading--nested">
+              <AppWindow aria-hidden="true" />
+              <div>
+                <h3>传输悬浮窗</h3>
+                <p>在桌面置顶显示传输状态并快速控制任务。</p>
+              </div>
+            </header>
+
+            <SwitchRow
+              label="显示传输悬浮窗"
+              hint="置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口"
+              checked={settings.floatingWindowEnabled}
+              disabled={busy || !onNotificationChange}
+              onChange={(next) => updateNotifications({
+                floatingWindowEnabled: next,
+                floatingWindowPrompted: true,
+              })}
+            />
+            {settings.floatingWindowEnabled ? (
+              <>
+                <SwitchRow
+                  label="空闲或暂停时收为图标"
+                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
+                  checked={settings.floatingWindowCompactEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
+                />
+                <SwitchRow
+                  label="单击暂停或继续"
+                  hint="一键暂停或继续所有可暂停的传输"
+                  checked={settings.floatingWindowClickToggleEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
+                />
+                <SwitchRow
+                  label="双击打开应用"
+                  hint="双击悬浮窗回到 Suitcase 主窗口"
+                  checked={settings.floatingWindowDoubleClickOpenEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
+                />
+              </>
+            ) : null}
           </section>
         ) : null}
 
         {activeSection === 'security' ? (
           <section className="settings-section">
             <header className="settings-section__heading">
+              <KeyRound aria-hidden="true" />
+              <div>
+                <h3>保存的登录信息</h3>
+                <p>管理已保存的自动登录账号，密码由系统凭据管理器安全保存。</p>
+              </div>
+            </header>
+            {settings.savedEmail ? (
+              <div className="saved-login">
+                <span className="saved-login__icon">
+                  <ShieldCheck aria-hidden="true" />
+                </span>
+                <span>
+                  <strong>{settings.savedEmail}</strong>
+                  <small>下次启动时自动连接</small>
+                </span>
+                <button type="button" disabled={busy} onClick={onForgetLogin}>
+                  删除
+                </button>
+              </div>
+            ) : (
+              <div className="saved-login saved-login--empty">
+                登录时勾选“保存密码”即可启用自动连接。
+              </div>
+            )}
+
+            <header className="settings-section__heading settings-section__heading--nested">
               <ShieldCheck aria-hidden="true" />
               <div>
-                <h3>隐私与安全</h3>
+                <h3>会话保护</h3>
                 <p>设置长时间无操作时的自动退出保护。</p>
               </div>
             </header>
@@ -1388,63 +1425,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 <option value={240}>4 小时</option>
               </select>
             </div>
-          </section>
-        ) : null}
-
-        {activeSection === 'history' ? (
-          <section className="settings-section">
-            <header className="settings-section__heading">
-              <History aria-hidden="true" />
-              <div>
-                <h3>下载历史</h3>
-                <p>控制传输面板保留下载完成记录的时长与数量。</p>
-              </div>
-            </header>
-
-            <div className="settings-row settings-row--compact-grid">
-              <label htmlFor="settings-history-days">
-                <strong>保留天数</strong>
-                <small>0 表示永久保留</small>
-              </label>
-              <select
-                id="settings-history-days"
-                value={settings.downloadHistoryKeepDays}
-                disabled={busy || !onHistoryPolicyChange}
-                onChange={(event) =>
-                  updateHistory({ keepDays: Number(event.target.value) })}
-              >
-                <option value={0}>永久</option>
-                <option value={7}>7 天</option>
-                <option value={30}>30 天</option>
-                <option value={90}>90 天</option>
-                <option value={365}>365 天</option>
-              </select>
-              <label htmlFor="settings-history-count">
-                <strong>最多保留条数</strong>
-                <small>0 表示不限</small>
-              </label>
-              <select
-                id="settings-history-count"
-                value={settings.downloadHistoryKeepCount}
-                disabled={busy || !onHistoryPolicyChange}
-                onChange={(event) =>
-                  updateHistory({ keepCount: Number(event.target.value) })}
-              >
-                <option value={0}>不限</option>
-                <option value={100}>100 条</option>
-                <option value={500}>500 条</option>
-                <option value={1000}>1000 条</option>
-                <option value={5000}>5000 条</option>
-              </select>
-            </div>
-            {onClearDownloadHistory ? (
-              <div className="settings-storage">
-                <button type="button" disabled={busy} onClick={onClearDownloadHistory}>
-                  <Trash2 aria-hidden="true" />
-                  清除已完成记录
-                </button>
-              </div>
-            ) : null}
           </section>
         ) : null}
 

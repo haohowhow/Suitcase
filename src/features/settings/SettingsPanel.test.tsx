@@ -131,7 +131,7 @@ describe('SettingsPanel storage and diagnostics', () => {
       onBrowseWorkDirectory: vi.fn(async () => 'D:\\Koofr Work'),
       onWorkDirectoryChange,
     })
-    await user.click(screen.getByRole('tab', { name: '缓存' }))
+    await user.click(screen.getByRole('tab', { name: '存储与日志' }))
 
     await user.click(screen.getByRole('button', { name: '选择应用数据文件夹' }))
     await user.click(screen.getByRole('button', { name: '保存数据位置' }))
@@ -146,7 +146,7 @@ describe('SettingsPanel storage and diagnostics', () => {
       onBrowseWorkDirectory: vi.fn(async () => 'D:\\Fresh Koofr Work'),
       onWorkDirectoryChange,
     })
-    await user.click(screen.getByRole('tab', { name: '缓存' }))
+    await user.click(screen.getByRole('tab', { name: '存储与日志' }))
 
     await user.click(screen.getByRole('button', { name: '选择应用数据文件夹' }))
     await user.click(screen.getByRole('checkbox', { name: /把现有数据一起移到新位置/ }))
@@ -159,7 +159,7 @@ describe('SettingsPanel storage and diagnostics', () => {
     const user = userEvent.setup()
     const onLoggingSettingsChange = vi.fn()
     renderSettings({ onLoggingSettingsChange })
-    await user.click(screen.getByRole('tab', { name: '诊断日志' }))
+    await user.click(screen.getByRole('tab', { name: '存储与日志' }))
 
     await user.selectOptions(screen.getByRole('combobox', { name: '记录级别' }), 'debug')
     await user.selectOptions(screen.getByRole('combobox', { name: '保留时间' }), '30')
@@ -196,6 +196,7 @@ describe('SettingsPanel new sections', () => {
     const user = userEvent.setup()
     const onAppearanceChange = vi.fn()
     renderSettings({ onAppearanceChange })
+    await user.click(screen.getByRole('tab', { name: '外观' }))
 
     await user.selectOptions(screen.getByRole('combobox', { name: /界面密度/ }), 'compact')
 
@@ -241,11 +242,11 @@ describe('SettingsPanel new sections', () => {
     })
   })
 
-  it('enables the floating transfer window and marks the prompt handled', async () => {
+  it('enables the floating transfer window under notifications and marks the prompt handled', async () => {
     const user = userEvent.setup()
     const onNotificationChange = vi.fn()
     renderSettings({ onNotificationChange })
-    await user.click(screen.getByRole('tab', { name: '通用' }))
+    await user.click(screen.getByRole('tab', { name: '通知与悬浮窗' }))
 
     await user.click(screen.getByRole('switch', { name: '显示传输悬浮窗' }))
 
@@ -259,6 +260,19 @@ describe('SettingsPanel new sections', () => {
       floatingWindowClickToggleEnabled: true,
       floatingWindowDoubleClickOpenEnabled: true,
     })
+  })
+
+  it('keeps saved login management under Account & security instead of logs', async () => {
+    const user = userEvent.setup()
+    const onForgetLogin = vi.fn()
+    renderSettings({
+      settings: { ...SETTINGS, savedEmail: 'user@example.com' },
+      onForgetLogin,
+    })
+    await user.click(screen.getByRole('tab', { name: '账户与安全' }))
+    expect(screen.getByText('user@example.com')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '删除' }))
+    expect(onForgetLogin).toHaveBeenCalledTimes(1)
   })
 
   it('shows version info in the about section', async () => {

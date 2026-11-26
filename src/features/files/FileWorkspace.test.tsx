@@ -9,7 +9,6 @@ const defaultCallbacks = {
   onNavigate: vi.fn(),
   onRefresh: vi.fn(),
   onCreateFolder: vi.fn(),
-  onThemeOpen: vi.fn(),
   onUpload: vi.fn(),
   onDownload: vi.fn(),
   onPreview: vi.fn(),
@@ -21,9 +20,9 @@ const defaultCallbacks = {
 }
 
 describe('FileWorkspace', () => {
-  it('closes the new-item popup when the page background is clicked', async () => {
-    // Given
+  it('triggers folder creation directly without an extra dropdown step', async () => {
     const user = userEvent.setup()
+    const onCreateFolder = vi.fn()
     render(
       <FileWorkspace
         mounts={[]}
@@ -34,16 +33,12 @@ describe('FileWorkspace', () => {
         error=""
         lastSyncedAt={null}
         {...defaultCallbacks}
+        onCreateFolder={onCreateFolder}
       />,
     )
-    await user.click(screen.getByRole('button', { name: /新建/ }))
-    expect(screen.getByText('新建文件夹')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '新建文件夹' }))
 
-    // When
-    await user.click(document.body)
-
-    // Then
-    expect(screen.queryByText('新建文件夹')).toBeNull()
+    expect(onCreateFolder).toHaveBeenCalledTimes(1)
   })
 
   it('renders a distinct visual glyph for every supported file kind', () => {

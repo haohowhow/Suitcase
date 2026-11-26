@@ -103,7 +103,8 @@ All spacing derives from a 4px base.
 
 - Desktop shell target: 1280×720 with a 980×640 minimum native window; `36px` caption bar and `220px` navigation pane frame an inset `--surface` workspace sheet (`12px` top-left radius).
 - Sign-in view: centered `400px` tactile card (`14px` radius) on a subtly top-lit `--chrome-bg` canvas rather than a multi-column web marketing split.
-- Transfer panel: `392px` desktop inspector rail, overlaying content at narrower desktop widths (`<= 1280px`); collapses to a bottom-right desktop status pill rather than a circular FAB.
+- Transfer panel: `392px` desktop inspector rail, overlaying content at narrower desktop widths (`<= 1280px`); toggled from a dedicated sidebar `传输队列` utility entry with an active-count badge so controls never float over list rows.
+- Primary features (`我的文件`, `最近的文件`, `共享` with `共享项目` / `分享链接` tabs, `回收站`, `同步`, `私人保险箱`, `存储位置`) render directly on the inset `--surface` workspace sheet; modals are reserved for focused creation/confirmation flows and Settings.
 - Modal widths: `440px` standard, `656px` wide, and `996px` extra-wide (`12px` radius), constrained to the viewport with a fixed header, scrollable body, and bordered `--surface-subtle` footer bar. Settings use a fixed `900×640` dialog (clamped to the viewport) so switching tabs never resizes it; only the page area scrolls.
 - Controls: toolbar buttons, selects, recessed address bar, and search inputs are `34px` high (`36px` in standalone forms) with `7px–8px` radii; file rows are `42px` (`34px` in compact density) with `8px` hover/selection pills beneath a sticky `32px` header; workspace headings use `18px` semibold typography.
 - Responsive checkpoints: 1280px, 920px, and 650px; forms and setting choices collapse to one column at the compact breakpoint.
@@ -147,7 +148,7 @@ All spacing derives from a 4px base.
 
 ### Share and connection management
 
-- **Structure**: file selection → Share action → compact creation dialog; sidebar entry → wide management modal → grouped records.
+- **Structure**: file selection → Share action → compact creation dialog; sidebar `共享` workspace → segmented `共享项目` / `分享链接` tabs; sidebar `存储位置` (or clickable storage quota card) → connected storage workspace with direct navigation to any online mount.
 - **Link states**: loading, empty, ready, validation error, creating, copied, revoke confirmation, and revoked.
 - **Connected storage states**: online, offline, known provider, and generic external provider.
 - **Safety**: destructive link revocation requires an explicit second click. Third-party authorization stays on Koofr's official account surface until a public desktop API exists.

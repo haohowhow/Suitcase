@@ -3,21 +3,20 @@ import {
   ArrowDownToLine,
   ArrowUp,
   Check,
-  ChevronDown,
   ChevronRight,
   Copy,
   Eye,
   FileText,
   Folder,
   FolderInput,
-  Palette,
+  FolderPlus,
   Pencil,
   RefreshCw,
   Search,
   Share2,
   Trash2,
 } from 'lucide-react'
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { isPreviewableFile } from '../../preview'
 import type { KoofrMount, RemoteFile } from '../../types/backend'
@@ -46,7 +45,6 @@ interface FileWorkspaceProps {
   onNavigate: (path: string) => void
   onRefresh: () => void
   onCreateFolder: () => void
-  onThemeOpen: () => void
   onUpload: (mode: UploadMode) => void
   onDownload: (file: RemoteFile) => void
   onPreview: (file: RemoteFile) => void
@@ -82,7 +80,6 @@ export const FileWorkspace = memo(function FileWorkspace({
   onNavigate,
   onRefresh,
   onCreateFolder,
-  onThemeOpen,
   onUpload,
   onDownload,
   onPreview,
@@ -100,8 +97,6 @@ export const FileWorkspace = memo(function FileWorkspace({
     ids: EMPTY_SELECTION,
     anchor: null,
   })
-  const [newMenuOpen, setNewMenuOpen] = useState(false)
-  const newMenuRef = useRef<HTMLDivElement>(null)
   const deferredQuery = useDeferredValue(query)
   const scope = `${activeMountId}:${path}`
   const selectedIds = selection.scope === scope ? selection.ids : EMPTY_SELECTION
@@ -116,24 +111,6 @@ export const FileWorkspace = memo(function FileWorkspace({
       setSortDir(key === 'name' ? 'asc' : 'desc')
     }
   }
-
-  useEffect(() => {
-    if (!newMenuOpen) return
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !newMenuRef.current?.contains(event.target)) {
-        setNewMenuOpen(false)
-      }
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setNewMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', closeOnOutsidePointer)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePointer)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [newMenuOpen])
 
   const visibleFiles = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLocaleLowerCase('zh-CN')
@@ -285,30 +262,17 @@ export const FileWorkspace = memo(function FileWorkspace({
         </label>
         <div className="top-actions">
           <UploadModeMenu disabled={!activeMountId || loading} onSelect={onUpload} />
-          <div className="menu-anchor" ref={newMenuRef}>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={!activeMountId || loading}
-              aria-haspopup="menu"
-              aria-expanded={newMenuOpen}
-              onClick={() => setNewMenuOpen((open) => !open)}
-            >
-              新建<ChevronDown size={14} strokeWidth={1.8} />
-            </button>
-            {newMenuOpen ? (
-              <div className="new-menu" role="menu">
-                <button role="menuitem" type="button" onClick={() => { onCreateFolder(); setNewMenuOpen(false) }}>
-                  <Folder size={15} strokeWidth={1.75} />新建文件夹
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!activeMountId || loading}
+            onClick={onCreateFolder}
+          >
+            <FolderPlus size={15} strokeWidth={1.8} />
+            新建文件夹
+          </button>
           <button className="icon-button icon-button--bordered" type="button" aria-label="刷新当前文件夹" disabled={loading} onClick={onRefresh}>
             <RefreshCw className={loading ? 'icon-spin' : ''} size={15} strokeWidth={1.8} />
-          </button>
-          <button className="icon-button icon-button--bordered theme-button-mobile" type="button" aria-label="外观主题" onClick={onThemeOpen}>
-            <Palette size={15} strokeWidth={1.8} />
           </button>
         </div>
       </div>
