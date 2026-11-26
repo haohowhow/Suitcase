@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Koofr: 构建桌面 Release",
+      "label": "Suitcase: 构建桌面 Release",
       "type": "npm",
       "script": "build:desktop",
       "group": { "kind": "build", "isDefault": true },
@@ -10,21 +10,21 @@
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
-      "label": "Koofr: 构建 NSIS 安装包",
+      "label": "Suitcase: 构建 NSIS 安装包",
       "type": "npm",
       "script": "build:installer",
       "group": "build",
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "Koofr: 构建前端",
+      "label": "Suitcase: 构建前端",
       "type": "npm",
       "script": "build",
       "group": "build",
       "problemMatcher": ["$tsc"]
     },
     {
-      "label": "Koofr: 构建桌面 Debug",
+      "label": "Suitcase: 构建桌面 Debug",
       "type": "npm",
       "script": "tauri",
       "args": ["build", "--debug", "--no-bundle"],
@@ -33,13 +33,13 @@
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
-      "label": "Koofr: 快速检查",
+      "label": "Suitcase: 快速检查",
       "type": "npm",
       "script": "verify:quick",
       "problemMatcher": []
     },
     {
-      "label": "Koofr: Vite 开发服务",
+      "label": "Suitcase: Vite 开发服务",
       "type": "npm",
       "script": "dev",
       "isBackground": true,

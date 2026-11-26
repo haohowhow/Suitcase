@@ -2,7 +2,7 @@
 
 迁移日期：2026-10-12。
 
-目标仓库：[sora-admin/Koofr-GUI](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI)。迁移时 Forgejo 版本为 12.0.4，目标为空的私有仓库。仓库保持私有设置；下载与协作需要相应权限。
+目标仓库：原 `sora-admin/Koofr-GUI`（现已更名为 [wenhaozheng/Suitcase](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)）。迁移时 Forgejo 版本为 12.0.4，目标为空的私有仓库。仓库保持私有设置；下载与协作需要相应权限。
 
 ## 已迁入的 Git 数据
 

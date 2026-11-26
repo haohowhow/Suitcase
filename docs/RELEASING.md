@@ -1,11 +1,11 @@
 # 发布流程
 
-项目托管于[自建 Forgejo](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI)。当前没有 Windows runner，正式发布在 Windows 本机完成检查与构建，再上传为 Forgejo Release 草稿。推送标签不会自动触发构建或发布。
+项目托管于[自建 Forgejo](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)。当前没有 Windows runner，正式发布在 Windows 本机完成检查与构建，再上传为 Forgejo Release 草稿。推送标签不会自动触发构建或发布。
 
 ## 发布策略
 
 - 仅发布 Windows x64 NSIS 安装包，暂不做代码签名。
-- 唯一的发布渠道是[本仓库 Releases](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases)。私有仓库需要登录并具备访问权限才能下载。
+- 唯一的发布渠道是[本仓库 Releases](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases)。私有仓库需要登录并具备访问权限才能下载。
 - 每次发布附带 `SHA256SUMS`，仅包含本次安装包的 SHA-256；不上传账户数据、日志或凭据。
 - 上传脚本仅创建草稿，拒绝覆盖已发布 Release 或已有附件。人工检查附件与说明后，再在 Forgejo 发布。
 - 仓库 Actions 暂时关闭，原 GitHub 工作流已移除。待配置专用 Windows runner 后再启用；不能假定 Forgejo 提供与 GitHub `windows-latest` 等价的托管环境。
@@ -82,11 +82,11 @@ try {
 
 ### 6. 人工发布
 
-打开 [Releases](https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases)，核对标签、说明、两个附件、安装包版本与哈希。完成人工安装验收后再发布草稿。未完成 GUI 验收的包应保留为草稿。
+打开 [Releases](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases)，核对标签、说明、两个附件、安装包版本与哈希。完成人工安装验收后再发布草稿。未完成 GUI 验收的包应保留为草稿。
 
 ## 用户如何校验安装包
 
-1. 从本仓库 Forgejo Releases 下载，确认所有者为 `sora-admin`、仓库为 `Koofr-GUI`。
+1. 从本仓库 Forgejo Releases 下载，确认所有者为 `wenhaozheng`、仓库为 `Suitcase`。
 2. 确认标签、安装包文件名与 CHANGELOG 版本一致。
 3. 同时下载 `SHA256SUMS`，计算并比对完整 SHA-256：
 

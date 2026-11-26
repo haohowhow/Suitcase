@@ -379,7 +379,7 @@ function App() {
 
   const login = async (email: string, appPassword: string, rememberPassword: boolean) => {
     if (!isTauriRuntime()) {
-      setLoginError('登录功能需要在 Koofr 桌面应用中使用。')
+      setLoginError('登录功能需要在 Suitcase 桌面应用中使用。')
       return
     }
 

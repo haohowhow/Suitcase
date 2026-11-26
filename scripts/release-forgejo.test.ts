@@ -43,7 +43,7 @@ describe('Forgejo release preparation', () => {
     const fetchImpl = vi.fn().mockResolvedValue({ status: 403, ok: false })
     const api = forgejoApi('synthetic-test-token', fetchImpl)
     await expect(api('GET', '/tags/v2.6.0')).rejects.toThrow('HTTP 403')
-    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('/api/v1/repos/sora-admin/Koofr-GUI/'),
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('/api/v1/repos/wenhaozheng/Suitcase/'),
       expect.objectContaining({ redirect: 'error' }))
     fetchImpl.mockRejectedValueOnce(new Error('synthetic-test-token'))
     await expect(api('GET', '/tags/v2.6.0')).rejects.not.toThrow('synthetic-test-token')

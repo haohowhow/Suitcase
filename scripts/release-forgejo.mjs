@@ -6,8 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const apiRoot = 'https://forgejo.haohaohow.com/api/v1/repos/sora-admin/Koofr-GUI'
-const releaseUrl = 'https://forgejo.haohaohow.com/sora-admin/Koofr-GUI/releases'
+const apiRoot = 'https://forgejo.haohaohow.com/api/v1/repos/wenhaozheng/Suitcase'
+const releaseUrl = 'https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases'
 
 export function releaseNotes(changelog, version) {
   const heading = `## [${version}]`
