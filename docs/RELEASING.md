@@ -1,6 +1,6 @@
 # 发布流程
 
-项目托管于[自建 Forgejo](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)。当前没有 Windows runner，正式发布在 Windows 本机完成检查与构建，再上传为 Forgejo Release 草稿。推送标签不会自动触发构建或发布。
+项目公开托管于 [GitHub](https://github.com/haohowhow/Suitcase)，同时保留[自建 Forgejo](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)作为同步镜像与私有发布端。当前没有 Windows runner，正式发布在 Windows 本机完成检查与构建，再上传为 Release 草稿。推送标签不会自动触发构建或发布。
 
 ## 发布策略
 

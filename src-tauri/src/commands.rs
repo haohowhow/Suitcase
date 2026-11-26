@@ -1584,9 +1584,9 @@ pub async fn update_history_policy(
 pub fn app_version_info() -> AppVersionInfo {
     AppVersionInfo {
         version: env!("CARGO_PKG_VERSION"),
-        homepage_url: "https://forgejo.haohaohow.com/wenhaozheng/Suitcase",
-        releases_url: "https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases",
-        issues_url: "https://forgejo.haohaohow.com/wenhaozheng/Suitcase/issues",
+        homepage_url: "https://github.com/haohowhow/Suitcase",
+        releases_url: "https://github.com/haohowhow/Suitcase/releases",
+        issues_url: "https://github.com/haohowhow/Suitcase/issues",
         license: "MIT",
     }
 }
@@ -1602,9 +1602,9 @@ pub enum ExternalPage {
 #[tauri::command]
 pub fn open_external_page(page: ExternalPage) -> CommandResult<()> {
     let url = match page {
-        ExternalPage::Homepage => "https://forgejo.haohaohow.com/wenhaozheng/Suitcase",
-        ExternalPage::Releases => "https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases",
-        ExternalPage::Issues => "https://forgejo.haohaohow.com/wenhaozheng/Suitcase/issues",
+        ExternalPage::Homepage => "https://github.com/haohowhow/Suitcase",
+        ExternalPage::Releases => "https://github.com/haohowhow/Suitcase/releases",
+        ExternalPage::Issues => "https://github.com/haohowhow/Suitcase/issues",
     };
     local_open::open_url(url).map_err(CommandError::from)
 }

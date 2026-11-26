@@ -6,12 +6,12 @@
 
 Built with Tauri v2, React, TypeScript, and Rust. The goal is a native file-manager experience rather than a thin wrapper around the web interface.
 
-[![Source: Forgejo](https://img.shields.io/badge/Source-Forgejo-fb923c)](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)
+[![Source: GitHub](https://img.shields.io/badge/Source-GitHub-181717?logo=github)](https://github.com/haohowhow/Suitcase)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)](#requirements)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 
-[中文](README.md) · [Download](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
+[中文](README.md) · [Download](https://github.com/haohowhow/Suitcase/releases) · [Building](docs/BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -118,7 +118,7 @@ Suitcase is an unaffiliated, Windows-first alternative client built around a nat
 
 ## Download
 
-Published installers, where available, are listed on the Releases page. Download the latest NSIS installer from the [Releases page](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases) (for example, `Suitcase_<version>_x64-setup.exe`).
+Published installers, where available, are listed on the Releases page. Download the latest NSIS installer from the [Releases page](https://github.com/haohowhow/Suitcase/releases) (for example, `Suitcase_<version>_x64-setup.exe`).
 
 > ⚠️ **Unsigned binaries**: release builds are not code-signed, and Windows SmartScreen may report an unknown publisher. Download only from this repository's Releases page, never from third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification steps.
 
@@ -144,7 +144,7 @@ See [BUILDING.md](docs/BUILDING.md#1-环境要求) for full setup instructions.
 ## Building from source
 
 ```powershell
-git clone https://forgejo.haohaohow.com/wenhaozheng/Suitcase.git
+git clone https://github.com/haohowhow/Suitcase.git
 Set-Location Suitcase
 npm ci
 npm run dev:desktop          # development mode: full desktop app

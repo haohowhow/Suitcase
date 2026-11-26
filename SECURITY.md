@@ -19,7 +19,7 @@
 | 最新稳定版 | ✅ |
 | 其他历史版本 | ❌ 请升级至最新版本 |
 
-发布包**未做代码签名**，请仅从[官方 Releases 页面](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases)下载。
+发布包**未做代码签名**，请仅从[官方 Releases 页面](https://github.com/haohowhow/Suitcase/releases)下载。
 
 ## 报告漏洞
 
@@ -61,7 +61,7 @@
 
 1. 收到报告后进行私下确认与评估。
 2. 若确认为漏洞，双方共同商定披露时间线，通常为 **90 天**内发布修复。
-3. 修复发布后，在 CHANGELOG 与 Forgejo Release 说明中公开细节；经报告者同意后可致谢。
+3. 修复发布后，在 CHANGELOG 与 Release 说明中公开细节；经报告者同意后可致谢。
 4. 报告者请在**修复发布前**不要公开细节。
 
 ## 安全设计边界

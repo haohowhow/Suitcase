@@ -6,12 +6,12 @@
 
 基于 Tauri v2、React、TypeScript 与 Rust 构建，目标是提供贴近 Windows 原生文件管理器的操作体验，而非网页界面的简单封装。
 
-[![Source: Forgejo](https://img.shields.io/badge/Source-Forgejo-fb923c)](https://forgejo.haohaohow.com/wenhaozheng/Suitcase)
+[![Source: GitHub](https://img.shields.io/badge/Source-GitHub-181717?logo=github)](https://github.com/haohowhow/Suitcase)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)](#系统要求)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 
-[English](README.en.md) · [下载安装包](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
+[English](README.en.md) · [下载安装包](https://github.com/haohowhow/Suitcase/releases) · [构建指南](docs/BUILDING.md) · [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -118,7 +118,7 @@ Suitcase 是一个第三方、Windows 优先、面向原生文件管理器体验
 
 ## 下载与安装
 
-已发布的安装包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases) 下载最新的 NSIS 安装包（例如 `Suitcase_<version>_x64-setup.exe`）。
+已发布的安装包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://github.com/haohowhow/Suitcase/releases) 下载最新的 NSIS 安装包（例如 `Suitcase_<version>_x64-setup.exe`）。
 
 > ⚠️ **未签名警告**：安装包当前不做代码签名，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库的 Releases 页面下载，不要使用第三方镜像。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
 
@@ -144,7 +144,7 @@ Suitcase 是一个第三方、Windows 优先、面向原生文件管理器体验
 ## 从源码构建
 
 ```powershell
-git clone https://forgejo.haohaohow.com/wenhaozheng/Suitcase.git
+git clone https://github.com/haohowhow/Suitcase.git
 Set-Location Suitcase
 npm ci
 npm run dev:desktop          # 开发模式：完整桌面应用

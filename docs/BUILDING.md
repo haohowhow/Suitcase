@@ -53,7 +53,7 @@ rustup default stable-x86_64-pc-windows-msvc
 ## 2. 获取代码与安装依赖
 
 ```powershell
-git clone https://forgejo.haohaohow.com/wenhaozheng/Suitcase.git
+git clone https://github.com/haohowhow/Suitcase.git
 Set-Location Suitcase
 npm ci
 ```
