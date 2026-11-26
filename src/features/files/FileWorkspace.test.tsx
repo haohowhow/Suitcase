@@ -191,7 +191,7 @@ describe('FileWorkspace', () => {
     expect(screen.getByRole('button', { name: '下载 report.pdf' })).not.toBeNull()
   })
 
-  it('selects folders on single click, opens on double click, supports sorting and copy', async () => {
+  it('opens folders on single click, selects folders via checkbox for copy, and supports sorting', async () => {
     const user = userEvent.setup()
     const folder: RemoteFile = {
       name: 'Docs',
@@ -237,12 +237,13 @@ describe('FileWorkspace', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Docs' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 Docs' }))
     expect(onNavigate).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '复制' }))
     expect(onCopy).toHaveBeenCalledWith([folder])
 
-    await user.dblClick(screen.getByRole('button', { name: 'Docs' }))
+    await user.click(screen.getByRole('button', { name: 'Docs' }))
+    expect(onNavigate).toHaveBeenCalledTimes(1)
     expect(onNavigate).toHaveBeenCalledWith('/Docs')
 
     await user.click(screen.getByRole('button', { name: '大小' }))

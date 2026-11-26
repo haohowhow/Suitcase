@@ -623,6 +623,10 @@ export function VaultDialog({
                       role="listitem"
                       key={entry.id}
                       onClick={(event) => {
+                        if (entry.entryType === 'dir' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                          void openDirectory(directory.repoId, entry.id)
+                          return
+                        }
                         if (event.ctrlKey || event.metaKey) {
                           setSelectedIds((current) => {
                             const next = new Set(current)
@@ -634,9 +638,8 @@ export function VaultDialog({
                           setSelectedIds(new Set([entry.id]))
                         }
                       }}
-                      onDoubleClick={() => {
-                        if (entry.entryType === 'dir') void openDirectory(directory.repoId, entry.id)
-                        else if (previewable) {
+                      onDoubleClick={entry.entryType === 'dir' ? undefined : () => {
+                        if (previewable) {
                           onPreview(directory.repoId, entry, () => void downloadEntry(entry))
                         } else {
                           void downloadEntry(entry)

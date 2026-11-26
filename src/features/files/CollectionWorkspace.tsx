@@ -384,7 +384,18 @@ export const CollectionWorkspace = memo(function CollectionWorkspace({
               <button className={`checkbox${selected ? ' checkbox--checked' : ''}`} type="button" role="checkbox" aria-checked={selected} onClick={() => toggleSelection(id)} aria-label={`${selected ? '取消选择' : '选择'} ${file.name}`}>
                 {selected ? <Check size={12} strokeWidth={2.4} /> : null}
               </button>
-              <button className="file-name file-name--button" type="button" onClick={(event) => selectRow(id, event)} onDoubleClick={() => directory ? onOpenLocation(file) : previewable ? onPreview(file) : onDownload(file)}>
+              <button
+                className="file-name file-name--button"
+                type="button"
+                onClick={(event) => {
+                  if (directory && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                    onOpenLocation(file)
+                    return
+                  }
+                  selectRow(id, event)
+                }}
+                onDoubleClick={directory ? undefined : () => (previewable ? onPreview(file) : onDownload(file))}
+              >
                 <FileTypeIcon kind={fileKind(file)} />
                 <strong translate="no">{file.name}</strong>
               </button>

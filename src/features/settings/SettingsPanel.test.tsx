@@ -245,7 +245,7 @@ describe('SettingsPanel new sections', () => {
     const user = userEvent.setup()
     const onNotificationChange = vi.fn()
     renderSettings({ onNotificationChange })
-    await user.click(screen.getByRole('tab', { name: '通知' }))
+    await user.click(screen.getByRole('tab', { name: '通用' }))
 
     await user.click(screen.getByRole('switch', { name: '显示传输悬浮窗' }))
 

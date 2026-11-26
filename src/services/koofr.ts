@@ -46,10 +46,12 @@ import type { FloatingTransferSnapshot } from '../features/transfers/floatingTra
 const TRANSFER_EVENT = 'koofr://transfer-progress'
 const FLOATING_TRANSFER_EVENT = 'koofr://floating-transfer-state'
 const FLOATING_WINDOW_DISABLED_EVENT = 'koofr://floating-window-disabled'
+const FLOATING_WINDOW_ANCHOR_EVENT = 'koofr://floating-window-anchor'
 const FLOATING_TRANSFER_ACTION_EVENT = 'koofr://floating-transfer-action'
 const SYNC_STATE_EVENT = 'koofr://sync-state'
 
 export type FloatingTransferAction = 'toggle'
+export type FloatingWindowAnchor = 'left' | 'right'
 
 export function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
@@ -747,6 +749,15 @@ export const koofr = {
     return listen(FLOATING_WINDOW_DISABLED_EVENT, listener)
   },
 
+  onFloatingWindowAnchor(
+    listener: (anchor: FloatingWindowAnchor) => void,
+  ): Promise<UnlistenFn> {
+    return listen<FloatingWindowAnchor>(
+      FLOATING_WINDOW_ANCHOR_EVENT,
+      (event) => listener(event.payload),
+    )
+  },
+
   emitFloatingTransferAction(action: FloatingTransferAction) {
     return emitTo('main', FLOATING_TRANSFER_ACTION_EVENT, { action })
   },
@@ -761,7 +772,7 @@ export const koofr = {
   },
 
   setFloatingWindowCompact(compact: boolean, reduceMotion: boolean) {
-    return invoke<void>('set_floating_window_compact', { compact, reduceMotion })
+    return invoke<FloatingWindowAnchor>('set_floating_window_compact', { compact, reduceMotion })
   },
 
   startFloatingWindowDrag() {

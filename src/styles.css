@@ -213,7 +213,7 @@ select {
   --accent-soft-strong: #f8deea;
 }
 
-/* Floating Transfer Pill (252x64 / 52x52 Native Window) */
+/* Floating Transfer Capsule (280x56 Pill / 52x48 Organic Pebble in Transparent Shadow Canvas) */
 html.floating-window-root,
 html.floating-window-root body,
 html.floating-window-root #root {
@@ -225,6 +225,7 @@ html.floating-window-root #root {
   height: 100vh;
   min-width: 0;
   min-height: 0;
+  padding: 10px 14px 16px;
   overflow: hidden;
   background: transparent;
 }
@@ -234,122 +235,248 @@ html.floating-window-root #root {
   height: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: visible;
+}
+
+.floating-window-stage {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+.floating-window-stage[data-anchor="left"] {
+  justify-content: flex-start;
 }
 
 .floating-transfer-shell {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: 280px;
+  height: 56px;
   min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.96);
+  flex: 0 0 auto;
+  border-radius: 28px 28px 28px 28px / 28px 28px 28px 28px;
+  background: var(--surface);
+  box-shadow:
+    0 5px 12px -2px rgba(15, 23, 42, 0.2),
+    0 2px 4px rgba(15, 23, 42, 0.09),
+    0 0 0 1px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
   color: var(--text);
   cursor: grab;
   isolation: isolate;
   user-select: none;
   -webkit-user-select: none;
+  will-change: width, height, border-radius;
   transition:
-    border-radius 240ms var(--motion-spring),
-    background-color 160ms ease-out;
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease-out,
+    box-shadow 180ms ease-out,
+    transform 140ms var(--motion-spring);
 }
 
-.floating-transfer-shell::after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 3.5px;
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
-  transition: opacity var(--motion-micro) ease-out;
+.floating-transfer-shell:hover {
+  box-shadow:
+    0 6px 14px -2px rgba(15, 23, 42, 0.24),
+    0 2px 5px rgba(15, 23, 42, 0.11),
+    0 0 0 1px rgba(15, 23, 42, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
 }
 
 .floating-transfer-shell:active {
   cursor: grabbing;
+  box-shadow:
+    0 3px 8px -2px rgba(15, 23, 42, 0.22),
+    0 1px 3px rgba(15, 23, 42, 0.1),
+    0 0 0 1px color-mix(in srgb, var(--accent) 28%, rgba(15, 23, 42, 0.12)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
-.floating-transfer-progress {
-  position: absolute;
-  z-index: 1;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 3.5px;
-  width: 100%;
-  transform-origin: left center;
-  background: var(--accent);
-  transition:
-    transform var(--motion-standard) var(--motion-spring),
-    background-color var(--motion-micro) ease-out;
-  will-change: transform;
-}
-
-.floating-transfer-shell--completed .floating-transfer-progress {
-  background: var(--accent);
-}
-
-.floating-transfer-progress--unknown {
-  opacity: 0;
+.floating-transfer-shell--completed {
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
 }
 
 .floating-transfer-shell--paused {
-  background: color-mix(in srgb, var(--status-warning) 3%, var(--surface));
+  background: color-mix(in srgb, var(--status-warning-soft) 52%, var(--surface));
 }
 
 .floating-transfer-shell--attention {
-  background: color-mix(in srgb, #c46a3d 5%, var(--surface));
+  background: color-mix(in srgb, var(--status-error-soft) 64%, var(--surface));
 }
 
 .floating-transfer-shell--offline {
-  background: color-mix(in srgb, #c18a35 4%, var(--surface));
+  background: color-mix(in srgb, var(--status-warning-soft) 52%, var(--surface));
 }
 
-.floating-transfer-shell--idle {
-  background: var(--surface-raised);
+.floating-transfer-shell--compact {
+  width: 52px;
+  height: 48px;
+  border-radius: 28px 22px 26px 20px / 22px 28px 20px 26px;
+}
+
+.floating-transfer-shell--compact.floating-transfer-shell--idle {
+  border-radius: 30px 20px 28px 18px / 22px 30px 18px 26px;
+  background: linear-gradient(
+    145deg,
+    var(--surface) 18%,
+    color-mix(in srgb, var(--accent-soft) 62%, var(--surface)) 100%
+  );
+  box-shadow:
+    0 6px 14px -3px rgba(15, 23, 42, 0.2),
+    0 2px 5px rgba(15, 23, 42, 0.08),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.55)),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.96);
+}
+
+.floating-transfer-shell--compact.floating-transfer-shell--idle:hover {
+  border-radius: 22px 30px 20px 28px / 28px 20px 28px 20px;
+  box-shadow:
+    0 7px 16px -3px rgba(15, 23, 42, 0.24),
+    0 2px 6px rgba(15, 23, 42, 0.1),
+    0 0 0 1px color-mix(in srgb, var(--accent) 28%, rgba(255, 255, 255, 0.65)),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.98);
+}
+
+.floating-transfer-shell--compact:active {
+  transform: scale(0.95);
 }
 
 .floating-transfer-content {
   position: relative;
-  z-index: 2;
   width: 100%;
   height: 100%;
   min-width: 0;
-  padding: 7px 13px 9px;
+  padding: 0 16px 0 9px;
+  overflow: hidden;
+  border-radius: inherit;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   text-align: left;
-  transition: background-color var(--motion-micro) ease-out;
   pointer-events: none;
+  transition: padding-left 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.floating-transfer-shell:hover .floating-transfer-content {
-  background: color-mix(in srgb, var(--text) 2.2%, transparent);
+.floating-transfer-shell--compact .floating-transfer-content {
+  padding: 0 6px;
 }
 
-.floating-transfer-shell:active .floating-transfer-content {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-
-.floating-transfer-icon {
-  width: 30px;
-  height: 30px;
+.floating-transfer-dial {
+  position: relative;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  color: var(--accent-dark);
+  transition:
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.floating-transfer-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.floating-transfer-ring__track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 16%, var(--border));
+  stroke-width: 2.3;
+}
+
+.floating-transfer-ring__fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  transition:
+    stroke-dashoffset 220ms var(--motion-spring),
+    stroke var(--motion-micro) ease-out;
+}
+
+.floating-transfer-ring--indeterminate {
+  animation: floating-ring-spin 1.15s linear infinite;
+}
+
+.floating-transfer-shell--paused .floating-transfer-ring__track {
+  stroke: color-mix(in srgb, var(--status-warning) 18%, var(--border));
+}
+
+.floating-transfer-shell--paused .floating-transfer-ring__fill {
+  stroke: var(--status-warning);
+}
+
+.floating-transfer-icon {
   position: relative;
-  overflow: hidden;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    transform 180ms var(--motion-spring);
 }
 
 .floating-transfer-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke-width: 1.95;
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.1;
+}
+
+.floating-transfer-shell--completed .floating-transfer-icon {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.floating-transfer-shell--paused .floating-transfer-icon,
+.floating-transfer-shell--offline .floating-transfer-icon {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+}
+
+.floating-transfer-shell--attention .floating-transfer-icon {
+  background: var(--status-error-soft);
+  color: var(--status-error);
+}
+
+.floating-transfer-shell--idle .floating-transfer-icon {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+
+.floating-transfer-brand {
+  width: 28px;
+  height: 28px;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.14));
+  transition: transform 220ms var(--motion-spring);
+}
+
+.floating-transfer-brand svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.floating-transfer-shell--idle:hover .floating-transfer-brand {
+  transform: scale(1.07) rotate(-2deg);
+}
+
+.floating-transfer-shell--idle:active .floating-transfer-brand {
+  transform: scale(0.95);
 }
 
 .floating-transfer-icon__state,
@@ -357,109 +484,224 @@ html.floating-window-root #root {
   position: absolute;
   display: grid;
   place-items: center;
-  transition: opacity 130ms ease-out, transform 170ms var(--motion-spring);
+  transition:
+    opacity 130ms ease-out,
+    transform 170ms var(--motion-spring);
 }
 
 .floating-transfer-icon__action {
   opacity: 0;
-  transform: scale(0.84);
+  transform: scale(0.76);
 }
 
-.floating-transfer-shell--active:hover .floating-transfer-icon__state,
-.floating-transfer-shell--paused:hover .floating-transfer-icon__state {
+.floating-transfer-shell[data-click-toggle="true"]:hover .floating-transfer-icon {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.floating-transfer-shell--paused[data-click-toggle="true"]:hover .floating-transfer-icon {
+  background: var(--status-warning);
+  color: var(--accent-contrast);
+}
+
+.floating-transfer-shell[data-click-toggle="true"]:hover .floating-transfer-icon__state {
   opacity: 0;
-  transform: scale(1.1);
+  transform: scale(0.76);
 }
 
-.floating-transfer-shell--active:hover .floating-transfer-icon__action,
-.floating-transfer-shell--paused:hover .floating-transfer-icon__action {
+.floating-transfer-shell[data-click-toggle="true"]:hover .floating-transfer-icon__action {
   opacity: 1;
   transform: scale(1);
 }
 
-.floating-transfer-shell--paused .floating-transfer-icon {
-  color: #b87b1e;
-}
-
-.floating-transfer-shell--idle .floating-transfer-icon {
-  color: var(--muted);
-}
-
-.floating-transfer-shell--compact {
-  border-radius: 15px;
-}
-
-.floating-transfer-shell--compact::after,
-.floating-transfer-shell--compact .floating-transfer-progress {
-  opacity: 0;
-}
-
-.floating-transfer-shell--compact .floating-transfer-content {
-  justify-content: center;
-  padding: 0;
-  gap: 0;
+.floating-transfer-shell--compact .floating-transfer-dial {
+  width: 40px;
+  height: 40px;
 }
 
 .floating-transfer-shell--compact .floating-transfer-icon {
-  width: 32px;
-  height: 32px;
+  width: 31px;
+  height: 31px;
 }
 
-.floating-transfer-shell--compact .floating-transfer-icon svg {
-  width: 19px;
-  height: 19px;
+.floating-transfer-shell--compact.floating-transfer-shell--idle .floating-transfer-icon {
+  width: 34px;
+  height: 34px;
 }
 
-.floating-transfer-shell--compact .floating-transfer-copy,
-.floating-transfer-shell--compact .floating-transfer-value {
-  display: none;
-}
-
-.floating-transfer-shell[data-reduce-motion="true"],
-.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon,
-.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__state,
-.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__action {
-  transition-duration: 90ms;
+.floating-transfer-shell--compact .floating-transfer-brand {
+  width: 28px;
+  height: 28px;
 }
 
 .floating-transfer-copy {
-  flex: 1 1 auto;
+  flex: 0 0 207px;
+  width: 207px;
   min-width: 0;
   display: grid;
+  gap: 5px;
   line-height: 1.15;
+  contain: layout style;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 170ms ease-out 55ms,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1) 40ms;
 }
 
-.floating-transfer-copy strong {
+.floating-transfer-shell--compact .floating-transfer-copy {
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 90ms ease-out,
+    transform 140ms ease-out;
+}
+
+.floating-transfer-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.floating-transfer-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.floating-transfer-heading strong {
   overflow: hidden;
+  color: var(--text);
   font-size: 12.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.floating-transfer-copy small {
-  overflow: hidden;
-  margin-top: 3px;
-  color: var(--muted);
+.floating-transfer-count {
+  flex: 0 0 auto;
+  color: var(--subtle);
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .floating-transfer-value {
   flex: 0 0 auto;
-  min-width: 40px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 650;
+  color: var(--accent-dark);
+  font-size: 12.5px;
+  font-weight: 680;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-align: right;
 }
 
 .floating-transfer-shell--paused .floating-transfer-value {
-  color: #9e6718;
+  color: var(--status-warning);
+}
+
+.floating-transfer-shell--attention .floating-transfer-value {
+  color: var(--status-error);
+}
+
+.floating-transfer-telemetry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 14px;
+}
+
+.floating-transfer-bar {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 44px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface-recessed));
+}
+
+.floating-transfer-shell--paused .floating-transfer-bar {
+  background: color-mix(in srgb, var(--status-warning) 18%, var(--surface-recessed));
+}
+
+.floating-transfer-progress {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+  background: var(--accent);
+  transition:
+    transform 220ms var(--motion-spring),
+    background-color var(--motion-micro) ease-out;
+  will-change: transform;
+}
+
+.floating-transfer-shell--paused .floating-transfer-progress {
+  background: var(--status-warning);
+}
+
+.floating-transfer-progress--unknown {
+  width: 38%;
+  animation: floating-bar-slide 1.25s ease-in-out infinite;
+}
+
+.floating-transfer-meta,
+.floating-transfer-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-transfer-meta {
+  flex: 0 0 auto;
+  max-width: 120px;
+}
+
+.floating-transfer-shell[data-reduce-motion="true"],
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-content,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-dial,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-copy,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-brand,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__state,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-icon__action,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-ring__fill,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-progress {
+  transition-duration: 0ms;
+  transition-delay: 0ms;
+}
+
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-ring--indeterminate,
+.floating-transfer-shell[data-reduce-motion="true"] .floating-transfer-progress--unknown {
+  animation: none;
+}
+
+@keyframes floating-ring-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+
+@keyframes floating-bar-slide {
+  0% {
+    transform: translateX(-105%);
+  }
+  100% {
+    transform: translateX(275%);
+  }
 }
 
 .floating-window-prompt {
@@ -6091,6 +6333,11 @@ select.input {
   .file-row:not(.file-row--header) .checkbox,
   .file-row:not(:hover):not(:focus-within):not(.file-row--selected) .row-action {
     opacity: 1;
+  }
+  .floating-transfer-shell {
+    box-shadow:
+      0 5px 12px -2px rgba(15, 23, 42, 0.24),
+      0 0 0 1.5px var(--border-strong);
   }
   button:focus-visible,
   input:focus-visible,

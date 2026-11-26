@@ -43,6 +43,30 @@ describe('summarizeFloatingTransfers', () => {
     expect(summary.percent).toBe(92.5)
   })
 
+  it('aggregates live upload and download rates from active transfer speed samples', () => {
+    const summary = summarizeFloatingTransfers([
+      transfer({
+        id: 'dl',
+        direction: 'download',
+        speedSamples: [
+          { recordedAt: 1000, bytesTransferred: 0 },
+          { recordedAt: 3000, bytesTransferred: 2 * 1024 * 1024 },
+        ],
+      }),
+      transfer({
+        id: 'ul',
+        direction: 'upload',
+        speedSamples: [
+          { recordedAt: 1000, bytesTransferred: 512 * 1024 },
+          { recordedAt: 2000, bytesTransferred: 1024 * 1024 },
+        ],
+      }),
+    ])
+
+    expect(summary.downloadBytesPerSecond).toBe(1024 * 1024)
+    expect(summary.uploadBytesPerSecond).toBe(512 * 1024)
+  })
+
   it('does not invent a percentage when any unfinished total is unknown', () => {
     const summary = summarizeFloatingTransfers([
       transfer(),

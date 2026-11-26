@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use tauri::{
     App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, WebviewUrl,
@@ -12,16 +12,21 @@ use crate::{AppState, settings::InterfaceLanguage};
 
 pub const FLOATING_WINDOW_LABEL: &str = "transfer-float";
 pub const FLOATING_WINDOW_DISABLED_EVENT: &str = "koofr://floating-window-disabled";
+pub const FLOATING_WINDOW_ANCHOR_EVENT: &str = "koofr://floating-window-anchor";
 const FLOATING_MENU_OPEN_ID: &str = "floating-open-app";
 const FLOATING_MENU_CLOSE_ID: &str = "floating-close-window";
 const FLOATING_MENU_QUIT_ID: &str = "floating-quit-app";
-const FLOATING_WINDOW_WIDTH: f64 = 300.0;
-const FLOATING_WINDOW_HEIGHT: f64 = 72.0;
-const FLOATING_WINDOW_COMPACT_SIZE: f64 = 52.0;
-const FLOATING_WINDOW_MARGIN: i32 = 20;
+// Logical window sizes include the transparent shadow gutter (14px horizontal,
+// 10px top, 16px bottom) around the visible 280x56 capsule and 52x48 organic pebble.
+const FLOATING_WINDOW_WIDTH: f64 = 308.0;
+const FLOATING_WINDOW_HEIGHT: f64 = 82.0;
+const FLOATING_WINDOW_COMPACT_WIDTH: f64 = 80.0;
+const FLOATING_WINDOW_COMPACT_HEIGHT: f64 = 74.0;
+const FLOATING_WINDOW_MARGIN: i32 = 8;
 static FLOATING_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static FLOATING_RESIZE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static FLOATING_RESIZE_ACTIVE: AtomicU64 = AtomicU64::new(0);
+static FLOATING_LAST_ANCHOR: AtomicU8 = AtomicU8::new(0);
 
 #[tauri::command]
 pub fn set_taskbar_badge(
@@ -101,13 +106,21 @@ fn setup_floating_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
         tauri::async_runtime::block_on(app.state::<AppState>().settings.notifications());
     let saved_position =
         tauri::async_runtime::block_on(app.state::<AppState>().settings.floating_window_position());
+    let (initial_width, initial_height) = if notifications.floating_window_compact_enabled {
+        (
+            FLOATING_WINDOW_COMPACT_WIDTH,
+            FLOATING_WINDOW_COMPACT_HEIGHT,
+        )
+    } else {
+        (FLOATING_WINDOW_WIDTH, FLOATING_WINDOW_HEIGHT)
+    };
     let window = WebviewWindowBuilder::new(
         app,
         FLOATING_WINDOW_LABEL,
         WebviewUrl::App("index.html?view=transfer-float".into()),
     )
-    .title("Koofr Transfers")
-    .inner_size(FLOATING_WINDOW_WIDTH, FLOATING_WINDOW_HEIGHT)
+    .title("Suitcase Transfers")
+    .inner_size(initial_width, initial_height)
     .decorations(false)
     .resizable(false)
     .minimizable(false)
@@ -126,7 +139,7 @@ fn setup_floating_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
         FLOATING_MENU_QUIT_ID => request_quit(window.app_handle()),
         _ => {}
     });
-    place_floating_window(&window, saved_position)?;
+    place_floating_window(&window, saved_position, initial_width, initial_height)?;
     if notifications.floating_window_enabled {
         window.show()?;
     }
@@ -136,6 +149,8 @@ fn setup_floating_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
 fn place_floating_window<R: Runtime>(
     window: &WebviewWindow<R>,
     saved_position: Option<(i32, i32)>,
+    logical_width: f64,
+    logical_height: f64,
 ) -> tauri::Result<()> {
     let monitors = window.available_monitors()?;
     if let Some(((x, y), monitor)) = saved_position.and_then(|position| {
@@ -154,8 +169,8 @@ fn place_floating_window<R: Runtime>(
         })
     }) {
         let scale = monitor.scale_factor();
-        let width = (FLOATING_WINDOW_WIDTH * scale).round() as i32;
-        let height = (FLOATING_WINDOW_HEIGHT * scale).round() as i32;
+        let width = (logical_width * scale).round() as i32;
+        let height = (logical_height * scale).round() as i32;
         let position = monitor.position();
         let size = monitor.size();
         let right = position
@@ -182,7 +197,7 @@ fn place_floating_window<R: Runtime>(
         return Ok(());
     };
     let scale = monitor.scale_factor();
-    let width = (FLOATING_WINDOW_WIDTH * scale).round() as i32;
+    let width = (logical_width * scale).round() as i32;
     let position = monitor.position();
     let size = monitor.size();
     let x = position
@@ -237,8 +252,8 @@ pub fn open_main_window_from_floating(
 pub fn set_floating_window_compact(
     window: WebviewWindow,
     compact: bool,
-    reduce_motion: bool,
-) -> Result<(), crate::error::CommandError> {
+    _reduce_motion: bool,
+) -> Result<String, crate::error::CommandError> {
     if window.label() != FLOATING_WINDOW_LABEL {
         return Err(crate::error::AppError::Forbidden.into());
     }
@@ -253,25 +268,34 @@ pub fn set_floating_window_compact(
         .map_err(|_| crate::error::AppError::LocalData)?
         .or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
-        return Ok(());
+        return Ok("right".to_owned());
     };
+    let anchor = floating_anchor_side(
+        current_position,
+        current_size,
+        *monitor.position(),
+        *monitor.size(),
+    );
+    let anchor_code = if anchor == "right" { 2 } else { 1 };
+    FLOATING_LAST_ANCHOR.store(anchor_code, Ordering::Release);
+
     let scale = monitor.scale_factor();
-    let logical_size = if compact {
-        FLOATING_WINDOW_COMPACT_SIZE
+    let logical_width = if compact {
+        FLOATING_WINDOW_COMPACT_WIDTH
     } else {
         FLOATING_WINDOW_WIDTH
     };
     let logical_height = if compact {
-        FLOATING_WINDOW_COMPACT_SIZE
+        FLOATING_WINDOW_COMPACT_HEIGHT
     } else {
         FLOATING_WINDOW_HEIGHT
     };
     let target_size = PhysicalSize::new(
-        (logical_size * scale).round() as u32,
+        (logical_width * scale).round() as u32,
         (logical_height * scale).round() as u32,
     );
     if current_size == target_size {
-        return Ok(());
+        return Ok(anchor.to_owned());
     }
     let target_position = floating_resize_target(
         current_position,
@@ -285,49 +309,99 @@ pub fn set_floating_window_compact(
         .fetch_add(1, Ordering::Relaxed)
         .saturating_add(1);
     FLOATING_RESIZE_ACTIVE.store(generation, Ordering::Release);
+    set_window_bounds_atomic(&window, target_position, target_size)
+        .map_err(|_| crate::error::AppError::LocalData)?;
     let app = window.app_handle().clone();
+    persist_floating_position(app, target_position);
     tauri::async_runtime::spawn(async move {
-        let duration_ms = if reduce_motion { 1.0 } else { 260.0 };
-        let started = std::time::Instant::now();
-        loop {
-            if FLOATING_RESIZE_GENERATION.load(Ordering::Acquire) != generation {
-                return;
-            }
-            let elapsed = started.elapsed().as_secs_f64() * 1000.0;
-            let progress = (elapsed / duration_ms).clamp(0.0, 1.0);
-            // Critically damped response, normalized so the last frame is exact.
-            let response = 1.0 - (1.0 + 6.0 * progress) * (-6.0 * progress).exp();
-            let end_response = 1.0 - 7.0 * (-6.0_f64).exp();
-            let t = if reduce_motion {
-                1.0
-            } else {
-                response / end_response
-            };
-            let lerp = |from: i64, to: i64| (from as f64 + (to - from) as f64 * t).round() as i64;
-            let size = PhysicalSize::new(
-                lerp(i64::from(current_size.width), i64::from(target_size.width)) as u32,
-                lerp(
-                    i64::from(current_size.height),
-                    i64::from(target_size.height),
-                ) as u32,
-            );
-            let position = PhysicalPosition::new(
-                lerp(i64::from(current_position.x), i64::from(target_position.x)) as i32,
-                lerp(i64::from(current_position.y), i64::from(target_position.y)) as i32,
-            );
-            let _ = window.set_size(size);
-            let _ = window.set_position(position);
-            if progress >= 1.0 {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
-        }
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         if FLOATING_RESIZE_GENERATION.load(Ordering::Acquire) == generation {
             FLOATING_RESIZE_ACTIVE.store(0, Ordering::Release);
-            persist_floating_position(app, target_position);
         }
     });
-    Ok(())
+    Ok(anchor.to_owned())
+}
+
+#[cfg(windows)]
+fn set_window_bounds_atomic<R: Runtime>(
+    window: &WebviewWindow<R>,
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> tauri::Result<()> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
+    };
+    let hwnd = window.hwnd()?;
+    let updated = unsafe {
+        SetWindowPos(
+            hwnd.0,
+            std::ptr::null_mut(),
+            position.x,
+            position.y,
+            i32::try_from(size.width).unwrap_or(i32::MAX),
+            i32::try_from(size.height).unwrap_or(i32::MAX),
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        )
+    };
+    if updated != 0 {
+        return Ok(());
+    }
+    window.set_size(size)?;
+    window.set_position(position)
+}
+
+#[cfg(not(windows))]
+fn set_window_bounds_atomic<R: Runtime>(
+    window: &WebviewWindow<R>,
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> tauri::Result<()> {
+    window.set_size(size)?;
+    window.set_position(position)
+}
+
+fn floating_anchor_side(
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    monitor_position: PhysicalPosition<i32>,
+    monitor_size: PhysicalSize<u32>,
+) -> &'static str {
+    let monitor_right = monitor_position
+        .x
+        .saturating_add(i32::try_from(monitor_size.width).unwrap_or(i32::MAX));
+    let current_right = position
+        .x
+        .saturating_add(i32::try_from(size.width).unwrap_or(i32::MAX));
+    let left_distance = position.x.saturating_sub(monitor_position.x);
+    let right_distance = monitor_right.saturating_sub(current_right);
+    if right_distance < left_distance {
+        "right"
+    } else {
+        "left"
+    }
+}
+
+fn emit_floating_anchor_if_changed<R: Runtime>(
+    app: &AppHandle<R>,
+    window: &tauri::Window<R>,
+    position: PhysicalPosition<i32>,
+) {
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let anchor = floating_anchor_side(position, size, *monitor.position(), *monitor.size());
+    let code = if anchor == "right" { 2 } else { 1 };
+    if FLOATING_LAST_ANCHOR.swap(code, Ordering::AcqRel) != code {
+        let _ = app.emit_to(FLOATING_WINDOW_LABEL, FLOATING_WINDOW_ANCHOR_EVENT, anchor);
+    }
 }
 
 fn floating_resize_target(
@@ -470,6 +544,7 @@ pub fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri:
                 if FLOATING_RESIZE_ACTIVE.load(Ordering::Acquire) == 0 =>
             {
                 persist_floating_position(app.clone(), *position);
+                emit_floating_anchor_if_changed(app, window, *position);
             }
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();

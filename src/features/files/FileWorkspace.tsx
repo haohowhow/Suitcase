@@ -434,8 +434,14 @@ export const FileWorkspace = memo(function FileWorkspace({
               <button
                 className="file-name file-name--button"
                 type="button"
-                onDoubleClick={() => directory ? onNavigate(file.path) : previewable ? onPreview(file) : onDownload(file)}
-                onClick={(event) => selectRow(file.path, event)}
+                onDoubleClick={directory ? undefined : () => (previewable ? onPreview(file) : onDownload(file))}
+                onClick={(event) => {
+                  if (directory && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                    onNavigate(file.path)
+                    return
+                  }
+                  selectRow(file.path, event)
+                }}
               >
                 <FileTypeIcon kind={kind} />
                 <strong translate="no">{file.name}</strong>

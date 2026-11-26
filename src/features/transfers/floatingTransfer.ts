@@ -42,6 +42,18 @@ export function shouldPromptForFloatingWindow(
 const ACTIVE_STATES = new Set(['queued', 'running', 'retrying'])
 const UNFINISHED_STATES = new Set([...ACTIVE_STATES, 'paused'])
 
+function currentTransferBytesPerSecond(item: TransferItem) {
+  const samples = item.speedSamples
+  const current = samples.at(-1)
+  const previous = samples.at(-2)
+  if (!current || !previous || current.recordedAt <= previous.recordedAt) return 0
+  return Math.max(
+    0,
+    (current.bytesTransferred - previous.bytesTransferred)
+      / ((current.recordedAt - previous.recordedAt) / 1000),
+  )
+}
+
 export function summarizeFloatingTransfers(
   items: readonly TransferItem[],
   syncPairs: readonly SyncPairSummary[] = [],
@@ -63,8 +75,16 @@ export function summarizeFloatingTransfers(
     : unfinished.length > 0 ? 'transfer'
       : activeSync.length > 0 || pausedSync.length > 0 ? 'sync' : 'none'
   const syncIssueCount = syncPairs.reduce((sum, pair) => sum + pair.issueCount, 0)
-  const uploadBytesPerSecond = activeSync.reduce((sum, pair) => sum + pair.upload.bytesPerSecond, 0)
-  const downloadBytesPerSecond = activeSync.reduce((sum, pair) => sum + pair.download.bytesPerSecond, 0)
+  const transferUploadBytesPerSecond = active
+    .filter((item) => item.direction === 'upload')
+    .reduce((sum, item) => sum + currentTransferBytesPerSecond(item), 0)
+  const transferDownloadBytesPerSecond = active
+    .filter((item) => item.direction === 'download')
+    .reduce((sum, item) => sum + currentTransferBytesPerSecond(item), 0)
+  const uploadBytesPerSecond = transferUploadBytesPerSecond
+    + activeSync.reduce((sum, pair) => sum + pair.upload.bytesPerSecond, 0)
+  const downloadBytesPerSecond = transferDownloadBytesPerSecond
+    + activeSync.reduce((sum, pair) => sum + pair.download.bytesPerSecond, 0)
   const base = { activityKind, syncPairCount: syncPairs.length, syncIssueCount, uploadBytesPerSecond, downloadBytesPerSecond }
   if (mode === 'idle') {
     return { ...base, mode, direction: null, percent: null, taskCount: 0 }

@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Ban,
   Bell,
   Bug,
@@ -537,7 +538,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Cog aria-hidden="true" />
               <div>
                 <h3>通用</h3>
-                <p>启动、托盘与退出行为。</p>
+                <p>启动、托盘、悬浮窗与退出行为。</p>
               </div>
             </header>
 
@@ -573,6 +574,50 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             <p className="settings-note">
               说明：托盘图标常驻 Windows 通知区域；若被系统折叠，可在任务栏设置中将其固定。
             </p>
+
+            <header className="settings-section__heading settings-section__heading--nested">
+              <AppWindow aria-hidden="true" />
+              <div>
+                <h3>传输悬浮窗</h3>
+                <p>在桌面置顶显示传输状态并快速控制任务。</p>
+              </div>
+            </header>
+
+            <SwitchRow
+              label="显示传输悬浮窗"
+              hint="置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口"
+              checked={settings.floatingWindowEnabled}
+              disabled={busy || !onNotificationChange}
+              onChange={(next) => updateNotifications({
+                floatingWindowEnabled: next,
+                floatingWindowPrompted: true,
+              })}
+            />
+            {settings.floatingWindowEnabled ? (
+              <>
+                <SwitchRow
+                  label="空闲或暂停时收为图标"
+                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
+                  checked={settings.floatingWindowCompactEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
+                />
+                <SwitchRow
+                  label="单击暂停或继续"
+                  hint="一键暂停或继续所有可暂停的传输"
+                  checked={settings.floatingWindowClickToggleEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
+                />
+                <SwitchRow
+                  label="双击打开应用"
+                  hint="双击悬浮窗回到 Suitcase 主窗口"
+                  checked={settings.floatingWindowDoubleClickOpenEnabled}
+                  disabled={busy || !onNotificationChange}
+                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
+                />
+              </>
+            ) : null}
           </section>
         ) : null}
 
@@ -1285,7 +1330,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               <Bell aria-hidden="true" />
               <div>
                 <h3>通知</h3>
-                <p>设置传输完成提醒、任务栏角标与桌面悬浮窗。</p>
+                <p>设置传输完成提醒与任务栏角标。</p>
               </div>
             </header>
 
@@ -1310,41 +1355,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               disabled={busy || !onNotificationChange}
               onChange={(next) => updateNotifications({ trayBadge: next })}
             />
-            <SwitchRow
-              label="显示传输悬浮窗"
-              hint="置顶显示上传、下载或暂停状态；支持单击暂停或继续、双击打开主窗口"
-              checked={settings.floatingWindowEnabled}
-              disabled={busy || !onNotificationChange}
-              onChange={(next) => updateNotifications({
-                floatingWindowEnabled: next,
-                floatingWindowPrompted: true,
-              })}
-            />
-            {settings.floatingWindowEnabled ? (
-              <>
-                <SwitchRow
-                  label="空闲或暂停时收为图标"
-                  hint="任务完成提示消失后，悬浮窗缩小为一个图标"
-                  checked={settings.floatingWindowCompactEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowCompactEnabled: next })}
-                />
-                <SwitchRow
-                  label="单击暂停或继续"
-                  hint="一键暂停或继续所有可暂停的传输"
-                  checked={settings.floatingWindowClickToggleEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowClickToggleEnabled: next })}
-                />
-                <SwitchRow
-                  label="双击打开应用"
-                  hint="双击悬浮窗回到 Suitcase 主窗口"
-                  checked={settings.floatingWindowDoubleClickOpenEnabled}
-                  disabled={busy || !onNotificationChange}
-                  onChange={(next) => updateNotifications({ floatingWindowDoubleClickOpenEnabled: next })}
-                />
-              </>
-            ) : null}
           </section>
         ) : null}
 
