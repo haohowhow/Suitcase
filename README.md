@@ -26,7 +26,7 @@
   - [功能](#功能)
     - [已实现的功能](#已实现的功能)
     - [尚未实现的功能](#尚未实现的功能)
-  - [下载与安装](#下载与安装)
+  - [下载与使用](#下载与使用)
   - [系统要求](#系统要求)
     - [运行](#运行)
     - [从源码构建](#从源码构建)
@@ -116,13 +116,13 @@ Suitcase 是一个第三方、Windows 优先、面向原生文件管理器体验
 
 > **普通上传为什么不能续传？** Koofr 公开上传接口仅提供整文件 `FilesPut`，不支持分块会话或服务端偏移确认，因此普通上传中断后必须重新传输整个文件。分卷上传是针对该限制选定的互操作方案，详见 [ARCHITECTURE.md](docs/ARCHITECTURE.md#分卷上传设计)。
 
-## 下载与安装
+## 下载与使用
 
-已发布的安装包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://github.com/haohowhow/Suitcase/releases) 下载最新的 NSIS 安装包（例如 `Suitcase_<version>_x64-setup.exe`）。
+已发布的便携压缩包（如有）会列在 Releases 页面。建议从 [Releases 页面](https://github.com/haohowhow/Suitcase/releases) 下载最新的便携版 ZIP（例如 `Suitcase_<version>_x64-portable.zip`），解压到任意目录后直接运行 `suitcase.exe` 即可，无需安装。
 
-> ⚠️ **未签名警告**：安装包当前不做代码签名，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库的 Releases 页面下载，不要使用第三方镜像。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
+> ⚠️ **未签名警告**：发布包当前不做代码签名，Windows SmartScreen 可能提示“未知发布者”。请仅从本仓库的 Releases 页面下载，不要使用第三方镜像。校验方式详见 [RELEASING.md](docs/RELEASING.md)。
 
-首次运行需要 Microsoft Edge WebView2 Runtime。受支持的 Windows 10 / 11 通常已自带；若缺失，安装包会引导下载。
+首次运行需要 Microsoft Edge WebView2 Runtime。受支持的 Windows 10 / 11 通常已自带；若缺失，请从 Microsoft 官方安装 Evergreen WebView2 Runtime。如曾启用 Windows 按需同步（CFAPI），删除解压目录前请先在应用内移除按需同步组（或运行 `suitcase.exe --unregister-sync-roots`）。
 
 ## 系统要求
 

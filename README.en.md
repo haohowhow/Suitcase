@@ -118,11 +118,11 @@ Suitcase is an unaffiliated, Windows-first alternative client built around a nat
 
 ## Download
 
-Published installers, where available, are listed on the Releases page. Download the latest NSIS installer from the [Releases page](https://github.com/haohowhow/Suitcase/releases) (for example, `Suitcase_<version>_x64-setup.exe`).
+Published portable archives, where available, are listed on the Releases page. Download the latest portable ZIP from the [Releases page](https://github.com/haohowhow/Suitcase/releases) (for example, `Suitcase_<version>_x64-portable.zip`), extract it to any folder, and run `suitcase.exe` directly — no installation required.
 
 > ⚠️ **Unsigned binaries**: release builds are not code-signed, and Windows SmartScreen may report an unknown publisher. Download only from this repository's Releases page, never from third-party mirrors. See [RELEASING.md](docs/RELEASING.md) for verification steps.
 
-The first launch requires Microsoft Edge WebView2 Runtime, which is normally pre-installed on supported Windows 10 / 11.
+The first launch requires Microsoft Edge WebView2 Runtime, which is normally pre-installed on supported Windows 10 / 11. If you enabled Windows on-demand sync (CFAPI), remove the sync root in the app (or run `suitcase.exe --unregister-sync-roots`) before deleting the extracted folder.
 
 ## Requirements
 

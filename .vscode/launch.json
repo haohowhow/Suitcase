@@ -35,10 +35,10 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "构建：NSIS 安装包",
+      "name": "构建：便携压缩包（ZIP）",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run build:installer",
+      "command": "npm run build:portable",
       "cwd": "${workspaceFolder}"
     },
     {

@@ -10,9 +10,9 @@
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
-      "label": "Suitcase: 构建 NSIS 安装包",
+      "label": "Suitcase: 打包便携压缩包（ZIP）",
       "type": "npm",
-      "script": "build:installer",
+      "script": "build:portable",
       "group": "build",
       "problemMatcher": ["$rustc"]
     },

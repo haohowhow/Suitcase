@@ -4,8 +4,13 @@
 
 ## [Unreleased]
 
+## [26.0.0] - 2026-11-26
+
 ### Changed
 
+- 品牌更名为 **Suitcase**（包名 `suitcase`、应用标识 `app.suitcase.desktop`、凭据服务名 `Suitcase`），并随发布包附带 `THIRD_PARTY_NOTICES.md`、`licenses/` 与 `third_party/libraw-0.21.1/` 第三方许可合规文件。
+- 调整发布形式为 Windows x64 便携压缩包（`Suitcase_26.0.0_x64-portable.zip`，解压即用，不再发布 NSIS 安装包），并附带 `SHA256SUMS` 校验文件。
+- 公开托管仓库迁移回 GitHub（`https://github.com/haohowhow/Suitcase`），同步更新应用内链接、文档与 GitHub Issue 模板，同时保留 Forgejo 镜像发布脚本。
 - 精简项目文档以贴合个人维护定位：移除 `CONTRIBUTING.md`、`.forgejo/PULL_REQUEST_TEMPLATE.md` 及各文档中的外部贡献 / PR 指南与交接入口；将面向 AI 代理的 `docs/AGENT_HANDOFF.md`、`docs/PROJECT_STATUS.md` 移出版本跟踪并加入 `.gitignore`。
 - 前端界面去模板化并精修桌面视觉质感：采用 `--chrome-bg` 外壳与左上圆角内嵌白底工作区、36px 几何标题栏及全主题自适应白底剪影品牌图标；升级主强调色对比度（主按钮统一为纯白文字加微高光投影）与凸起式白底侧栏选中态；登录页采用顶部微环境光画布与 400px 圆润桌面卡片；文件与集合工作区去除多重堆叠横线，改用下沉式一体地址栏与筛选框、18px 目录标题层次、粘性半透明表头及圆角悬浮行高光；传输面板收窄为 392px 检查器侧栏并补充速度曲线面积底色，弹窗摘要条统一为白底键帽徽标，补齐 `.sr-only` 与自定义下拉箭头和细滚动条。
 - 清理全栈面向开发者的自证式提示文案：移除 Koofr Vault 弹窗顶部的系统输入方式说明横幅与 Windows 原生密码框中“Safe Key 只会交给本机 Rust 后端”等内部架构表述，改为自然的解锁、设置、确认、移除与导出提示语（同步跟随界面中英文语言设置）；精简登录页“网页存储”、传输悬浮窗引导“只同步任务数量与汇总百分比”、设置面板各分组说明及后端错误与同步提示中的工程化措辞（如“后端初始化失败”“文件未发布”“挂载点”“Salt 或密文”“Cloud Files API”“同步根”），并修复英文退出确认框的多余换行空格。

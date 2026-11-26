@@ -4,11 +4,10 @@
 
 ## 发布策略
 
-- 仅发布 Windows x64 NSIS 安装包，暂不做代码签名。
-- 唯一的发布渠道是[本仓库 Releases](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases)。私有仓库需要登录并具备访问权限才能下载。
-- 每次发布附带 `SHA256SUMS`，仅包含本次安装包的 SHA-256；不上传账户数据、日志或凭据。
-- 上传脚本仅创建草稿，拒绝覆盖已发布 Release 或已有附件。人工检查附件与说明后，再在 Forgejo 发布。
-- 仓库 Actions 暂时关闭，原 GitHub 工作流已移除。待配置专用 Windows runner 后再启用；不能假定 Forgejo 提供与 GitHub `windows-latest` 等价的托管环境。
+- 仅发布 Windows x64 便携压缩包（`Suitcase_<version>_x64-portable.zip`，解压即用，不再提供 NSIS 安装包），暂不做代码签名。
+- 压缩包内包含 `suitcase.exe`、`LICENSE`、`THIRD_PARTY_NOTICES.md`、`licenses/` 与 `third_party/libraw-0.21.1/`。
+- 主要发布渠道为 [GitHub Releases](https://github.com/haohowhow/Suitcase/releases)，同时保留 [Forgejo Releases](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases) 同步脚本。
+- 每次发布附带 `SHA256SUMS`，仅包含本次便携压缩包的 SHA-256；不上传账户数据、日志或凭据。
 
 ## 版本号规则
 
@@ -33,10 +32,10 @@
 ```powershell
 npm ci
 npm run check
-npm run build:installer
+npm run build:portable
 ```
 
-构建产物位于 `src-tauri/target/release/bundle/nsis/`，实际文件名来自 Tauri 的 `productName`，例如 `Suitcase_<version>_x64-setup.exe`。请在本机验证安装、启动与关键操作；自动化检查不能替代 GUI 验收。
+构建产物位于 `src-tauri/target/release/bundle/portable/`，包含 `Suitcase_<version>_x64-portable.zip` 与 `SHA256SUMS`。请在本机解压验证启动与关键操作；自动化检查不能替代 GUI 验收。
 
 ### 3. 提交并推送标签
 
@@ -84,14 +83,14 @@ try {
 
 打开 [Releases](https://forgejo.haohaohow.com/wenhaozheng/Suitcase/releases)，核对标签、说明、两个附件、安装包版本与哈希。完成人工安装验收后再发布草稿。未完成 GUI 验收的包应保留为草稿。
 
-## 用户如何校验安装包
+## 用户如何校验发布包
 
-1. 从本仓库 Forgejo Releases 下载，确认所有者为 `wenhaozheng`、仓库为 `Suitcase`。
-2. 确认标签、安装包文件名与 CHANGELOG 版本一致。
+1. 从本仓库 GitHub Releases（`haohowhow/Suitcase`）或 Forgejo Releases（`wenhaozheng/Suitcase`）下载。
+2. 确认标签、压缩包文件名与 CHANGELOG 版本一致。
 3. 同时下载 `SHA256SUMS`，计算并比对完整 SHA-256：
 
    ```powershell
-   Get-FileHash 'Suitcase_<version>_x64-setup.exe' -Algorithm SHA256
+   Get-FileHash 'Suitcase_<version>_x64-portable.zip' -Algorithm SHA256
    ```
 
 哈希校验只能确认文件与发布页面公布的文件一致，不等同于代码签名。发布包仍可能触发 Windows SmartScreen 未知发布者提示。

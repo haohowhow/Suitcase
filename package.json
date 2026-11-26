@@ -1,7 +1,7 @@
 {
   "name": "suitcase",
   "private": true,
-  "version": "2.7.0",
+  "version": "26.0.0",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -13,7 +13,7 @@
     "dev:desktop": "tauri dev",
     "build": "tsc -b && vite build",
     "build:desktop": "tauri build --no-bundle",
-    "build:installer": "tauri build --bundles nsis",
+    "build:portable": "npm run build:desktop && node scripts/package-portable.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "clean:frontend": "node scripts/clean.mjs frontend",

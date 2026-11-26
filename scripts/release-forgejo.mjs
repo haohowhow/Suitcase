@@ -17,7 +17,7 @@ export function releaseNotes(changelog, version) {
   const end = lines.findIndex((line, index) => index > start && line.startsWith('## ['))
   const notes = lines.slice(start + 1, end < 0 ? undefined : end).join('\n').trim()
   if (!notes) throw new Error('The release notes are empty.')
-  return `${notes}\n\nUnsigned Windows x64 installer. Verify its SHA-256 against SHA256SUMS before running it.`
+  return `${notes}\n\nUnsigned Windows x64 portable archive (extract and run). Verify its SHA-256 against SHA256SUMS before running it.`
 }
 
 // Authenticated requests stay on this Forgejo origin and never follow redirects.
@@ -110,19 +110,19 @@ async function main() {
   if (!dryRun && git('status', '--porcelain')) {
     throw new Error('Commit or preserve local changes before uploading a release.')
   }
-  const installerName = `${tauri.productName}_${pkg.version}_x64-setup.exe`
-  const installerPath = join(projectRoot, 'src-tauri/target/release/bundle/nsis', installerName)
-  let installerStat
-  try { installerStat = await lstat(installerPath) } catch {
-    throw new Error('The current installer is missing. Run npm run check and npm run build:installer first.')
+  const archiveName = `${tauri.productName}_${pkg.version}_x64-portable.zip`
+  const archivePath = join(projectRoot, 'src-tauri/target/release/bundle/portable', archiveName)
+  let archiveStat
+  try { archiveStat = await lstat(archivePath) } catch {
+    throw new Error('The current portable archive is missing. Run npm run check and npm run build:portable first.')
   }
-  if (!installerStat.isFile() || installerStat.isSymbolicLink() || !installerStat.size) {
-    throw new Error('The installer must be a non-empty regular file, not a symbolic link.')
+  if (!archiveStat.isFile() || archiveStat.isSymbolicLink() || !archiveStat.size) {
+    throw new Error('The portable archive must be a non-empty regular file, not a symbolic link.')
   }
   const hash = createHash('sha256')
-  for await (const chunk of createReadStream(installerPath)) hash.update(chunk)
-  const checksum = `${hash.digest('hex')}  ${installerName}\n`
-  console.log(`Tag: ${tag}\nDestination: ${releaseUrl}\nInstaller: ${installerName}\n${checksum.trim()}`)
+  for await (const chunk of createReadStream(archivePath)) hash.update(chunk)
+  const checksum = `${hash.digest('hex')}  ${archiveName}\n`
+  console.log(`Tag: ${tag}\nDestination: ${releaseUrl}\nArchive: ${archiveName}\n${checksum.trim()}`)
   if (dryRun) {
     console.log('Dry run complete; no API requests or uploads were made.')
     return
@@ -132,7 +132,7 @@ async function main() {
   const id = await uploadDraft({
     tag, commit, body,
     assets: [
-      { name: installerName, blob: await openAsBlob(installerPath) },
+      { name: archiveName, blob: await openAsBlob(archivePath) },
       { name: 'SHA256SUMS', blob: new Blob([checksum], { type: 'text/plain' }) },
     ],
   }, forgejoApi(token))
