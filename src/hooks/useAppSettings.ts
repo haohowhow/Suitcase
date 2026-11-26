@@ -363,6 +363,12 @@ export function useAppSettings(
           setSettingsError('Windows 未获得系统通知权限，传输完成通知没有开启。')
           return
         }
+        const floatingOnly = Boolean(
+          settings &&
+            next.notifyOnComplete === settings.notifyOnComplete &&
+            next.notifySound === settings.notifySound &&
+            next.trayBadge === settings.trayBadge,
+        )
         await runSettingsMutation(
           () =>
             koofr.updateNotificationSettings(
@@ -375,12 +381,12 @@ export function useAppSettings(
               next.floatingWindowClickToggleEnabled,
               next.floatingWindowDoubleClickOpenEnabled,
             ),
-          '通知设置已保存',
-          '无法保存通知设置。',
+          floatingOnly ? '悬浮窗设置已保存' : '通知设置已保存',
+          floatingOnly ? '无法保存悬浮窗设置。' : '无法保存通知设置。',
         )
       })()
     },
-    [runSettingsMutation, settings?.notifyOnComplete],
+    [runSettingsMutation, settings],
   )
 
   /** Saves the first-run floating window answer. Resolves to whether it was saved. */
@@ -401,7 +407,7 @@ export function useAppSettings(
           settings.floatingWindowDoubleClickOpenEnabled,
         )
         setSettings(next)
-        showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在通知设置中开启悬浮窗')
+        showNotice(enabled ? '传输悬浮窗已开启' : '可稍后在“通知与悬浮窗”设置中开启悬浮窗')
         return true
       } catch (error) {
         const message = commandErrorMessage(error, '无法保存悬浮窗设置。')

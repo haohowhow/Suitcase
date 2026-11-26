@@ -9,7 +9,6 @@ const defaultCallbacks = {
   onNavigate: vi.fn(),
   onRefresh: vi.fn(),
   onCreateFolder: vi.fn(),
-  onThemeOpen: vi.fn(),
   onUpload: vi.fn(),
   onDownload: vi.fn(),
   onPreview: vi.fn(),
@@ -21,9 +20,9 @@ const defaultCallbacks = {
 }
 
 describe('FileWorkspace', () => {
-  it('closes the new-item popup when the page background is clicked', async () => {
-    // Given
+  it('triggers folder creation directly without an extra dropdown step', async () => {
     const user = userEvent.setup()
+    const onCreateFolder = vi.fn()
     render(
       <FileWorkspace
         mounts={[]}
@@ -34,16 +33,12 @@ describe('FileWorkspace', () => {
         error=""
         lastSyncedAt={null}
         {...defaultCallbacks}
+        onCreateFolder={onCreateFolder}
       />,
     )
-    await user.click(screen.getByRole('button', { name: /新建/ }))
-    expect(screen.getByText('新建文件夹')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '新建文件夹' }))
 
-    // When
-    await user.click(document.body)
-
-    // Then
-    expect(screen.queryByText('新建文件夹')).toBeNull()
+    expect(onCreateFolder).toHaveBeenCalledTimes(1)
   })
 
   it('renders a distinct visual glyph for every supported file kind', () => {
@@ -191,7 +186,7 @@ describe('FileWorkspace', () => {
     expect(screen.getByRole('button', { name: '下载 report.pdf' })).not.toBeNull()
   })
 
-  it('selects folders on single click, opens on double click, supports sorting and copy', async () => {
+  it('opens folders on single click, selects folders via checkbox for copy, and supports sorting', async () => {
     const user = userEvent.setup()
     const folder: RemoteFile = {
       name: 'Docs',
@@ -237,12 +232,13 @@ describe('FileWorkspace', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Docs' }))
+    await user.click(screen.getByRole('checkbox', { name: '选择 Docs' }))
     expect(onNavigate).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '复制' }))
     expect(onCopy).toHaveBeenCalledWith([folder])
 
-    await user.dblClick(screen.getByRole('button', { name: 'Docs' }))
+    await user.click(screen.getByRole('button', { name: 'Docs' }))
+    expect(onNavigate).toHaveBeenCalledTimes(1)
     expect(onNavigate).toHaveBeenCalledWith('/Docs')
 
     await user.click(screen.getByRole('button', { name: '大小' }))

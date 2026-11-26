@@ -59,7 +59,7 @@ const enUs: Record<string, string> = {
   '全局速度上限': 'Global speed limit',
   '单任务速度上限': 'Per-task speed limit',
   '传输完成时通知': 'Notify when transfers finish',
-  '设置传输完成提醒、任务栏角标与桌面悬浮窗。': 'Configure completion alerts, taskbar badges, and the desktop floating window.',
+  '设置传输完成提醒与任务栏角标。': 'Configure completion alerts and taskbar badges.',
   '播放通知声音': 'Play notification sound',
   '显示任务栏角标': 'Show taskbar badge',
   '显示传输悬浮窗': 'Show transfer floating window',

@@ -103,7 +103,8 @@ All spacing derives from a 4px base.
 
 - Desktop shell target: 1280×720 with a 980×640 minimum native window; `36px` caption bar and `220px` navigation pane frame an inset `--surface` workspace sheet (`12px` top-left radius).
 - Sign-in view: centered `400px` tactile card (`14px` radius) on a subtly top-lit `--chrome-bg` canvas rather than a multi-column web marketing split.
-- Transfer panel: `392px` desktop inspector rail, overlaying content at narrower desktop widths (`<= 1280px`); collapses to a bottom-right desktop status pill rather than a circular FAB.
+- Transfer panel: `392px` desktop inspector rail, overlaying content at narrower desktop widths (`<= 1280px`); toggled from a dedicated sidebar `传输队列` utility entry with an active-count badge so controls never float over list rows.
+- Primary features (`我的文件`, `最近的文件`, `共享` with `共享项目` / `分享链接` tabs, `回收站`, `同步`, `私人保险箱`, `存储位置`) render directly on the inset `--surface` workspace sheet; modals are reserved for focused creation/confirmation flows and Settings.
 - Modal widths: `440px` standard, `656px` wide, and `996px` extra-wide (`12px` radius), constrained to the viewport with a fixed header, scrollable body, and bordered `--surface-subtle` footer bar. Settings use a fixed `900×640` dialog (clamped to the viewport) so switching tabs never resizes it; only the page area scrolls.
 - Controls: toolbar buttons, selects, recessed address bar, and search inputs are `34px` high (`36px` in standalone forms) with `7px–8px` radii; file rows are `42px` (`34px` in compact density) with `8px` hover/selection pills beneath a sticky `32px` header; workspace headings use `18px` semibold typography.
 - Responsive checkpoints: 1280px, 920px, and 650px; forms and setting choices collapse to one column at the compact breakpoint.
@@ -147,7 +148,7 @@ All spacing derives from a 4px base.
 
 ### Share and connection management
 
-- **Structure**: file selection → Share action → compact creation dialog; sidebar entry → wide management modal → grouped records.
+- **Structure**: file selection → Share action → compact creation dialog; sidebar `共享` workspace → segmented `共享项目` / `分享链接` tabs; sidebar `存储位置` (or clickable storage quota card) → connected storage workspace with direct navigation to any online mount.
 - **Link states**: loading, empty, ready, validation error, creating, copied, revoke confirmation, and revoked.
 - **Connected storage states**: online, offline, known provider, and generic external provider.
 - **Safety**: destructive link revocation requires an explicit second click. Third-party authorization stays on Koofr's official account surface until a public desktop API exists.
@@ -162,12 +163,14 @@ All spacing derives from a 4px base.
 
 ### Floating transfer window
 
-- **Structure**: a 252×64 Windows always-on-top progress pill that contracts to a 52×52 rounded square while paused or idle. The whole surface is the left-button drag target; there is no separate drag strip. Visual reference: [`docs/assets/floating-transfer-prototype.png`](docs/assets/floating-transfer-prototype.png).
-- **States**: weighted upload/download/mixed progress, indeterminate total, paused, short completion acknowledgement, and idle.
+- **Structure**: a `280×56` Windows always-on-top capsule pill hosted inside a `308×82` transparent shadow canvas (`14px` horizontal, `10px` top, `16px` bottom gutter) that morphs smoothly into a `52×48` sculpted organic pebble (`80×74` canvas) while paused or idle. The visible pill/pebble is the left-button drag target; there is no separate drag strip.
+- **Dial & Brand Mark**: a concentric `38×38` circular status dial (`40×40` in compact pebble) pairs an inline SVG progress ring with a soft-tinted center glyph. While idle, the asymmetric pebble uses a subtle theme-tinted porcelain sheen without a harsh circular stroke and displays Suitcase's miniature jewel brand mark.
+- **Telemetry**: expanded active and paused states show a crisp header row (status, task count, tabular percentage) over an inline `4px` rounded progress bar and smart single-line live speed readout (showing only active upload/download directions without zero-rate clutter).
+- **States**: weighted upload/download/mixed progress, indeterminate total, paused (preserving circular progress ring even when collapsed), short completion acknowledgement, sync attention/offline, and idle.
 - **Context menu**: right-click opens the native Windows menu for opening Suitcase, closing the floating window, or safely quitting the application.
-- **Privacy**: receives only direction, task count, aggregate percentage, theme/language, and a completion counter; never a file name or path.
-- **Motion**: window form retargets from its current presentation size with a critically damped response; icons use restrained micro feedback. Reduced motion keeps the state change but removes spatial transition.
-- **Surface**: one warm off-white structural material with a single neutral outline and restrained inset highlight. Icons are unframed, percentage is plain text, and active progress is a thin bottom-edge fill; no nested rounded rectangles, decorative gradient, looping pulse, or stacked glass.
+- **Privacy**: receives only direction, task count, aggregate percentage, aggregate rates, theme/language, and a completion counter; never a file name or path.
+- **Motion**: expand/collapse morphs entirely inside the WebView compositor at native display refresh rate (with exact `px` 8-corner `border-radius` interpolation and fixed-width copy fade so text never reflows), paired with a single atomic Win32 `SetWindowPos` handoff before expand and after collapse so the nearest horizontal edge and visible vertical center stay pixel-locked while empty space remains click-through. Reduced motion skips the animation and snaps immediately.
+- **Surface**: porcelain `--surface` with a soft multi-layer drop shadow rendered inside the transparent WebView gutter and subtle top inset highlight so the floating surface reads cleanly over both light and dark wallpapers.
 
 ### File type icon
 
