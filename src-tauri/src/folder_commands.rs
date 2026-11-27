@@ -101,6 +101,7 @@ pub async fn download_folder(
             transfer_id: &transfer_id,
             owner_id: &owner_id,
             name: &history_name,
+            mount_id: Some(mount_id.as_str()),
             remote_path: remote_path.as_str(),
             local_path: &completed_path,
             local_kind: DownloadLocalKind::Folder,

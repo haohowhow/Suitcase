@@ -7,7 +7,7 @@ import { SettingsPanel } from './SettingsPanel'
 const SETTINGS: AppSettings = {
   cacheMode: 'memory',
   cacheTtlMinutes: 15,
-  fileScanConcurrency: 6,
+  fileScanConcurrency: 128,
   cachedItems: 0,
   cacheDiskBytes: 0,
   savedEmail: null,
@@ -163,11 +163,22 @@ describe('SettingsPanel storage and diagnostics', () => {
     renderSettings({ onFileScanConcurrencyChange })
     await user.click(screen.getByRole('tab', { name: '存储与日志' }))
 
-    const select = screen.getByLabelText(/同时扫描的文件夹数/)
-    expect((select as HTMLSelectElement).value).toBe('6')
-    await user.selectOptions(select, '12')
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /同时扫描的文件夹数/ })
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: '保存' })
+    expect(input.value).toBe('128')
+    expect(screen.getByText('请输入 1～1024 的整数')).toBeTruthy()
 
-    expect(onFileScanConcurrencyChange).toHaveBeenCalledExactlyOnceWith(12)
+    for (const invalid of ['0', '1025', '1.5', '1e2', 'abc']) {
+      await user.clear(input)
+      await user.type(input, invalid)
+      expect(save.disabled).toBe(true)
+    }
+
+    await user.clear(input)
+    await user.type(input, '1024')
+    expect(onFileScanConcurrencyChange).not.toHaveBeenCalled()
+    await user.click(save)
+    expect(onFileScanConcurrencyChange).toHaveBeenCalledExactlyOnceWith(1024)
   })
 
   it('saves logging location, level, retention and rotation together', async () => {

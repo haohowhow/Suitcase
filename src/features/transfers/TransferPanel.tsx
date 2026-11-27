@@ -12,12 +12,13 @@ import {
 } from 'lucide-react'
 import { FileTypeIcon } from '../../components/FileTypeIcon'
 import { fileKindByName, formatBytes } from '../../utils/format'
-import type { RecoveryKind } from '../../types/backend'
+import type { KoofrMount, RecoveryKind } from '../../types/backend'
 import type { FileKind, TransferItem } from '../../types/files'
 
 interface TransferPanelProps {
   visible: boolean
   items: TransferItem[]
+  mounts?: readonly Pick<KoofrMount, 'id' | 'name'>[]
   onClose: () => void
   onCancel: (transferId: string) => void
   onPause: (transferId: string) => void
@@ -272,6 +273,7 @@ function SpeedChart({ item }: { readonly item: TransferItem }) {
 export const TransferPanel = memo(function TransferPanel({
   visible,
   items,
+  mounts,
   onClose,
   onCancel,
   onPause,
@@ -308,6 +310,11 @@ export const TransferPanel = memo(function TransferPanel({
   }, [filteredItems, selectedId])
 
   const selected = filteredItems.find((item) => item.id === selectedId) ?? null
+  const sourceName = mounts?.find((mount) => mount.id === selected?.sourceMountId)?.name
+    || selected?.sourceMountName
+  const fallbackSource = selected?.sourceVault || selected?.direction === 'upload'
+    ? 'Koofr'
+    : '未知存储位置'
   const runningCount = items.filter((item) => (
     item.state === 'queued' || item.state === 'running' || item.state === 'retrying'
   )).length
@@ -465,11 +472,9 @@ export const TransferPanel = memo(function TransferPanel({
           <dl className="transfer-detail__paths">
             <div>
               <dt>来源</dt>
-              <dd
-                title={selected.remotePath ?? undefined}
-                translate={selected.remotePath ? 'no' : undefined}
-              >
-                {selected.remotePath ? `Koofr · ${selected.remotePath}` : 'Koofr'}
+              <dd title={selected.remotePath ?? undefined}>
+                {sourceName ? <span translate="no">{sourceName}</span> : <span>{fallbackSource}</span>}
+                {selected.remotePath ? <> · <span translate="no">{selected.remotePath}</span></> : null}
               </dd>
             </div>
             <div>

@@ -6078,7 +6078,8 @@ select.input {
 }
 
 .settings-row select,
-.settings-row input[type="number"] {
+.settings-row input[type="number"],
+.settings-scan-concurrency-input {
   height: 34px;
   min-width: 168px;
   padding: 0 28px 0 10px;
@@ -6092,6 +6093,42 @@ select.input {
 
 .settings-row input[type="number"] {
   padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-row--scan-concurrency {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  align-items: start;
+}
+
+.settings-row--scan-concurrency label {
+  padding-top: 2px;
+}
+
+.settings-scan-concurrency-field {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-scan-concurrency-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-scan-concurrency-controls .secondary-button {
+  flex: 0 0 auto;
+  min-width: 68px;
+}
+
+.settings-scan-concurrency-input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  padding: 0 8px;
+  background: var(--surface-recessed);
+  box-shadow: none;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
@@ -7049,6 +7086,8 @@ select.input {
   }
   .settings-content { padding: 16px; }
   .settings-row--compact-grid { grid-template-columns: 1fr; row-gap: 8px; }
+  .settings-row--scan-concurrency { grid-template-columns: 1fr; row-gap: 8px; }
+  .settings-scan-concurrency-field { width: min(168px, 100%); }
   .settings-storage { align-items: flex-start; flex-wrap: wrap; }
   .settings-path-actions,
   .settings-switch-row { align-items: flex-start; }

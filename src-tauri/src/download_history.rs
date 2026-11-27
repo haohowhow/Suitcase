@@ -42,6 +42,8 @@ struct StoredDownloadHistoryItem {
     pub total_bytes: Option<u64>,
     pub local_kind: DownloadLocalKind,
     pub recovery_kind: Option<RecoveryKind>,
+    #[serde(default)]
+    pub mount_id: Option<String>,
     pub remote_path: String,
     pub local_path: PathBuf,
     pub started_at: u64,
@@ -61,6 +63,7 @@ pub struct DownloadHistoryItem {
     pub total_bytes: Option<u64>,
     pub local_kind: DownloadLocalKind,
     pub recovery_kind: Option<RecoveryKind>,
+    pub mount_id: Option<String>,
     pub remote_path: String,
     pub local_path: PathBuf,
     pub started_at: u64,
@@ -79,6 +82,7 @@ impl From<&StoredDownloadHistoryItem> for DownloadHistoryItem {
             total_bytes: item.total_bytes,
             local_kind: item.local_kind,
             recovery_kind: item.recovery_kind,
+            mount_id: item.mount_id.clone(),
             remote_path: item.remote_path.clone(),
             local_path: item.local_path.clone(),
             started_at: item.started_at,
@@ -109,6 +113,7 @@ pub struct NewDownloadHistoryItem<'a> {
     pub transfer_id: &'a str,
     pub owner_id: &'a str,
     pub name: &'a str,
+    pub mount_id: Option<&'a str>,
     pub remote_path: &'a str,
     pub local_path: &'a Path,
     pub local_kind: DownloadLocalKind,
@@ -149,6 +154,7 @@ impl DownloadHistoryStore {
             total_bytes: None,
             local_kind: item.local_kind,
             recovery_kind: item.recovery_kind,
+            mount_id: item.mount_id.map(str::to_owned),
             remote_path: item.remote_path.to_owned(),
             local_path: item.local_path.to_path_buf(),
             started_at: now,
@@ -451,6 +457,7 @@ mod tests {
                 transfer_id: &transfer_id,
                 owner_id: "owner-a",
                 name: "report.pdf",
+                mount_id: Some("onedrive-mount"),
                 remote_path: "/reports/report.pdf",
                 local_path: &local_path,
                 local_kind: DownloadLocalKind::File,
@@ -463,6 +470,7 @@ mod tests {
         let items = reloaded.list("owner-a").expect("list owner history");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].bytes_transferred, 1024);
+        assert_eq!(items[0].mount_id.as_deref(), Some("onedrive-mount"));
         assert!(
             reloaded
                 .list("owner-b")
@@ -493,6 +501,7 @@ mod tests {
                     transfer_id,
                     owner_id: "owner-a",
                     name: "archive.zip",
+                    mount_id: None,
                     remote_path: "/archive.zip",
                     local_path: &directory.join("archive.zip"),
                     local_kind: DownloadLocalKind::File,
@@ -552,6 +561,7 @@ mod tests {
                     transfer_id,
                     owner_id: "owner-a",
                     name: "Photos",
+                    mount_id: None,
                     remote_path: "/Photos",
                     local_path: &directory.join("Photos"),
                     local_kind: DownloadLocalKind::Folder,

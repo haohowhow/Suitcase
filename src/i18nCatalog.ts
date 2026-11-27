@@ -6,9 +6,11 @@
 // that embed names or numbers and therefore cannot be listed verbatim.
 
 export const catalog: Record<string, string> = {
+  '未知存储位置': 'Unknown storage location',
   // File tools
+  '请输入 1～1024 的整数': 'Enter a whole number from 1 to 1024',
   '同时扫描的文件夹数': 'Concurrent folders to scan',
-  '适用于文件工具，下次扫描生效。默认 6。': 'Applies to the next scan in File tools. Default 6.',
+  '适用于文件工具，下次扫描生效。默认 128。': 'Applies to the next scan in File tools. Default 128.',
   '扫描并发设置已保存': 'Scan concurrency saved',
   '无法保存扫描并发设置。': 'Could not save scan concurrency.',
   '个文件夹': 'folders',

@@ -215,6 +215,7 @@ export interface DownloadHistoryItem {
   readonly totalBytes: number | null
   readonly localKind: 'file' | 'folder'
   readonly recoveryKind: RecoveryKind | null
+  readonly mountId: string | null
   readonly remotePath: string
   readonly localPath: string
   readonly startedAt: number

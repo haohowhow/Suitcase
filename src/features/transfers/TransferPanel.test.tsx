@@ -16,6 +16,7 @@ function transferItem(overrides: Partial<TransferItem>): TransferItem {
     totalBytes: null,
     localKind: 'file',
     recoveryKind: null,
+    sourceMountId: 'onedrive-mount',
     remotePath: '/file.bin',
     localPath: 'C:\\Downloads\\file.bin',
     startedAt: 1_700_000_000_000,
@@ -102,6 +103,7 @@ describe('TransferPanel', () => {
     render(
       <TransferPanel
         visible
+        mounts={[{ id: 'onedrive-mount', name: 'OneDrive' }]}
         items={[
           transferItem({
             id: 'first',
@@ -140,7 +142,8 @@ describe('TransferPanel', () => {
 
     await user.click(screen.getByRole('option', { name: /first\.zip/ }))
 
-    expect(screen.getByText('Koofr · /file.bin')).toBeTruthy()
+    expect(screen.getByText('OneDrive')).toBeTruthy()
+    expect(screen.getByText('/file.bin')).toBeTruthy()
     expect(screen.getByText('C:\\Downloads\\file.bin')).toBeTruthy()
     expect(screen.getByText('平均速度')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '传输' })).toBeTruthy()

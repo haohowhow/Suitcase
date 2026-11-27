@@ -1005,6 +1005,7 @@ function App() {
           <TransferPanel
             visible={transferVisible}
             items={transfers}
+            mounts={workspace.mounts}
             onClose={handleCloseTransfer}
             onCancel={handleCancelTransfer}
             onPause={handlePauseTransfer}

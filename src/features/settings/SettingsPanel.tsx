@@ -218,6 +218,15 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
   const [perTaskBandwidthDraft, setPerTaskBandwidthDraft] = useState(
     String(settings?.perTaskBandwidthLimitKbps ?? 0),
   )
+  const savedFileScanConcurrency = settings?.fileScanConcurrency
+  const [fileScanConcurrencyDraft, setFileScanConcurrencyDraft] = useState(
+    String(savedFileScanConcurrency ?? ''),
+  )
+
+  useEffect(() => {
+    setFileScanConcurrencyDraft(String(savedFileScanConcurrency ?? ''))
+  }, [savedFileScanConcurrency])
+
   const [browsing, setBrowsing] = useState<'download' | 'work' | null>(null)
 
   useEffect(() => {
@@ -245,6 +254,12 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
       </div>
     )
   }
+
+  const scanConcurrencyText = fileScanConcurrencyDraft.trim()
+  const scanConcurrency = Number(scanConcurrencyText)
+  const canSaveScanConcurrency = !busy && /^[0-9]+$/.test(scanConcurrencyText)
+    && scanConcurrency >= 1 && scanConcurrency <= 1024
+    && scanConcurrency !== savedFileScanConcurrency
 
   const normalizedDownloadDirectory = downloadDirectory.trim()
   const normalizedWorkDirectory = workDirectory.trim()
@@ -1122,22 +1137,37 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
               </select>
             </div>
 
-            <div className="settings-row">
+            <form
+              className="settings-row settings-row--scan-concurrency"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (canSaveScanConcurrency) onFileScanConcurrencyChange(scanConcurrency)
+              }}
+            >
               <label htmlFor="file-scan-concurrency">
                 <strong>同时扫描的文件夹数</strong>
-                <small>适用于文件工具，下次扫描生效。默认 6。</small>
+                <small>适用于文件工具，下次扫描生效。默认 128。</small>
               </label>
-              <select
-                id="file-scan-concurrency"
-                value={settings.fileScanConcurrency}
-                disabled={busy}
-                onChange={(event) => onFileScanConcurrencyChange(Number(event.target.value))}
-              >
-                {Array.from({ length: 16 }, (_, index) => index + 1).map((value) => (
-                  <option key={value} value={value}>{value}</option>
-                ))}
-              </select>
-            </div>
+              <div className="settings-scan-concurrency-field">
+                <div className="settings-scan-concurrency-controls">
+                  <input
+                    className="settings-scan-concurrency-input"
+                    id="file-scan-concurrency"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={fileScanConcurrencyDraft}
+                    disabled={busy}
+                    aria-describedby="file-scan-concurrency-hint"
+                    onChange={(event) => setFileScanConcurrencyDraft(event.target.value)}
+                  />
+                  <button className="secondary-button" type="submit" disabled={!canSaveScanConcurrency}>
+                    保存
+                  </button>
+                </div>
+                <small id="file-scan-concurrency-hint">请输入 1～1024 的整数</small>
+              </div>
+            </form>
 
             <div className="settings-storage">
               <span>当前缓存 {cacheDetails?.items ?? 0} 项</span>

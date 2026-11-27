@@ -41,6 +41,9 @@ export interface TransferItem {
   readonly totalBytes: number | null
   readonly localKind: 'file' | 'folder'
   readonly recoveryKind: RecoveryKind | null
+  readonly sourceMountId?: string | null
+  readonly sourceMountName?: string
+  readonly sourceVault?: boolean
   readonly remotePath: string | null
   readonly localPath: string | null
   readonly startedAt: number | null

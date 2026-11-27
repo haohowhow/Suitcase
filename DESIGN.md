@@ -113,6 +113,7 @@ All spacing derives from a 4px base.
 
 - Dense file lists remain compact; settings and confirmation flows receive larger spacing.
 - Input/action groups remain one row while usable, then stack without horizontal scrolling.
+- The scan concurrency field aligns its input and save button with the settings control column and places the range hint below them.
 - Values outside the spacing tokens are reserved for icon geometry and existing Windows optical alignment.
 
 ## 5. Components

@@ -268,10 +268,10 @@ const fn default_close_to_tray() -> bool {
 const fn default_confirm_quit() -> bool {
     true
 }
-const FILE_SCAN_CONCURRENCY_RANGE: std::ops::RangeInclusive<u32> = 1..=16;
+const FILE_SCAN_CONCURRENCY_RANGE: std::ops::RangeInclusive<u32> = 1..=1024;
 
 const fn default_file_scan_concurrency() -> u32 {
-    6
+    128
 }
 
 const fn default_upload_concurrency() -> u32 {
@@ -926,11 +926,11 @@ mod tests {
             .await
             .expect("update cache settings");
         store
-            .update_file_scan_concurrency(12)
+            .update_file_scan_concurrency(1024)
             .await
             .expect("update file scan concurrency");
         assert!(store.update_file_scan_concurrency(0).await.is_err());
-        assert!(store.update_file_scan_concurrency(17).await.is_err());
+        assert!(store.update_file_scan_concurrency(1025).await.is_err());
         store
             .set_remembered_email(Some("person@example.com".to_owned()))
             .await
@@ -938,7 +938,7 @@ mod tests {
 
         let reloaded = SettingsStore::load(path.clone(), defaults(&directory));
         assert_eq!(reloaded.cache_policy().await, (CacheMode::Disk, 60));
-        assert_eq!(reloaded.file_scan_concurrency().await, 12);
+        assert_eq!(reloaded.file_scan_concurrency().await, 1024);
         assert_eq!(
             reloaded.remembered_email().await.as_deref(),
             Some("person@example.com")
@@ -1046,7 +1046,7 @@ mod tests {
         let store = SettingsStore::load(path, defaults(&directory));
 
         assert_eq!(store.initial_cache_directory(), &directory.join("Cache"));
-        assert_eq!(store.file_scan_concurrency().await, 6);
+        assert_eq!(store.file_scan_concurrency().await, 128);
         assert_eq!(store.log_policy().await.0, directory.join("Logs"));
         std::fs::remove_dir_all(directory).expect("remove settings directory");
     }
