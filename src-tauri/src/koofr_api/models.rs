@@ -36,6 +36,20 @@ where
         .map(|value| value.map(StringOrInteger::into_string))
 }
 
+fn deserialize_file_size<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+    Ok(Option::<i64>::deserialize(deserializer)?.unwrap_or(-1))
+}
+
+fn unknown_file_size() -> i64 {
+    -1
+}
+
+fn deserialize_nullable_string<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
@@ -66,13 +80,20 @@ pub struct Mount {
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
     pub name: String,
-    #[serde(rename(deserialize = "type", serialize = "entryType"))]
+    #[serde(
+        rename(deserialize = "type", serialize = "entryType"),
+        alias = "entryType"
+    )]
     pub entry_type: String,
     pub modified: i64,
+    #[serde(
+        default = "unknown_file_size",
+        deserialize_with = "deserialize_file_size"
+    )]
     pub size: i64,
     #[serde(default)]
     pub content_type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub hash: String,
     #[serde(default)]
     pub path: String,

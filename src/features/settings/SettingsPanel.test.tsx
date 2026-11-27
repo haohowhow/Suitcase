@@ -7,6 +7,7 @@ import { SettingsPanel } from './SettingsPanel'
 const SETTINGS: AppSettings = {
   cacheMode: 'memory',
   cacheTtlMinutes: 15,
+  fileScanConcurrency: 6,
   cachedItems: 0,
   cacheDiskBytes: 0,
   savedEmail: null,
@@ -68,6 +69,7 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsPanel>[0]> 
     downloadError: '',
     onCacheModeChange: vi.fn(),
     onCacheTtlChange: vi.fn(),
+    onFileScanConcurrencyChange: vi.fn(),
     onLoggingSettingsChange: vi.fn(),
     onTransferSettingsChange: vi.fn(),
     onDownloadSettingsChange: vi.fn(),
@@ -153,6 +155,19 @@ describe('SettingsPanel storage and diagnostics', () => {
     await user.click(screen.getByRole('button', { name: '保存数据位置' }))
 
     expect(onWorkDirectoryChange).toHaveBeenCalledWith('D:\\Fresh Koofr Work', false)
+  })
+
+  it('lets you change scan concurrency in storage settings', async () => {
+    const user = userEvent.setup()
+    const onFileScanConcurrencyChange = vi.fn()
+    renderSettings({ onFileScanConcurrencyChange })
+    await user.click(screen.getByRole('tab', { name: '存储与日志' }))
+
+    const select = screen.getByLabelText(/同时扫描的文件夹数/)
+    expect((select as HTMLSelectElement).value).toBe('6')
+    await user.selectOptions(select, '12')
+
+    expect(onFileScanConcurrencyChange).toHaveBeenCalledExactlyOnceWith(12)
   })
 
   it('saves logging location, level, retention and rotation together', async () => {

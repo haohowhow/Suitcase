@@ -41,6 +41,7 @@ interface SettingsPanelProps {
   readonly error: string
   readonly downloadError: string
   readonly onCacheModeChange: (mode: CacheMode) => void
+  readonly onFileScanConcurrencyChange: (concurrency: number) => void
   readonly onCacheTtlChange: (minutes: number) => void
   readonly onLoggingSettingsChange: (settings: {
     logLevel: LogLevel
@@ -176,6 +177,7 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
     downloadError,
     onCacheModeChange,
     onCacheTtlChange,
+    onFileScanConcurrencyChange,
     onLoggingSettingsChange,
     onTransferSettingsChange,
     onDownloadSettingsChange,
@@ -1117,6 +1119,23 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
                 <option value={60}>1 小时</option>
                 <option value={360}>6 小时</option>
                 <option value={1440}>24 小时</option>
+              </select>
+            </div>
+
+            <div className="settings-row">
+              <label htmlFor="file-scan-concurrency">
+                <strong>同时扫描的文件夹数</strong>
+                <small>适用于文件工具，下次扫描生效。默认 6。</small>
+              </label>
+              <select
+                id="file-scan-concurrency"
+                value={settings.fileScanConcurrency}
+                disabled={busy}
+                onChange={(event) => onFileScanConcurrencyChange(Number(event.target.value))}
+              >
+                {Array.from({ length: 16 }, (_, index) => index + 1).map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
               </select>
             </div>
 

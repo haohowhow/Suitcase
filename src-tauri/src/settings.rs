@@ -158,6 +158,8 @@ struct StoredSettings {
     version: u8,
     cache_mode: CacheMode,
     cache_ttl_minutes: u32,
+    #[serde(default = "default_file_scan_concurrency")]
+    file_scan_concurrency: u32,
     remembered_email: Option<String>,
     #[serde(default)]
     download_directory: Option<PathBuf>,
@@ -266,6 +268,12 @@ const fn default_close_to_tray() -> bool {
 const fn default_confirm_quit() -> bool {
     true
 }
+const FILE_SCAN_CONCURRENCY_RANGE: std::ops::RangeInclusive<u32> = 1..=16;
+
+const fn default_file_scan_concurrency() -> u32 {
+    6
+}
+
 const fn default_upload_concurrency() -> u32 {
     2
 }
@@ -312,6 +320,7 @@ impl Default for StoredSettings {
             version: SETTINGS_VERSION,
             cache_mode: CacheMode::Memory,
             cache_ttl_minutes: 15,
+            file_scan_concurrency: default_file_scan_concurrency(),
             remembered_email: None,
             download_directory: None,
             ask_download_location: default_ask_download_location(),
@@ -388,6 +397,9 @@ impl SettingsStore {
         if !(1..=3_600).contains(&state.network_retry_interval_seconds) {
             state.network_retry_interval_seconds = default_network_retry_interval_seconds();
         }
+        if !FILE_SCAN_CONCURRENCY_RANGE.contains(&state.file_scan_concurrency) {
+            state.file_scan_concurrency = default_file_scan_concurrency();
+        }
         if !(1..=16).contains(&state.upload_concurrency) {
             state.upload_concurrency = default_upload_concurrency();
         }
@@ -454,6 +466,10 @@ impl SettingsStore {
     pub async fn cache_policy(&self) -> (CacheMode, u32) {
         let state = self.state.read().await;
         (state.cache_mode, state.cache_ttl_minutes)
+    }
+
+    pub async fn file_scan_concurrency(&self) -> u32 {
+        self.state.read().await.file_scan_concurrency
     }
 
     pub async fn remembered_email(&self) -> Option<String> {
@@ -595,6 +611,14 @@ impl SettingsStore {
             state.cache_mode = cache_mode;
             state.cache_ttl_minutes = cache_ttl_minutes;
         }
+        self.persist().await
+    }
+
+    pub async fn update_file_scan_concurrency(&self, concurrency: u32) -> Result<(), AppError> {
+        if !FILE_SCAN_CONCURRENCY_RANGE.contains(&concurrency) {
+            return Err(AppError::InvalidInput("file_scan_concurrency"));
+        }
+        self.state.write().await.file_scan_concurrency = concurrency;
         self.persist().await
     }
 
@@ -902,12 +926,19 @@ mod tests {
             .await
             .expect("update cache settings");
         store
+            .update_file_scan_concurrency(12)
+            .await
+            .expect("update file scan concurrency");
+        assert!(store.update_file_scan_concurrency(0).await.is_err());
+        assert!(store.update_file_scan_concurrency(17).await.is_err());
+        store
             .set_remembered_email(Some("person@example.com".to_owned()))
             .await
             .expect("store remembered email");
 
         let reloaded = SettingsStore::load(path.clone(), defaults(&directory));
         assert_eq!(reloaded.cache_policy().await, (CacheMode::Disk, 60));
+        assert_eq!(reloaded.file_scan_concurrency().await, 12);
         assert_eq!(
             reloaded.remembered_email().await.as_deref(),
             Some("person@example.com")
@@ -1015,6 +1046,7 @@ mod tests {
         let store = SettingsStore::load(path, defaults(&directory));
 
         assert_eq!(store.initial_cache_directory(), &directory.join("Cache"));
+        assert_eq!(store.file_scan_concurrency().await, 6);
         assert_eq!(store.log_policy().await.0, directory.join("Logs"));
         std::fs::remove_dir_all(directory).expect("remove settings directory");
     }

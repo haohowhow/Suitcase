@@ -1,0 +1,85 @@
+.file-tools__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px 22px 28px;
+  scrollbar-gutter: stable;
+}
+
+.file-tools__body p {
+  margin: 0;
+}
+
+.file-tools__section {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.file-tools__line,
+.file-tools__mounts,
+.file-tools__mounts label,
+.file-tools__scope,
+.file-tools__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.file-tools__line,
+.file-tools__mounts {
+  flex-wrap: wrap;
+}
+
+.file-tools__scope {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-tools__line select {
+  max-width: min(320px, 100%);
+}
+
+.file-tools__mounts label {
+  padding: 5px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.file-tools__section small {
+  color: var(--muted);
+}
+
+.file-tools__row,
+.file-tools__group {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+
+.file-tools__group {
+  display: grid;
+  gap: 8px;
+}
+
+.file-tools__row svg {
+  flex: none;
+}
+
+.file-tools__path {
+  min-width: 0;
+  flex: 1;
+}
+
+.file-tools__error {
+  color: var(--status-error);
+}

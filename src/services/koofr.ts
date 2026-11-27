@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
@@ -42,6 +42,9 @@ import type {
   NativeSyncCapability,
   SyncRootKind,
 } from '../types/backend'
+import type {
+  FileToolsEntry, FileToolsEntryId, FileToolsMountListing, FileToolsProgress, FileToolsResults, FileToolsScope,
+} from '../types/fileTools'
 import type { SplitUploadSettings } from '../types/files'
 import type { FloatingTransferSnapshot } from '../features/transfers/floatingTransfer'
 
@@ -152,6 +155,10 @@ export const koofr = {
 
   getSettings() {
     return invoke<AppSettings>('get_settings')
+  },
+
+  updateFileScanConcurrency(concurrency: number) {
+    return invoke<AppSettings>('update_file_scan_concurrency', { concurrency })
   },
 
   updateSettings(cacheMode: CacheMode, cacheTtlMinutes: number) {
@@ -330,6 +337,38 @@ export const koofr = {
 
   setTaskbarBadge(count: number, enabled: boolean) {
     return invoke<void>('set_taskbar_badge', { count, enabled })
+  },
+
+  fileToolsMounts() {
+    return invoke<FileToolsMountListing>('file_tools_mounts')
+  },
+
+  beginFileTools() {
+    return invoke<string>('begin_file_tools')
+  },
+
+  closeFileTools(id: string) {
+    return invoke<void>('close_file_tools', { id })
+  },
+
+  scanFileTools(id: string, scopes: readonly FileToolsScope[], onProgress: (progress: FileToolsProgress) => void, refresh = false) {
+    return invoke<FileToolsResults>('scan_file_tools', { id, scopes, refresh, channel: new Channel(onProgress) })
+  },
+
+  fileToolsUsage(id: string, folder: FileToolsEntryId) {
+    return invoke<FileToolsEntry[]>('file_tools_usage', { id, folder })
+  },
+
+  verifyFileTools(id: string, size: number, onProgress: (progress: FileToolsProgress) => void) {
+    return invoke<FileToolsResults>('verify_file_tools', { id, size, channel: new Channel(onProgress) })
+  },
+
+  cancelFileToolsVerification(id: string) {
+    return invoke<void>('cancel_file_tools_verification', { id })
+  },
+
+  removeFileToolsEntry(id: string, target: FileToolsEntryId, keep?: FileToolsEntryId) {
+    return invoke<FileToolsResults>('remove_file_tools_entry', { id, target, keep: keep ?? null })
   },
 
   listMounts(refresh = false) {

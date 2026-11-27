@@ -55,6 +55,10 @@ const ConnectedPlacesWorkspace = lazy(() =>
   import('./features/places/ConnectedPlacesWorkspace').then((m) => ({ default: m.ConnectedPlacesWorkspace })),
 )
 
+const FileToolsWorkspace = lazy(() =>
+  import('./features/file-tools/FileToolsWorkspace').then((m) => ({ default: m.FileToolsWorkspace })),
+)
+
 type ShareTab = 'items' | 'links'
 type ModalKind = 'settings' | 'theme' | 'download' | 'splitUpload' | 'splitPrompt' | 'floatingPrompt' | 'share' | 'createFolder' | 'rename' | 'move' | 'copy' | 'delete' | 'emptyTrash' | null
 type AuthState = 'checking' | 'signedOut' | 'signingIn' | 'signedIn'
@@ -137,6 +141,7 @@ function App() {
     versionInfo,
     openSettings,
     updateCacheSettings,
+    updateFileScanConcurrency,
     updateLoggingSettings,
     updateTransferSettings,
     browseWorkDirectory,
@@ -889,6 +894,14 @@ function App() {
                 onRefresh={handleRefreshMounts}
               />
             </Suspense>
+          ) : activeView === 'fileTools' ? (
+            <Suspense fallback={<main className="workspace" />}>
+              <FileToolsWorkspace
+                currentMountId={workspace.activeMountId}
+                currentPath={workspace.path}
+                onRemoteChange={workspace.refreshCurrent}
+              />
+            </Suspense>
           ) : activeView === 'shared' && shareTab === 'links' ? (
             <Suspense fallback={<main className="workspace" />}>
               <ShareLinksWorkspace
@@ -1174,6 +1187,7 @@ function App() {
                   settings.cacheTtlMinutes,
                 )
               }}
+              onFileScanConcurrencyChange={updateFileScanConcurrency}
               onCacheTtlChange={(cacheTtlMinutes) => {
                 if (settings) void updateCacheSettings(
                   settings.cacheMode,

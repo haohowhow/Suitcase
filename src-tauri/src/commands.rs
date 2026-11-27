@@ -44,6 +44,7 @@ pub struct LoginBootstrap {
 pub struct SettingsSnapshot {
     cache_mode: CacheMode,
     cache_ttl_minutes: u32,
+    file_scan_concurrency: u32,
     cached_items: usize,
     cache_disk_bytes: u64,
     saved_email: Option<String>,
@@ -126,6 +127,7 @@ pub async fn connect_koofr(
     app_password: String,
     remember_password: bool,
 ) -> CommandResult<SessionInfo> {
+    let _file_tools = state.file_tools.account_change();
     // Switching accounts pauses rather than cancels: the previous account's
     // resumable transfers keep their checkpoints and show up again on its next login.
     state.transfers.pause_all();
@@ -234,6 +236,7 @@ pub async fn restore_saved_login(
             saved_email: None,
         });
     };
+    let _file_tools = state.file_tools.account_change();
     let session = state
         .api
         .authenticate(&email, password.as_str())
@@ -271,6 +274,7 @@ pub async fn restore_saved_login(
 
 #[tauri::command]
 pub async fn disconnect_koofr(state: State<'_, AppState>) -> CommandResult<()> {
+    let _file_tools = state.file_tools.account_change();
     // Signing out (also the idle timeout) pauses transfers so they can be resumed
     // after the next sign-in, and lets them save their state before the session ends.
     state.transfers.pause_all();
@@ -776,6 +780,7 @@ async fn settings_snapshot(state: &State<'_, AppState>) -> SettingsSnapshot {
     SettingsSnapshot {
         cache_mode,
         cache_ttl_minutes,
+        file_scan_concurrency: state.settings.file_scan_concurrency().await,
         cached_items,
         cache_disk_bytes,
         saved_email: state.settings.remembered_email().await,
@@ -862,6 +867,18 @@ pub async fn update_settings(
         None,
         serde_json::Map::new(),
     );
+    Ok(settings_snapshot(&state).await)
+}
+
+#[tauri::command]
+pub async fn update_file_scan_concurrency(
+    state: State<'_, AppState>,
+    concurrency: u32,
+) -> CommandResult<SettingsSnapshot> {
+    state
+        .settings
+        .update_file_scan_concurrency(concurrency)
+        .await?;
     Ok(settings_snapshot(&state).await)
 }
 

@@ -5,6 +5,7 @@ import {
   Cloud,
   Folder,
   FolderSync,
+  ListChecks,
   HelpCircle,
   LockKeyhole,
   LogOut,
@@ -15,7 +16,7 @@ import {
 import { memo } from 'react'
 import { formatStorageMegabytes } from '../utils/format'
 
-export type NavView = 'files' | 'recent' | 'shared' | 'trash' | 'sync' | 'vault' | 'places'
+export type NavView = 'files' | 'recent' | 'shared' | 'trash' | 'sync' | 'vault' | 'places' | 'fileTools'
 
 const fileItems: ReadonlyArray<{ readonly id: NavView; readonly label: string; readonly icon: typeof Folder }> = [
   { id: 'files', label: '我的文件', icon: Folder },
@@ -27,6 +28,7 @@ const fileItems: ReadonlyArray<{ readonly id: NavView; readonly label: string; r
 const workspaceToolItems: ReadonlyArray<{ readonly id: NavView; readonly label: string; readonly icon: typeof FolderSync }> = [
   { id: 'sync', label: '同步', icon: FolderSync },
   { id: 'vault', label: '私人保险箱', icon: LockKeyhole },
+  { id: 'fileTools', label: '文件工具', icon: ListChecks },
   { id: 'places', label: '存储位置', icon: Cloud },
 ]
 

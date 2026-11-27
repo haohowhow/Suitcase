@@ -80,6 +80,17 @@ export function useAppSettings(
     [],
   )
 
+  const updateFileScanConcurrency = useCallback(
+    (concurrency: number) => {
+      void runSettingsMutation(
+        () => koofr.updateFileScanConcurrency(concurrency),
+        '扫描并发设置已保存',
+        '无法保存扫描并发设置。',
+      )
+    },
+    [runSettingsMutation],
+  )
+
   const updateLoggingSettings = useCallback(
     async (
       logLevel: LogLevel,
@@ -473,6 +484,7 @@ export function useAppSettings(
     versionInfo,
     openSettings,
     updateCacheSettings,
+    updateFileScanConcurrency,
     updateLoggingSettings,
     updateTransferSettings,
     browseWorkDirectory,
