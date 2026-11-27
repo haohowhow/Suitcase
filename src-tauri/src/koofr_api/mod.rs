@@ -430,6 +430,28 @@ impl KoofrApi {
         path: &RemotePath,
         expected: Option<(&str, i64, i64)>,
     ) -> Result<(), AppError> {
+        self.remove_with_conditions(mount_id, path, expected, None)
+            .await
+    }
+
+    pub async fn delete_empty_folder(
+        &self,
+        mount_id: &MountId,
+        path: &RemotePath,
+        modified: i64,
+    ) -> Result<(), AppError> {
+        self.remove_with_conditions(mount_id, path, None, Some(modified))
+            .await
+    }
+
+    async fn remove_with_conditions(
+        &self,
+        mount_id: &MountId,
+        path: &RemotePath,
+        expected: Option<(&str, i64, i64)>,
+        empty_folder_modified: Option<i64>,
+    ) -> Result<(), AppError> {
+        path.require_non_root()?;
         let mut url = self.mount_endpoint(mount_id, &["files", "remove"])?;
         url.query_pairs_mut().append_pair("path", path.as_str());
         if let Some((hash, size, modified)) = expected {
@@ -438,6 +460,11 @@ impl KoofrApi {
             }
             url.query_pairs_mut()
                 .append_pair("removeIfSize", &size.to_string())
+                .append_pair("removeIfModified", &modified.to_string());
+        }
+        if let Some(modified) = empty_folder_modified {
+            url.query_pairs_mut()
+                .append_pair("removeIfEmpty", "")
                 .append_pair("removeIfModified", &modified.to_string());
         }
         let request = self.authenticated_request(Method::DELETE, url).await?;
@@ -743,6 +770,30 @@ mod tests {
         logging::{AppLogger, LogConfig},
         settings::LogLevel,
     };
+
+    #[tokio::test]
+    async fn empty_folder_removal_keeps_server_conditions_and_propagates_conflict() {
+        let server = MockServer::start_async().await;
+        let condition = server
+            .mock_async(|when, then| {
+                when.method(DELETE)
+                    .path("/api/v2/mounts/native/files/remove")
+                    .query_param("path", "/folder")
+                    .query_param("removeIfEmpty", "")
+                    .query_param("removeIfModified", "123");
+                then.status(409);
+            })
+            .await;
+        let api = KoofrApi::new(&server.base_url()).unwrap();
+        api.set_test_session("test-token").await;
+        let mount = MountId::parse("native".into()).unwrap();
+        let path = RemotePath::parse("/folder".into()).unwrap();
+        assert!(matches!(
+            api.delete_empty_folder(&mount, &path, 123).await,
+            Err(AppError::Conflict)
+        ));
+        condition.assert_async().await;
+    }
 
     #[tokio::test]
     async fn debug_request_log_correlates_stages_and_redacts_request_and_response() {

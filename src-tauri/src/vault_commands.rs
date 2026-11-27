@@ -236,6 +236,7 @@ pub async fn download_vault_file(
             transfer_id: &transfer_id,
             owner_id: &owner_id,
             name: display_name.as_str(),
+            mount_id: None,
             remote_path: &format!("vault:{}", repo.id),
             local_path: &completed_path,
             local_kind: DownloadLocalKind::File,

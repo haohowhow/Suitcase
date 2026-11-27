@@ -24,6 +24,8 @@ struct CacheEntry {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredCache {
+    #[serde(skip)]
+    generation: u64,
     version: u8,
     account_key: Option<String>,
     entries: HashMap<String, CacheEntry>,
@@ -32,6 +34,7 @@ struct StoredCache {
 impl Default for StoredCache {
     fn default() -> Self {
         Self {
+            generation: 0,
             version: CACHE_VERSION,
             account_key: None,
             entries: HashMap::new(),
@@ -76,6 +79,7 @@ impl MetadataCache {
             if state.account_key.as_deref() == Some(account_key.as_str()) {
                 false
             } else {
+                state.generation += 1;
                 state.account_key = Some(account_key);
                 state.entries.clear();
                 true
@@ -115,9 +119,31 @@ impl MetadataCache {
         if mode == CacheMode::Off {
             return Ok(());
         }
+        self.store(key, value, None).await?;
+        if mode == CacheMode::Disk {
+            self.persist().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn generation(&self) -> u64 {
+        self.state.read().await.generation
+    }
+
+    // Scan requests update the bounded in-memory cache as they finish. Flush it once
+    // at the end, and discard writes from before a cache clear or account switch.
+    pub async fn store<T: Serialize>(
+        &self,
+        key: String,
+        value: &T,
+        generation: Option<u64>,
+    ) -> Result<bool, AppError> {
         let value = serde_json::to_value(value).map_err(|_| AppError::LocalData)?;
         {
             let mut state = self.state.write().await;
+            if generation.is_some_and(|generation| generation != state.generation) {
+                return Ok(false);
+            }
             if state.entries.len() >= MAX_ENTRIES
                 && !state.entries.contains_key(&key)
                 && let Some(oldest) = state
@@ -136,18 +162,33 @@ impl MetadataCache {
                 },
             );
         }
-        if mode == CacheMode::Disk {
-            self.persist().await?;
+        Ok(true)
+    }
+
+    pub async fn forget(&self, key: &str, generation: u64) -> bool {
+        let mut state = self.state.write().await;
+        state.generation == generation && state.entries.remove(key).is_some()
+    }
+
+    pub async fn flush_scan(&self, generation: u64) -> Result<(), AppError> {
+        let _guard = self.persist_lock.lock().await;
+        if self.generation().await == generation {
+            self.write_disk().await?;
         }
         Ok(())
     }
 
     pub async fn clear(&self) -> Result<(), AppError> {
-        self.state.write().await.entries.clear();
+        {
+            let mut state = self.state.write().await;
+            state.generation += 1;
+            state.entries.clear();
+        }
         self.remove_disk_file().await
     }
 
     pub async fn apply_mode(&self, mode: CacheMode) -> Result<(), AppError> {
+        self.state.write().await.generation += 1;
         match mode {
             CacheMode::Off => self.clear().await,
             CacheMode::Memory => self.remove_disk_file().await,
@@ -169,6 +210,10 @@ impl MetadataCache {
         // Listings for several folders are cached concurrently. Serialise the writes
         // and take the snapshot under the same lock so the newest one lands last.
         let _guard = self.persist_lock.lock().await;
+        self.write_disk().await
+    }
+
+    async fn write_disk(&self) -> Result<(), AppError> {
         let payload =
             serde_json::to_vec(&*self.state.read().await).map_err(|_| AppError::LocalData)?;
         let path = self.path.read().await.clone();
@@ -179,6 +224,7 @@ impl MetadataCache {
     }
 
     async fn remove_disk_file(&self) -> Result<(), AppError> {
+        let _guard = self.persist_lock.lock().await;
         let path = self.path.read().await.clone();
         if tokio::fs::try_exists(&path).await.unwrap_or(false) {
             tokio::fs::remove_file(path)

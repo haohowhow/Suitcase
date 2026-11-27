@@ -34,7 +34,7 @@ function WorkspaceTabsInner<T extends string>({
           >
             <span>{item.label}</span>
             {item.badge !== undefined && item.badge > 0 ? (
-              <span className="workspace-tabs__badge">{item.badge}</span>
+              <span className="workspace-tabs__badge" aria-hidden="true">{item.badge}</span>
             ) : null}
           </button>
         )

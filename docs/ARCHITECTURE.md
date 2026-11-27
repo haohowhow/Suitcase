@@ -440,11 +440,13 @@ Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` �
 
 认证 / 会话：`connect_koofr`, `restore_saved_login`, `disconnect_koofr`, `koofr_session`, `forget_saved_login`
 
-设置：`get_settings`, `update_settings`, `update_download_settings`, `update_logging_settings`, `update_transfer_settings`, `update_work_directory`, `clear_metadata_cache`, `clear_logs`, `select_work_directory`, `update_appearance_settings`, `update_general_settings`, `update_transfer_advanced_settings`, `update_download_behavior_settings`, `update_bandwidth_settings`, `update_notification_settings`, `update_link_defaults`, `update_security_settings`, `update_history_policy`, `app_version_info`
+设置：`get_settings`, `update_settings`, `update_file_scan_concurrency`, `update_download_settings`, `update_logging_settings`, `update_transfer_settings`, `update_work_directory`, `clear_metadata_cache`, `clear_logs`, `select_work_directory`, `update_appearance_settings`, `update_general_settings`, `update_transfer_advanced_settings`, `update_download_behavior_settings`, `update_bandwidth_settings`, `update_notification_settings`, `update_link_defaults`, `update_security_settings`, `update_history_policy`, `app_version_info`
 
 文件浏览：`list_mounts`, `list_files`, `list_recent`, `list_shared`, `list_trash`
 
 文件操作：`create_folder`, `rename_entry`, `move_entry`, `copy_entry`, `delete_entry`, `restore_trash`, `empty_trash`, `open_downloaded_file`, `open_downloaded_folder`, `open_external_page`
+
+文件工具：`file_tools_mounts`, `begin_file_tools`, `scan_file_tools`, `file_tools_usage`, `verify_file_tools`, `cancel_file_tools_verification`, `remove_file_tools_entry`, `close_file_tools`。Rust 为每次扫描分配会话 ID，退出文件工具或切换账户时释放内存结果与取消令牌。目录请求在所有挂载间共享并发上限，范围 1–1024，默认 128，每次扫描开始时读取设置。普通扫描与文件浏览共用有时效的元数据缓存，强制扫描直接请求云端；磁盘缓存模式在扫描结束时集中保存。目录遍历按挂载独立统计，使用 Tauri Channel 报告目录数与核验字节数。内容核验须由用户针对候选组触发。清理只接受当前扫描中的项目，使用 Koofr 主存储条件删除；共享与外接位置提供查看及核验。已注册 Vault 目录跳过扫描，分卷与配套恢复文件不参与查重清理。
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 

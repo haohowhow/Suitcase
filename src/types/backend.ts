@@ -49,6 +49,7 @@ export type LinkDefaultKind = 'download' | 'upload'
 export interface AppSettings {
   readonly cacheMode: CacheMode
   readonly cacheTtlMinutes: number
+  readonly fileScanConcurrency: number
   readonly cachedItems: number
   readonly cacheDiskBytes: number
   readonly savedEmail: string | null
@@ -214,6 +215,7 @@ export interface DownloadHistoryItem {
   readonly totalBytes: number | null
   readonly localKind: 'file' | 'folder'
   readonly recoveryKind: RecoveryKind | null
+  readonly mountId: string | null
   readonly remotePath: string
   readonly localPath: string
   readonly startedAt: number

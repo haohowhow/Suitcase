@@ -21,6 +21,7 @@ describe('AppSidebar', () => {
         onToggleTransfers={onToggleTransfers}
         syncActiveCount={1}
         syncIssueCount={2}
+        fileToolsActive
         mountCount={3}
         onSettingsClick={onSettingsClick}
         onLogoutClick={onLogoutClick}
@@ -32,6 +33,7 @@ describe('AppSidebar', () => {
     )
 
     expect(screen.getByLabelText('2 个同步问题')).not.toBeNull()
+    expect(screen.getByLabelText('文件工具正在扫描')).not.toBeNull()
     expect(screen.getByRole('button', { name: '传输队列，3 项进行中' })).not.toBeNull()
     expect(screen.queryByRole('button', { name: '外观主题' })).toBeNull()
 

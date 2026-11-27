@@ -7,6 +7,7 @@ import { SettingsPanel } from './SettingsPanel'
 const SETTINGS: AppSettings = {
   cacheMode: 'memory',
   cacheTtlMinutes: 15,
+  fileScanConcurrency: 128,
   cachedItems: 0,
   cacheDiskBytes: 0,
   savedEmail: null,
@@ -68,6 +69,7 @@ function renderSettings(overrides: Partial<Parameters<typeof SettingsPanel>[0]> 
     downloadError: '',
     onCacheModeChange: vi.fn(),
     onCacheTtlChange: vi.fn(),
+    onFileScanConcurrencyChange: vi.fn(),
     onLoggingSettingsChange: vi.fn(),
     onTransferSettingsChange: vi.fn(),
     onDownloadSettingsChange: vi.fn(),
@@ -153,6 +155,30 @@ describe('SettingsPanel storage and diagnostics', () => {
     await user.click(screen.getByRole('button', { name: '保存数据位置' }))
 
     expect(onWorkDirectoryChange).toHaveBeenCalledWith('D:\\Fresh Koofr Work', false)
+  })
+
+  it('lets you change scan concurrency in storage settings', async () => {
+    const user = userEvent.setup()
+    const onFileScanConcurrencyChange = vi.fn()
+    renderSettings({ onFileScanConcurrencyChange })
+    await user.click(screen.getByRole('tab', { name: '存储与日志' }))
+
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /同时扫描的文件夹数/ })
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: '保存' })
+    expect(input.value).toBe('128')
+    expect(screen.getByText('请输入 1～1024 的整数')).toBeTruthy()
+
+    for (const invalid of ['0', '1025', '1.5', '1e2', 'abc']) {
+      await user.clear(input)
+      await user.type(input, invalid)
+      expect(save.disabled).toBe(true)
+    }
+
+    await user.clear(input)
+    await user.type(input, '1024')
+    expect(onFileScanConcurrencyChange).not.toHaveBeenCalled()
+    await user.click(save)
+    expect(onFileScanConcurrencyChange).toHaveBeenCalledExactlyOnceWith(1024)
   })
 
   it('saves logging location, level, retention and rotation together', async () => {

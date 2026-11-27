@@ -8,6 +8,7 @@ mod desktop;
 mod download_history;
 mod error;
 mod file_ops;
+mod file_tools;
 mod folder_commands;
 mod folder_download;
 mod koofr_api;
@@ -44,6 +45,7 @@ use work_directory::WorkDirectoryStore;
 pub struct AppState {
     api: KoofrApi,
     local_access: LocalAccessManager,
+    file_tools: file_tools::FileTools,
     download_history: DownloadHistoryStore,
     transfers: TransferManager,
     transfer_checkpoints: TransferCheckpointStore,
@@ -196,6 +198,7 @@ pub fn run() {
             app.manage(AppState {
                 api: KoofrApi::production(logger.clone())?,
                 local_access: LocalAccessManager::default(),
+                file_tools: file_tools::FileTools::default(),
                 download_history,
                 transfers,
                 transfer_checkpoints,
@@ -236,6 +239,14 @@ pub fn run() {
         })
         .on_window_event(desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
+            file_tools::file_tools_mounts,
+            file_tools::begin_file_tools,
+            file_tools::close_file_tools,
+            file_tools::scan_file_tools,
+            file_tools::file_tools_usage,
+            file_tools::verify_file_tools,
+            file_tools::cancel_file_tools_verification,
+            file_tools::remove_file_tools_entry,
             commands::connect_koofr,
             commands::restore_saved_login,
             commands::disconnect_koofr,
@@ -256,6 +267,7 @@ pub fn run() {
             commands::koofr_session,
             commands::get_settings,
             commands::update_settings,
+            commands::update_file_scan_concurrency,
             commands::update_download_settings,
             commands::update_logging_settings,
             commands::update_transfer_settings,

@@ -203,6 +203,7 @@ export function useTransferManager(
         if (!active) return
         setTransfers((current) => {
           const cachedById = new Map(current.map((item) => [item.id, item]))
+          const historyById = new Map(history.map((item) => [item.transferId, item]))
           const cachedCheckpoints = new Map(
             checkpoints.map((item) => [item.transferId, item]),
           )
@@ -215,13 +216,15 @@ export function useTransferManager(
               state: item.state,
               bytesTransferred: item.bytesTransferred,
               totalBytes: item.totalBytes,
-              localKind: cachedById.get(item.transferId)?.localKind ?? 'file',
+              localKind: item.localKind,
               recoveryKind:
                 item.recoveryKind ??
                 cachedCheckpoints.get(item.transferId)?.recoveryKind ??
                 null,
-              remotePath: cachedById.get(item.transferId)?.remotePath ?? null,
-              localPath: cachedById.get(item.transferId)?.localPath ?? null,
+              sourceMountId: item.mountId,
+              sourceVault: item.remotePath.startsWith('vault:'),
+              remotePath: item.remotePath.startsWith('vault:') ? null : item.remotePath,
+              localPath: item.localPath,
               startedAt:
                 cachedById.get(item.transferId)?.startedAt ?? item.startedAt,
               finishedAt:
@@ -234,22 +237,29 @@ export function useTransferManager(
                 undefined,
               integrityStatus: item.integrityStatus,
             }))
-          const resumable: TransferItem[] = checkpoints.map((item) => ({
-            id: item.transferId,
-            name: item.name,
-            direction: item.direction,
-            state: 'paused' as const,
-            bytesTransferred: item.bytesTransferred,
-            totalBytes: item.totalBytes,
-            localKind: cachedById.get(item.transferId)?.localKind ?? 'file',
-            recoveryKind: item.recoveryKind,
-            remotePath: cachedById.get(item.transferId)?.remotePath ?? null,
-            localPath: cachedById.get(item.transferId)?.localPath ?? null,
-            startedAt: cachedById.get(item.transferId)?.startedAt ?? null,
-            finishedAt: cachedById.get(item.transferId)?.finishedAt ?? null,
-            speedSamples: cachedById.get(item.transferId)?.speedSamples ?? [],
-            splitProgress: item.splitProgress,
-          }))
+          const resumable: TransferItem[] = checkpoints.map((item) => {
+            const cached = cachedById.get(item.transferId)
+            const saved = historyById.get(item.transferId)
+            return {
+              id: item.transferId,
+              name: item.name,
+              direction: item.direction,
+              state: 'paused' as const,
+              bytesTransferred: item.bytesTransferred,
+              totalBytes: item.totalBytes,
+              localKind: cached?.localKind ?? 'file',
+              recoveryKind: item.recoveryKind,
+              sourceMountId: cached?.sourceMountId ?? saved?.mountId,
+              sourceMountName: cached?.sourceMountName,
+              sourceVault: cached?.sourceVault ?? saved?.remotePath.startsWith('vault:'),
+              remotePath: cached?.remotePath ?? (saved && !saved.remotePath.startsWith('vault:') ? saved.remotePath : null),
+              localPath: cached?.localPath ?? null,
+              startedAt: cached?.startedAt ?? null,
+              finishedAt: cached?.finishedAt ?? null,
+              speedSamples: cached?.speedSamples ?? [],
+              splitProgress: item.splitProgress,
+            }
+          })
           const resumableIds = new Set(resumable.map((item) => item.id))
           return [
             ...resumable,
@@ -285,6 +295,8 @@ export function useTransferManager(
           totalBytes: file.size ?? null,
           localKind: file.entryType === 'dir' ? 'folder' : 'file',
           recoveryKind: file.entryType === 'dir' ? null : 'byte_resume',
+          sourceMountId: mountId,
+          sourceMountName: 'mountName' in file && typeof file.mountName === 'string' ? file.mountName : undefined,
           remotePath: file.path,
           localPath: targetDirectory,
           startedAt,
@@ -621,6 +633,7 @@ export function useTransferManager(
           recoveryKind: transfer.recoveryKind,
           remotePath: null,
           localPath: transfer.localPath,
+          sourceVault: true,
           startedAt,
           finishedAt: null,
           speedSamples: [{ recordedAt: startedAt, bytesTransferred: 0 }],
