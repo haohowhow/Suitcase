@@ -23,6 +23,7 @@ import {
 } from './services/koofr'
 import { readStoredTheme, storeTheme, type ThemeId } from './theme'
 import { useAppSettings } from './hooks/useAppSettings'
+import { useFileToolsManager } from './hooks/useFileToolsManager'
 import { useTransferManager } from './hooks/useTransferManager'
 import { useSyncManager } from './hooks/useSyncManager'
 import { installRuntimeTranslations } from './i18n'
@@ -179,6 +180,20 @@ function App() {
   const collections = useKoofrCollections(authState === 'signedIn', collectionView ?? '')
   const activeMount = workspace.mounts.find((mount) => mount.id === workspace.activeMountId)
   const sync = useSyncManager(authState, showNotice)
+  const activeViewRef = useRef(activeView)
+  useEffect(() => {
+    activeViewRef.current = activeView
+  }, [activeView])
+  const notifyFileToolsScanComplete = useCallback(() => {
+    if (activeViewRef.current !== 'fileTools') {
+      showNotice('文件工具扫描已完成')
+    }
+  }, [showNotice])
+  const fileTools = useFileToolsManager({
+    authState,
+    onRemoteChange: workspace.refreshCurrent,
+    onBackgroundScanComplete: notifyFileToolsScanComplete,
+  })
 
   const openDownloadDestination = useCallback((
     file: RemoteFile,
@@ -682,6 +697,15 @@ function App() {
     void workspace.loadDirectory(file.mountId, targetPath)
   }, [workspace.loadDirectory])
 
+  const openFileToolsLocation = useCallback((mountId: string, path: string, directory: boolean) => {
+    const segments = path.split('/').filter(Boolean)
+    const targetPath = directory
+      ? (path || '/')
+      : segments.length <= 1 ? '/' : `/${segments.slice(0, -1).join('/')}`
+    setActiveView('files')
+    void workspace.loadDirectory(mountId, targetPath)
+  }, [workspace.loadDirectory])
+
   const restoreTrash = useCallback(async (items: TrashItem[]) => {
     if (items.length === 0) return
     setOperationBusy(true)
@@ -854,6 +878,7 @@ function App() {
             onToggleTransfers={handleToggleTransfers}
             syncActiveCount={syncActiveCount}
             syncIssueCount={syncIssueCount}
+            fileToolsActive={fileTools.work === 'scan' || fileTools.work === 'verify'}
             mountCount={workspace.mounts.length}
             onSettingsClick={handleOpenSettings}
             onLogoutClick={logout}
@@ -900,6 +925,9 @@ function App() {
                 currentMountId={workspace.activeMountId}
                 currentPath={workspace.path}
                 onRemoteChange={workspace.refreshCurrent}
+                controller={fileTools}
+                workspaceMounts={workspace.mounts}
+                onOpenLocation={openFileToolsLocation}
               />
             </Suspense>
           ) : activeView === 'shared' && shareTab === 'links' ? (

@@ -8,6 +8,7 @@
 - `features/transfers/`：上传与下载传输队列界面。
 - `features/sync/`：多组本地文件夹与 Koofr 主存储目录之间双向同步的管理、状态与问题列表。
 - `features/vault/`：Vault 注册管理、解密目录浏览与加密文件操作界面。
+- `features/file-tools/`：文件工具入口页、扫描范围配置，以及空间占用、空文件夹与重复文件核查界面。
 - `services/`：类型化的 Tauri 命令与传输事件封装。
 - `types/`：前端领域类型。
 

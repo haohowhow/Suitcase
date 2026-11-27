@@ -5,13 +5,13 @@ import {
   Cloud,
   Folder,
   FolderSync,
-  ListChecks,
   HelpCircle,
   LockKeyhole,
   LogOut,
   Settings,
   Share2,
   Trash2,
+  Wrench,
 } from 'lucide-react'
 import { memo } from 'react'
 import { formatStorageMegabytes } from '../utils/format'
@@ -28,7 +28,7 @@ const fileItems: ReadonlyArray<{ readonly id: NavView; readonly label: string; r
 const workspaceToolItems: ReadonlyArray<{ readonly id: NavView; readonly label: string; readonly icon: typeof FolderSync }> = [
   { id: 'sync', label: '同步', icon: FolderSync },
   { id: 'vault', label: '私人保险箱', icon: LockKeyhole },
-  { id: 'fileTools', label: '文件工具', icon: ListChecks },
+  { id: 'fileTools', label: '文件工具', icon: Wrench },
   { id: 'places', label: '存储位置', icon: Cloud },
 ]
 
@@ -40,6 +40,7 @@ interface AppSidebarProps {
   readonly onToggleTransfers: () => void
   readonly syncActiveCount: number
   readonly syncIssueCount: number
+  readonly fileToolsActive?: boolean
   readonly mountCount: number
   readonly onSettingsClick: () => void
   readonly onLogoutClick: () => void
@@ -57,6 +58,7 @@ export const AppSidebar = memo(function AppSidebar({
   onToggleTransfers,
   syncActiveCount,
   syncIssueCount,
+  fileToolsActive = false,
   mountCount,
   onSettingsClick,
   onLogoutClick,
@@ -97,6 +99,7 @@ export const AppSidebar = memo(function AppSidebar({
             {workspaceToolItems.map(({ id, label, icon: Icon }) => {
               const showSyncIssues = id === 'sync' && syncIssueCount > 0
               const showSyncActive = id === 'sync' && syncIssueCount === 0 && syncActiveCount > 0
+              const showFileToolsActive = id === 'fileTools' && fileToolsActive
               const showMountCount = id === 'places' && mountCount > 1
               return (
                 <button
@@ -115,6 +118,8 @@ export const AppSidebar = memo(function AppSidebar({
                     </span>
                   ) : showSyncActive ? (
                     <span className="nav-dot nav-dot--active" aria-label="正在同步" />
+                  ) : showFileToolsActive ? (
+                    <span className="nav-dot nav-dot--active" aria-label="文件工具正在扫描" />
                   ) : showMountCount ? (
                     <span className="nav-badge nav-badge--muted">{mountCount}</span>
                   ) : null}
