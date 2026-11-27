@@ -79,6 +79,7 @@ Suitcase is an unaffiliated, Windows-first alternative client built around a nat
   - On-demand sync supports a unified `%USERPROFILE%\Koofr` root mapped to `/` as well as custom mappings. Local and remote scopes of the same account must not overlap; Vault, shared spaces, and third-party mounts are excluded.
   - Local watching plus a 60-second remote scan: the first round only merges and never propagates deletions; later rounds propagate one-sided changes and deletions from the three-way baseline and keep conflict copies for two-sided edits.
   - Each pair can sync immediately, pause/resume, show file-level issues, or be removed. Removing a classic pair only removes its index; unregistering an on-demand root keeps hydrated files as ordinary files, removes online-only placeholders, and never changes cloud data. A root `.syncignore` file supports comments, globs, and `!` negation.
+  - In a sync pair’s File status tab, search by file name or relative path and filter pending or failed items. On-demand sync shows cloud metadata, local availability, and the last successful content download. The Issues tab explains how to recheck the pair or retry in File Explorer.
   - Sync state and indexes live in `sync-state.sqlite3` in the work directory, isolated per account, and never appear in the manual transfer resume list or the floating transfer window.
 
 - **Local in-app preview**

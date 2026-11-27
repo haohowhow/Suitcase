@@ -33,6 +33,8 @@ import type {
   VaultSummary,
   FilePreviewInfo,
   PreviewTextResult,
+  SyncFileFilter,
+  SyncFilePage,
   SyncIssue,
   SyncPairSummary,
   SyncTaskSummary,
@@ -444,6 +446,10 @@ export const koofr = {
 
   listSyncIssues(pairId: string) {
     return invoke<SyncIssue[]>('list_sync_issues', { pairId })
+  },
+
+  listSyncFiles(pairId: string, search: string, filter: SyncFileFilter, page: number) {
+    return invoke<SyncFilePage>('list_sync_files', { pairId, search, filter, page })
   },
 
   listSyncTasks(pairId: string) {

@@ -418,11 +418,15 @@ pub enum AppError {
 
 同步范围限定为 Koofr 主存储中的普通目录；Rust 侧会再次拒绝 Vault、共享或第三方挂载、非法路径，以及本地或远端根目录重叠。每组配置只保存经原生文件夹选择器一次性授权后得到的绝对目录，并在每次扫描前重新检查目录存在、不是符号链接且仍为目录。
 
-`sync-state.sqlite3` 使用 WAL 与事务保存按账户隔离的同步组、三方基线、问题及操作状态。首次同步仅合并，不执行删除；之后仅在基线仍匹配时传播删除，远端使用 Koofr 条件删除进入回收站，本地使用 Windows 回收站，失败时保留文件。双侧修改保留远端原名，并给本地版本追加带 UTC 时间的冲突名；任何条件上传或删除冲突都会触发重新扫描，而非强制覆盖。一轮成功后，新基线只记录两端一致的条目（目录同为目录、文件内容相同）；同步期间发生分歧的条目保留上一轮基线，留待下一轮处理。仅当某目录曾在基线中出现于两端时才传播删除，基线中缺少任一侧的目录一律视为新建；本地目录删除在子项处理完成后仅移除空目录（经典同步与按需同步一致），若仍有本地内容则改为恢复远端目录。下载在替换本地文件前按大小与修改时间再次核对计划时的本地状态，不一致即转为冲突。条件冲突会立即触发重扫（连续最多 3 次，之后回到 60 秒周期）；部分操作失败时仍保存两端一致部分的基线并保留问题列表，同一路径与错误码只保留一条未解决问题；任何非取消的运行失败都会把同步组置为离线（网络或登录失效）或需要处理，并同步 Provider 状态。
+`sync-state.sqlite3` 使用 WAL 与事务保存按账户隔离的同步组、三方基线、问题及操作状态。首次同步仅合并，不执行删除；之后仅在基线仍匹配时传播删除，远端使用 Koofr 条件删除进入回收站，本地使用 Windows 回收站，失败时保留文件。双侧修改保留远端原名，并给本地版本追加带 UTC 时间的冲突名；任何条件上传或删除冲突都会触发重新扫描，而非强制覆盖。一轮成功后，新基线只记录两端一致的条目（目录同为目录、文件内容相同）；同步期间发生分歧的条目保留上一轮基线，留待下一轮处理。仅当某目录曾在基线中出现于两端时才传播删除，基线中缺少任一侧的目录一律视为新建；本地目录删除在子项处理完成后仅移除空目录（经典同步与按需同步一致），若仍有本地内容则改为恢复远端目录。下载在替换本地文件前按大小与修改时间再次核对计划时的本地状态，不一致即转为冲突。条件冲突会立即触发重扫（连续最多 3 次，之后回到 60 秒周期）；部分操作失败时仍保存两端一致部分的基线并保留问题列表，同一路径、操作与错误码只保留一条未解决问题，并更新最后发生时间；任何非取消的运行失败都会把同步组置为离线（网络或登录失效）或需要处理，并同步 Provider 状态。
 
 本地扫描跳过符号链接、重解析点、特殊文件、系统回收站目录与客户端临时项；普通隐藏文件参与同步。根目录 `.syncignore` 支持空行、注释、gitignore 风格 glob 与 `!` 反向包含，规则变化会通过监听触发完整重扫。同步操作复用传输并发闸门、限速、取消与网络错误重试，但单独写入同步操作日志，不进入手动传输恢复列表。
 
 Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` 使用固定 Provider GUID 注册部分填充同步根，目录首次展开通过 `FETCH_PLACEHOLDERS` 仅列出当前层，文件打开通过 `FETCH_DATA` 完整水合。回调线程仅复制路径、随机条目键与请求范围，再将工作投递到异步运行时；网络等待以 60 秒无进展超时保护，写入 `CfExecute` 的中间块按 4 KiB 对齐。续传时核对响应 `ETag`（无则 `Last-Modified`），版本变化即中止；由于数据已逐块交给 CFAPI，MD5 与长度校验只能在水合末尾报告失败，无法回滚已写入的块。
+
+同步详情通过当前账户授权的 `list_sync_files` 按页查询已发现路径。SQLite 在保存三方基线的事务中写入本轮实际核对的文件状态、版本和时间，旧条目没有核对时间时显示待核对。内存中的当前任务叠加等待和进行中状态，进程中断后待处理路径会在下一轮重新核对。文件查询不访问 Koofr 或触发按需下载。
+
+按需同步区分占位符更新和资源管理器实际下载。按需读取按组、路径、操作和请求代次记录，文件的迟到结果还需核对条目版本。扫描只能关闭实际恢复的同步问题，资源管理器读取问题在相应读取成功或确认路径已移除后关闭。文件可用性显示最近一次观测到的 Windows 占位符状态及时间。
 
 占位符身份格式为 `KFG1:<UUID>`，不含账户、文件名或远端路径。`sync_entries` 表按账户所属同步组保存 UUID 到相对路径、远端路径、类型、大小、修改时间与 MD5 的映射。原生扫描先查询 CFAPI 状态：已同步的占位符直接复用数据库身份且不打开或哈希；只有本地新增、修改或尚未转换的完整文件才读取内容。远端轮询仅递归根目录与已填充的目录，未访问目录在 Explorer 首次展开时读取最新内容。
 
@@ -444,7 +448,7 @@ Windows 按需同步作为预览模式与经典同步并存。`cloud_files.rs` �
 
 本地路径授权：`select_upload_file`, `select_download_location`, `select_download_folder`, `select_download_directory`, `prepare_download_location`, `prepare_download_folder`
 
-同步：`select_sync_folder`, `list_sync_pairs`, `create_sync_pair`, `get_native_sync_capability`, `suggested_on_demand_sync_root`, `create_on_demand_sync_pair`, `migrate_sync_pair_to_on_demand`, `open_sync_root`, `set_sync_pair_paused`, `run_sync_pair_now`, `list_sync_issues`, `list_sync_tasks`, `remove_sync_pair`
+同步：`select_sync_folder`, `list_sync_pairs`, `create_sync_pair`, `get_native_sync_capability`, `suggested_on_demand_sync_root`, `create_on_demand_sync_pair`, `migrate_sync_pair_to_on_demand`, `open_sync_root`, `set_sync_pair_paused`, `run_sync_pair_now`, `list_sync_issues`, `list_sync_tasks`, `list_sync_files`, `remove_sync_pair`
 
 传输：`upload_file`, `upload_split_file`, `download_file`, `download_folder`, `cancel_transfer`, `pause_transfer`, `list_resumable_transfers`, `list_download_history`, `clear_finished_download_history`, `resume_transfer`, `discard_resumable_transfer`, `show_floating_context_menu`, `set_floating_window_compact`, `open_main_window_from_floating`, `set_taskbar_badge`
 

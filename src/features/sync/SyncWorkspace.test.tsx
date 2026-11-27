@@ -15,6 +15,7 @@ const service = vi.hoisted(() => ({
   runSyncPairNow: vi.fn(),
   listSyncIssues: vi.fn(),
   listSyncTasks: vi.fn(),
+  listSyncFiles: vi.fn(),
   removeSyncPair: vi.fn(),
   listFiles: vi.fn(),
 }))
@@ -81,6 +82,7 @@ describe('SyncWorkspace', () => {
     service.removeSyncPair.mockResolvedValue(true)
     service.openSyncRoot.mockResolvedValue(undefined)
     service.listSyncTasks.mockResolvedValue([])
+    service.listSyncFiles.mockResolvedValue({ files: [], hasMore: false })
     service.listSyncIssues.mockResolvedValue([])
     service.listFiles.mockImplementation(async (_mountId: string, path: string) => path === '/'
       ? [{ path: '/Projects', name: 'Projects', entryType: 'dir' }]
@@ -193,7 +195,7 @@ describe('SyncWorkspace', () => {
     await waitFor(() => expect(service.removeSyncPair).toHaveBeenCalledWith('pair-1'))
   })
 
-  it.each(['classic', 'onDemand'] as const)('shows overview progress and tabbed task queue for %s sync', async (syncMode) => {
+  it.each(['classic', 'onDemand'] as const)('shows overview progress and searchable file status for %s sync', async (syncMode) => {
     service.listSyncTasks.mockResolvedValue([
       { id: 'task-323', operation: 'upload', direction: 'upload', displayName: 'archive.zip', state: 'running', bytes: 734_003_200 },
       { id: 'task-324', operation: 'upload', direction: 'upload', displayName: 'notes.txt', state: 'queued', bytes: 1024 },
@@ -232,9 +234,37 @@ describe('SyncWorkspace', () => {
     expect((await screen.findAllByText('archive.zip')).length).toBeGreaterThan(0)
     expect(service.listSyncTasks).toHaveBeenCalledWith('pair-1')
 
-    await user.click(screen.getByRole('tab', { name: /任务队列/ }))
-    expect(screen.getByText('archive.zip')).not.toBeNull()
-    expect(screen.getByText('notes.txt')).not.toBeNull()
+    service.listSyncFiles.mockResolvedValue({
+      files: [
+        { relativePath: 'work/notes.txt', kind: 'file', state: 'queued', operation: 'upload', checkedAt: null },
+        { relativePath: 'archive/notes.txt', kind: 'file', state: 'failed', operation: 'read_file', checkedAt: null },
+      ],
+      hasMore: true,
+    })
+    await user.click(screen.getByRole('tab', { name: '文件状态' }))
+    expect(await screen.findByText('work/notes.txt')).not.toBeNull()
+    expect(screen.getByText('archive/notes.txt')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+    await waitFor(() => expect(service.listSyncFiles).toHaveBeenCalledWith('pair-1', '', 'all', 1))
+    await user.selectOptions(screen.getByRole('combobox', { name: '筛选文件状态' }), 'failed')
+    await user.type(screen.getByRole('searchbox'), 'archive')
+    await waitFor(() => expect(service.listSyncFiles).toHaveBeenCalledWith('pair-1', 'archive', 'failed', 0))
+
+  })
+
+  it('guides an Explorer file failure back to Explorer', async () => {
+    service.listSyncIssues.mockResolvedValue([
+      { id: 1, relativePath: 'documents/notes.txt', operation: 'read_file', code: 'network_error',
+        message: '资源管理器未能下载文件内容。', createdAt: 1730000000000 },
+    ])
+    const user = userEvent.setup()
+    renderWorkspace()
+    await user.click(screen.getByRole('button', { name: '详情' }))
+    await user.click(screen.getByRole('tab', { name: /问题/ }))
+    expect(await screen.findByText('请在资源管理器重新打开文件。')).not.toBeNull()
+    const issue = screen.getByRole('listitem')
+    await user.click(issue.querySelector('button')!)
+    expect(service.openSyncRoot).toHaveBeenCalledWith('pair-1')
   })
 
   it('opens a synced local root directly in File Explorer for both classic and on-demand pairs', async () => {

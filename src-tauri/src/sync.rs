@@ -46,6 +46,10 @@ pub fn wake_native_pair(app: &AppHandle, pair_id: &str) {
     }
 }
 
+mod file_status;
+use file_status::ObservedScan;
+pub use file_status::SyncFilePage;
+
 pub async fn handle_native_callback(
     app: AppHandle,
     pair_id: String,
@@ -117,6 +121,11 @@ pub async fn handle_native_callback(
         return;
     }
 
+    let mut read = if cancel.is_cancelled() {
+        None
+    } else {
+        manager.begin_native_read(&pair_id, &request).ok().flatten()
+    };
     let result = match &request {
         NativeCallbackRequest::FetchPlaceholders { .. } => {
             state
@@ -136,12 +145,16 @@ pub async fn handle_native_callback(
                     "sync",
                     "native_fetch_data",
                     None,
-                    manager.fetch_native_data(&app, &pair_id, &request, &cancel),
+                    manager.fetch_native_data(&app, &pair_id, &request, &cancel, read.as_mut()),
                 )
                 .await
         }
         NativeCallbackRequest::Delete { .. } => unreachable!("delete handled above"),
     };
+    if let Some(read) = read {
+        let _ = manager.finish_native_read(&pair_id, read, &result, &cancel);
+        let _ = manager.emit_summary(&app, &pair_id);
+    }
     if let Err(error) = result {
         manager.set_native_provider_status(
             &pair_id,
@@ -290,6 +303,8 @@ pub struct SyncIssue {
     pub code: String,
     pub message: String,
     pub created_at: i64,
+    pub operation: String,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -299,6 +314,8 @@ pub struct SyncTaskSummary {
     pub operation: String,
     pub direction: String,
     pub display_name: String,
+    #[serde(skip)]
+    relative_path: String,
     pub state: String,
     pub bytes: u64,
 }
@@ -735,6 +752,7 @@ impl SyncStore {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         ensure_sync_pair_column(&connection, "pinned_files", "INTEGER NOT NULL DEFAULT 0")?;
+        file_status::migrate(&connection)?;
         let device_id = connection
             .query_row(
                 "SELECT value FROM sync_metadata WHERE key = 'device_id'",
@@ -857,6 +875,15 @@ impl SyncStore {
             .execute("DELETE FROM sync_entries WHERE pair_id = ?1", [pair_id])
             .map_err(|_| AppError::LocalData)?;
         transaction
+            .execute("DELETE FROM sync_file_status WHERE pair_id = ?1", [pair_id])
+            .map_err(|_| AppError::LocalData)?;
+        transaction
+            .execute(
+                "DELETE FROM sync_native_reads WHERE pair_id = ?1",
+                [pair_id],
+            )
+            .map_err(|_| AppError::LocalData)?;
+        transaction
             .execute("DELETE FROM sync_pairs WHERE id = ?1", [pair_id])
             .map_err(|_| AppError::LocalData)?;
         transaction.commit().map_err(|_| AppError::LocalData)
@@ -908,25 +935,21 @@ impl SyncStore {
     }
 
     fn upsert_native_entry(&self, mut entry: NativeSyncEntry) -> Result<NativeSyncEntry, AppError> {
-        if let Some(existing) =
-            self.native_entry_for_local(&entry.pair_id, &entry.local_relative)?
-        {
-            entry.entry_key = existing.entry_key;
-            entry.populated |= existing.populated;
-        }
         let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
-        connection
-            .execute(
+        let (entry_key, populated) = connection
+            .query_row(
                 "INSERT INTO sync_entries
                  (entry_key, pair_id, local_relative, remote_path, kind, size, modified, hash, populated)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+                 WHERE EXISTS (SELECT 1 FROM sync_pairs WHERE id = ?2)
                  ON CONFLICT(pair_id, local_relative) DO UPDATE SET
                    remote_path = excluded.remote_path,
                    kind = excluded.kind,
                    size = excluded.size,
                    modified = excluded.modified,
                    hash = excluded.hash,
-                   populated = MAX(sync_entries.populated, excluded.populated)",
+                   populated = MAX(sync_entries.populated, excluded.populated)
+                 RETURNING entry_key, populated",
                 params![
                     entry.entry_key,
                     entry.pair_id,
@@ -938,8 +961,13 @@ impl SyncStore {
                     entry.identity.hash,
                     i64::from(entry.populated),
                 ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .map_err(|_| AppError::LocalData)?;
+            .optional()
+            .map_err(|_| AppError::LocalData)?
+            .ok_or(AppError::NotFound)?;
+        entry.entry_key = entry_key;
+        entry.populated = populated;
         Ok(entry)
     }
 
@@ -1058,34 +1086,6 @@ impl SyncStore {
         Ok(())
     }
 
-    fn save_baseline(
-        &self,
-        pair_id: &str,
-        baseline: &BTreeMap<String, SnapshotEntry>,
-        now: i64,
-    ) -> Result<(), AppError> {
-        let json = serde_json::to_string(baseline).map_err(|_| AppError::LocalData)?;
-        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
-        let transaction = connection
-            .unchecked_transaction()
-            .map_err(|_| AppError::LocalData)?;
-        transaction
-            .execute(
-                "UPDATE sync_pairs SET baseline_json = ?2, status = 'idle', last_synced_at = ?3,
-                 pending_items = 0, pending_bytes = 0, completed_items = total_items,
-                 completed_bytes = total_bytes, issue_count = 0, last_error_code = NULL WHERE id = ?1",
-                params![pair_id, json, now],
-            )
-            .map_err(|_| AppError::LocalData)?;
-        transaction
-            .execute(
-                "UPDATE sync_issues SET resolved = 1 WHERE pair_id = ?1 AND resolved = 0",
-                [pair_id],
-            )
-            .map_err(|_| AppError::LocalData)?;
-        transaction.commit().map_err(|_| AppError::LocalData)
-    }
-
     fn add_issue(
         &self,
         pair_id: &str,
@@ -1093,57 +1093,32 @@ impl SyncStore {
         code: &str,
         message: &str,
     ) -> Result<(), AppError> {
-        let now = now_millis();
         let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
         let transaction = connection
             .unchecked_transaction()
             .map_err(|_| AppError::LocalData)?;
-        // A persistent problem is retried on every scan; keep one open issue per
-        // path and code instead of adding a new row every minute.
-        let inserted = transaction
-            .execute(
-                "INSERT INTO sync_issues (pair_id, relative_path, code, message, created_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM sync_issues
-                     WHERE pair_id = ?1 AND relative_path = ?2 AND code = ?3 AND resolved = 0
-                 )",
-                params![pair_id, relative_path, code, message, now],
-            )
-            .map_err(|_| AppError::LocalData)?;
-        transaction
-            .execute(
-                "UPDATE sync_pairs SET issue_count = issue_count + ?2, status = 'attention' WHERE id = ?1",
-                params![pair_id, inserted as i64],
-            )
-            .map_err(|_| AppError::LocalData)?;
+        let operation = if relative_path.is_empty() {
+            "scan"
+        } else {
+            "sync"
+        };
+        file_status::record_issue(
+            &transaction,
+            pair_id,
+            relative_path,
+            operation,
+            code,
+            message,
+        )?;
         transaction.commit().map_err(|_| AppError::LocalData)
-    }
-
-    /// Stores the agreed part of a run that also had failures. Unlike
-    /// `save_baseline`, open issues and the attention state stay untouched.
-    fn save_partial_baseline(
-        &self,
-        pair_id: &str,
-        baseline: &BTreeMap<String, SnapshotEntry>,
-    ) -> Result<(), AppError> {
-        let json = serde_json::to_string(baseline).map_err(|_| AppError::LocalData)?;
-        let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
-        connection
-            .execute(
-                "UPDATE sync_pairs SET baseline_json = ?2 WHERE id = ?1",
-                params![pair_id, json],
-            )
-            .map_err(|_| AppError::LocalData)?;
-        Ok(())
     }
 
     fn issues(&self, pair_id: &str) -> Result<Vec<SyncIssue>, AppError> {
         let connection = self.connection.lock().map_err(|_| AppError::LocalData)?;
         let mut statement = connection
             .prepare(
-                "SELECT id, pair_id, relative_path, code, message, created_at
-                 FROM sync_issues WHERE pair_id = ?1 AND resolved = 0 ORDER BY id DESC",
+                "SELECT id, pair_id, relative_path, code, message, created_at, operation, COALESCE(updated_at, created_at)
+                 FROM sync_issues WHERE pair_id = ?1 AND resolved = 0 ORDER BY COALESCE(updated_at, created_at) DESC, id DESC",
             )
             .map_err(|_| AppError::LocalData)?;
         let rows = statement
@@ -1155,6 +1130,8 @@ impl SyncStore {
                     code: row.get(3)?,
                     message: row.get(4)?,
                     created_at: row.get(5)?,
+                    operation: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })
             .map_err(|_| AppError::LocalData)?;
@@ -1717,11 +1694,16 @@ impl SyncManager {
         Ok(())
     }
 
-    fn set_task_plan(&self, pair_id: &str, actions: &[Action]) -> Result<(), AppError> {
+    fn set_task_plan(
+        &self,
+        pair_id: &str,
+        actions: &[Action],
+        native: bool,
+    ) -> Result<(), AppError> {
         let tasks = actions
             .iter()
             .enumerate()
-            .map(|(index, action)| sync_task_summary(index, action))
+            .map(|(index, action)| sync_task_summary(index, action, native))
             .collect();
         *self
             .task_tracker_for(pair_id)?
@@ -1860,6 +1842,7 @@ impl SyncManager {
             () = cancel.cancelled() => return Err(AppError::Cancelled),
         };
         let mut specs = Vec::new();
+        let mut discovered = Vec::new();
         for file in files {
             if cancel.is_cancelled() {
                 return Err(AppError::Cancelled);
@@ -1890,6 +1873,10 @@ impl SyncManager {
                 },
                 populated: false,
             })?;
+            discovered.push((
+                child_relative.clone(),
+                if is_directory { "dir" } else { "file" },
+            ));
             let target = local_path(&pair.local_root, &child_relative)?;
             if cloud_files::placeholder_state(&target)?.is_none() {
                 match fs::symlink_metadata(&target) {
@@ -1904,6 +1891,7 @@ impl SyncManager {
         cloud_files::transfer_placeholders(*operation, &specs)?;
         self.store
             .set_native_directory_populated(pair_id, &relative)?;
+        self.store.remember_native_children(pair_id, &discovered)?;
         self.refresh_native_counts(pair_id)?;
         self.emit_summary(app, pair_id)?;
         self.set_native_provider_status(pair_id, cloud_files::NativeProviderStatus::Idle);
@@ -1916,6 +1904,7 @@ impl SyncManager {
         pair_id: &str,
         request: &NativeCallbackRequest,
         cancel: &CancellationToken,
+        read: Option<&mut file_status::NativeRead>,
     ) -> Result<(), AppError> {
         let NativeCallbackRequest::FetchData {
             operation,
@@ -1953,6 +1942,9 @@ impl SyncManager {
             hash: remote.hash,
         };
         entry = self.store.upsert_native_entry(entry)?;
+        if let Some(read) = read {
+            read.version = Some(entry.identity.clone());
+        }
 
         let transfer_id = uuid::Uuid::new_v4().to_string();
         // Release the bandwidth limiter's per-transfer bucket on every exit path.
@@ -2425,9 +2417,10 @@ impl SyncManager {
             remote,
         };
         let actions = coalesce_native_renames(plan_actions(&pair.baseline, &scan));
-        self.set_task_plan(pair_id, &actions)?;
+        self.store.remember_pending(pair_id, &actions, &scan)?;
+        self.set_task_plan(pair_id, &actions, true)?;
         let (upload_items, upload_bytes, download_items, download_bytes) =
-            action_direction_totals(&actions);
+            action_direction_totals(&actions, true);
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -2440,7 +2433,7 @@ impl SyncManager {
                 download_bytes,
             );
         let total_items = actions.len() as u64;
-        let total_bytes = actions.iter().map(action_bytes).sum::<u64>();
+        let total_bytes = upload_bytes.saturating_add(download_bytes);
         self.store.update_progress(
             pair_id,
             if actions.is_empty() {
@@ -2464,7 +2457,7 @@ impl SyncManager {
 
         let mut completed_items = 0_u64;
         let mut completed_bytes = 0_u64;
-        let mut had_failure = false;
+        let mut failed_paths = BTreeSet::new();
         for (task_index, action) in actions.iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(AppError::Cancelled);
@@ -2479,7 +2472,7 @@ impl SyncManager {
                     self.set_task_state(pair_id, task_index, "completed")?;
                     completed_items = completed_items.saturating_add(1);
                     completed_bytes = completed_bytes.saturating_add(bytes);
-                    let direction = action_direction(action);
+                    let direction = action_direction(action, true);
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -2547,7 +2540,7 @@ impl SyncManager {
                         .lock()
                         .map_err(|_| AppError::LocalData)?
                         .clear_active();
-                    had_failure = true;
+                    failed_paths.insert(relative.clone());
                     self.emit_summary(app, pair_id)?;
                     continue;
                 }
@@ -2608,6 +2601,9 @@ impl SyncManager {
         })
         .await
         .map_err(|_| AppError::LocalData)??;
+        if cancel.is_cancelled() {
+            return Err(AppError::Cancelled);
+        }
         let baseline = merge_baseline(&pair.baseline, &final_local.entries, &final_remote);
         telemetry
             .lock()
@@ -2616,23 +2612,16 @@ impl SyncManager {
                 local_endpoint_stats(&final_local.entries),
                 remote_endpoint_stats(&final_remote),
             );
-        if had_failure {
-            self.store.save_partial_baseline(pair_id, &baseline)?;
-            self.store.update_progress(
-                pair_id,
-                "attention",
-                total_items.saturating_sub(completed_items),
-                total_bytes.saturating_sub(completed_bytes),
-                completed_items,
-                total_items,
-                completed_bytes,
-                total_bytes,
-                None,
-                Some("sync_attention"),
-            )?;
-        } else {
-            self.store.save_baseline(pair_id, &baseline, now_millis())?;
-        }
+        let issue_count = self.store.save_observed_scan(
+            pair_id,
+            &baseline,
+            ObservedScan {
+                local: &final_local.entries,
+                remote: &final_remote,
+                native: Some(&final_local),
+            },
+            &failed_paths,
+        )?;
         self.refresh_native_counts(pair_id)?;
         telemetry
             .lock()
@@ -2641,7 +2630,7 @@ impl SyncManager {
         self.emit_summary(app, pair_id)?;
         self.set_native_provider_status(
             pair_id,
-            if had_failure {
+            if issue_count > 0 || !failed_paths.is_empty() {
                 cloud_files::NativeProviderStatus::Error
             } else {
                 cloud_files::NativeProviderStatus::Idle
@@ -3017,9 +3006,10 @@ impl SyncManager {
         };
         let scan = ScanResult { local, remote };
         let actions = plan_actions(&pair.baseline, &scan);
-        self.set_task_plan(pair_id, &actions)?;
+        self.store.remember_pending(pair_id, &actions, &scan)?;
+        self.set_task_plan(pair_id, &actions, false)?;
         let (upload_items, upload_bytes, download_items, download_bytes) =
-            action_direction_totals(&actions);
+            action_direction_totals(&actions, false);
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -3049,7 +3039,7 @@ impl SyncManager {
 
         let mut completed_items = 0_u64;
         let mut completed_bytes = 0_u64;
-        let mut had_failure = false;
+        let mut failed_paths = BTreeSet::new();
         for (task_index, action) in actions.into_iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(AppError::Cancelled);
@@ -3078,7 +3068,7 @@ impl SyncManager {
                         action_upload_bytes,
                         action_download_items,
                         action_download_bytes,
-                    ) = action_direction(&action);
+                    ) = action_direction(&action, false);
                     telemetry
                         .lock()
                         .map_err(|_| AppError::LocalData)?
@@ -3164,7 +3154,7 @@ impl SyncManager {
                         .lock()
                         .map_err(|_| AppError::LocalData)?
                         .clear_active();
-                    had_failure = true;
+                    failed_paths.insert(relative.clone());
                     let _ = self.store.finish_operation(&operation, "failed");
                     let code = error.log_code();
                     self.store.add_issue(
@@ -3209,24 +3199,20 @@ impl SyncManager {
                 local_endpoint_stats(&final_local),
                 remote_endpoint_stats(&final_remote),
             );
-        let baseline = merge_baseline(&pair.baseline, &final_local, &final_remote);
-        if had_failure {
-            self.store.save_partial_baseline(pair_id, &baseline)?;
-            self.store.update_progress(
-                pair_id,
-                "attention",
-                total_items.saturating_sub(completed_items),
-                total_bytes.saturating_sub(completed_bytes),
-                completed_items,
-                total_items,
-                completed_bytes,
-                total_bytes,
-                None,
-                Some("sync_attention"),
-            )?;
-        } else {
-            self.store.save_baseline(pair_id, &baseline, now_millis())?;
+        if cancel.is_cancelled() {
+            return Err(AppError::Cancelled);
         }
+        let baseline = merge_baseline(&pair.baseline, &final_local, &final_remote);
+        self.store.save_observed_scan(
+            pair_id,
+            &baseline,
+            ObservedScan {
+                local: &final_local,
+                remote: &final_remote,
+                native: None,
+            },
+            &failed_paths,
+        )?;
         telemetry
             .lock()
             .map_err(|_| AppError::LocalData)?
@@ -3521,6 +3507,7 @@ fn baseline_local_identities(
 struct NativeLocalScan {
     entries: BTreeMap<String, LocalEntry>,
     populated_directories: BTreeSet<String>,
+    file_availability: BTreeMap<String, (&'static str, bool)>,
 }
 
 fn scan_native_local(
@@ -3566,6 +3553,19 @@ fn scan_native_local_directory(
             let Some(native_entry) = native.get(&relative) else {
                 continue;
             };
+            if native_entry.kind == "file" {
+                result.file_availability.insert(
+                    relative.clone(),
+                    (
+                        if state.partial {
+                            "online_only"
+                        } else {
+                            "local"
+                        },
+                        state.pinned,
+                    ),
+                );
+            }
             let identity = if native_entry.kind == "file" && !state.in_sync && !state.partial {
                 let metadata = fs::symlink_metadata(&path)?;
                 Identity {
@@ -3941,8 +3941,9 @@ fn remote_endpoint_stats(entries: &BTreeMap<String, RemoteEntry>) -> SyncEndpoin
     stats
 }
 
-fn action_direction(action: &Action) -> (u64, u64, u64, u64) {
+fn action_direction(action: &Action, native: bool) -> (u64, u64, u64, u64) {
     match action {
+        Action::Download { .. } if native => (0, 0, 0, 0),
         Action::Upload { local, .. } => (1, local.identity.size.max(0) as u64, 0, 0),
         Action::Download { remote, .. } => (0, 0, 1, remote.identity.size.max(0) as u64),
         Action::Conflict { local, remote, .. } => (
@@ -3955,10 +3956,10 @@ fn action_direction(action: &Action) -> (u64, u64, u64, u64) {
     }
 }
 
-fn action_direction_totals(actions: &[Action]) -> (u64, u64, u64, u64) {
+fn action_direction_totals(actions: &[Action], native: bool) -> (u64, u64, u64, u64) {
     let mut totals = (0_u64, 0_u64, 0_u64, 0_u64);
     for action in actions {
-        let current = action_direction(action);
+        let current = action_direction(action, native);
         totals.0 = totals.0.saturating_add(current.0);
         totals.1 = totals.1.saturating_add(current.1);
         totals.2 = totals.2.saturating_add(current.2);
@@ -4852,7 +4853,8 @@ fn action_name(action: &Action) -> &'static str {
     }
 }
 
-fn sync_task_summary(index: usize, action: &Action) -> SyncTaskSummary {
+fn sync_task_summary(index: usize, action: &Action, native: bool) -> SyncTaskSummary {
+    let metadata_only = native && matches!(action, Action::Download { .. });
     let relative = action_relative(action);
     let display_name = relative
         .rsplit('/')
@@ -4871,11 +4873,21 @@ fn sync_task_summary(index: usize, action: &Action) -> SyncTaskSummary {
     };
     SyncTaskSummary {
         id: format!("task-{index}"),
-        operation: action_name(action).to_owned(),
+        operation: if metadata_only {
+            "update_placeholder"
+        } else {
+            action_name(action)
+        }
+        .to_owned(),
         direction: direction.to_owned(),
         display_name,
+        relative_path: relative,
         state: "queued".to_owned(),
-        bytes: action_bytes(action),
+        bytes: if metadata_only {
+            0
+        } else {
+            action_bytes(action)
+        },
     }
 }
 
@@ -5036,7 +5048,7 @@ mod tests {
         }
     }
 
-    fn test_pair(id: &str, owner_id: &str) -> SyncPairRecord {
+    pub(super) fn test_pair(id: &str, owner_id: &str) -> SyncPairRecord {
         SyncPairRecord {
             id: id.to_owned(),
             owner_id: owner_id.to_owned(),
@@ -5202,6 +5214,23 @@ mod tests {
     }
 
     #[test]
+    fn native_placeholder_plan_does_not_count_downloaded_content() {
+        let (_, remote) = remote_file("cloud.txt", "cloud");
+        let action = Action::Download {
+            relative: "cloud.txt".to_owned(),
+            remote,
+            expected_local: None,
+        };
+        let native = sync_task_summary(0, &action, true);
+        let classic = sync_task_summary(0, &action, false);
+        assert_eq!(native.operation, "update_placeholder");
+        assert_eq!(native.bytes, 0);
+        assert_eq!(action_direction(&action, true), (0, 0, 0, 0));
+        assert_eq!(classic.operation, "download");
+        assert!(classic.bytes > 0);
+    }
+
+    #[test]
     fn task_summary_exposes_only_the_display_name() {
         let task = sync_task_summary(
             3,
@@ -5214,6 +5243,7 @@ mod tests {
                 },
                 expected_remote: None,
             },
+            false,
         );
         assert_eq!(task.id, "task-3");
         assert_eq!(task.operation, "upload");
@@ -5661,7 +5691,7 @@ mod tests {
                 remote,
             },
         ];
-        assert_eq!(action_direction_totals(&actions), (2, 14, 1, 13));
+        assert_eq!(action_direction_totals(&actions, false), (2, 14, 1, 13));
     }
 
     #[test]
@@ -5702,7 +5732,7 @@ mod tests {
         }
     }
 
-    fn local_file(relative: &str, hash: &str) -> (String, LocalEntry) {
+    pub(super) fn local_file(relative: &str, hash: &str) -> (String, LocalEntry) {
         (
             relative.to_owned(),
             LocalEntry {
@@ -5713,7 +5743,7 @@ mod tests {
         )
     }
 
-    fn remote_file(relative: &str, hash: &str) -> (String, RemoteEntry) {
+    pub(super) fn remote_file(relative: &str, hash: &str) -> (String, RemoteEntry) {
         (
             relative.to_owned(),
             RemoteEntry {
@@ -5909,7 +5939,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_issues_are_deduplicated_and_partial_baselines_keep_them() {
+    fn only_confirmed_paths_clear_issues() {
         let path = std::env::temp_dir().join(format!(
             "koofr-sync-issues-{}.sqlite3",
             uuid::Uuid::new_v4()
@@ -5927,19 +5957,32 @@ mod tests {
         assert_eq!(store.issues("pair-a").unwrap().len(), 2);
         assert_eq!(store.pair("pair-a").unwrap().unwrap().issue_count, 2);
 
+        let local = BTreeMap::from([local_file("locked.txt", "same")]);
+        let remote = BTreeMap::from([
+            remote_file("locked.txt", "same"),
+            remote_file("other.txt", "other"),
+        ]);
+        let scan = ObservedScan {
+            local: &local,
+            remote: &remote,
+            native: None,
+        };
         store
-            .save_partial_baseline("pair-a", &file_baseline())
+            .save_observed_scan(
+                "pair-a",
+                &file_baseline(),
+                scan,
+                &BTreeSet::from(["other.txt".to_owned()]),
+            )
             .unwrap();
         let pair = store.pair("pair-a").unwrap().unwrap();
         assert_eq!(pair.status, "attention");
-        assert_eq!(pair.issue_count, 2);
+        assert_eq!(pair.issue_count, 1);
         assert!(pair.baseline.contains_key("a.txt"));
-        assert_eq!(store.issues("pair-a").unwrap().len(), 2);
-
-        store
-            .save_baseline("pair-a", &file_baseline(), now_millis())
-            .unwrap();
-        assert!(store.issues("pair-a").unwrap().is_empty());
+        assert_eq!(
+            store.issues("pair-a").unwrap()[0].relative_path,
+            "other.txt"
+        );
         drop(store);
         let _ = fs::remove_file(path);
     }

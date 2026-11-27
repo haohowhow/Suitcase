@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   Check,
-  CheckCircle2,
   ChevronRight,
   Cloud,
   Folder,
@@ -18,6 +17,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { SyncFileDetails, SyncFileIssues } from './SyncFileDetails'
 import { Modal } from '../../components/Modal'
 import { commandErrorMessage, koofr } from '../../services/koofr'
 import type {
@@ -25,7 +25,6 @@ import type {
   LocalFileSelection,
   NativeSyncCapability,
   RemoteFile,
-  SyncIssue,
   SyncMode,
   SyncPairStatus,
   SyncPairSummary,
@@ -60,6 +59,7 @@ const taskOperationText: Record<SyncTaskSummary['operation'], string> = {
   mkdir_remote: '创建云端文件夹',
   upload: '上传',
   download: '下载',
+  update_placeholder: '更新占位符',
   delete_local: '删除本地项',
   delete_remote: '删除云端项',
   move_remote: '移动云端项',
@@ -195,7 +195,6 @@ function DirectionTaskProgress({ label, stats }: { readonly label: string; reado
 
 export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync }: SyncWorkspaceProps) {
   const { pairs, speedSamples } = sync
-  const [issues, setIssues] = useState<Record<string, SyncIssue[]>>({})
   const [tasks, setTasks] = useState<Record<string, SyncTaskSummary[]>>({})
   const [filter, setFilter] = useState<SyncFilter>('all')
   const [refreshing, setRefreshing] = useState(false)
@@ -220,6 +219,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
   const [notice, setNotice] = useState<{ kind: 'error' | 'info'; message: string } | null>(null)
   const [detailPairId, setDetailPairId] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<DetailTab>('overview')
+  const [issuePath, setIssuePath] = useState<string | null>(null)
   const [pendingRemovePair, setPendingRemovePair] = useState<SyncPairSummary | null>(null)
 
   const primaryMounts = useMemo(
@@ -227,6 +227,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
     [mounts],
   )
   const detailPair = detailPairId ? pairs.find((pair) => pair.id === detailPairId) ?? null : null
+  const activeDetailId = detailPair?.id
 
   useEffect(() => {
     if (!primaryMounts.some((mount) => mount.id === mountId)) {
@@ -264,15 +265,15 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
   }, [rootKind, syncMode])
 
   useEffect(() => {
-    if (!detailPairId || detailTab === 'issues') return
+    if (!activeDetailId || detailTab !== 'overview') return
     let disposed = false
     let loading = false
     const loadTasks = async () => {
       if (loading) return
       loading = true
       try {
-        const next = await koofr.listSyncTasks(detailPairId)
-        if (!disposed) setTasks((current) => ({ ...current, [detailPairId]: next }))
+        const next = await koofr.listSyncTasks(activeDetailId)
+        if (!disposed) setTasks((current) => ({ ...current, [activeDetailId]: next }))
       } catch {
         // Task names are intentionally queried only while this detail view is open.
       } finally {
@@ -285,7 +286,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
       disposed = true
       window.clearInterval(timer)
     }
-  }, [detailPairId, detailTab])
+  }, [activeDetailId, detailTab])
 
   const openCreateModal = () => {
     setCreateError('')
@@ -367,17 +368,11 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
     }
   }
 
-  const showDetail = async (pair: SyncPairSummary, tab: DetailTab = 'overview') => {
+  const showDetail = (pair: SyncPairSummary, tab: DetailTab = 'overview') => {
     setDetailPairId(pair.id)
     setDetailTab(tab)
-    if (tab === 'issues') {
-      try {
-        const next = await koofr.listSyncIssues(pair.id)
-        setIssues((current) => ({ ...current, [pair.id]: next }))
-      } catch (error) {
-        setNotice({ kind: 'error', message: commandErrorMessage(error, '无法读取同步问题') })
-      }
-    }
+    setIssuePath(null)
+    setNotice(null)
   }
 
   const toggle = async (pair: SyncPairSummary) => {
@@ -547,7 +542,7 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
       </div>
 
       <div className="sync-workspace__body">
-        {notice ? (
+        {notice && !detailPair ? (
           <div className={`notice ${notice.kind === 'error' ? 'notice--error' : 'notice--info'}`} role={notice.kind === 'error' ? 'alert' : 'status'}>
             {notice.message}
           </div>
@@ -1096,6 +1091,12 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
             </div>
           </div>
 
+          {notice ? (
+            <div className={'notice notice--' + notice.kind} role={notice.kind === 'error' ? 'alert' : 'status'}>
+              {notice.message}
+            </div>
+          ) : null}
+
           <div className="sync-detail-tabs" role="tablist" aria-label="同步详情分组">
             <button
               className={detailTab === 'overview' ? 'is-active' : ''}
@@ -1113,14 +1114,14 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
               aria-selected={detailTab === 'tasks'}
               onClick={() => setDetailTab('tasks')}
             >
-              任务队列 {detailTasks.length > 0 ? `(${detailTasks.length})` : ''}
+              文件状态
             </button>
             <button
               className={detailTab === 'issues' ? 'is-active' : ''}
               type="button"
               role="tab"
               aria-selected={detailTab === 'issues'}
-              onClick={() => void showDetail(detailPair, 'issues')}
+              onClick={() => showDetail(detailPair, 'issues')}
             >
               问题 {detailPair.issueCount > 0 ? `(${detailPair.issueCount})` : ''}
             </button>
@@ -1189,55 +1190,21 @@ export function SyncWorkspace({ mounts, defaultMountId, defaultRemotePath, sync 
               <SyncSpeedChart samples={detailSamples} />
             </div>
           ) : detailTab === 'tasks' ? (
-            <div className="sync-detail-pane">
-              <div className="sync-current-task">
-                <strong>{detailCurrentTask?.title}</strong>
-                <span>{detailCurrentTask?.detail}</span>
-              </div>
-              <div className="sync-task-list">
-                <div className="sync-task-list__header">
-                  <strong>任务明细</strong>
-                  <span>最近处理的文件</span>
-                </div>
-                {detailTasks.length > 0 ? detailTasks.map((task) => (
-                  <div className={`sync-task-item sync-task-item--${task.state}`} key={task.id}>
-                    <span className="sync-task-item__direction" aria-hidden="true">
-                      {task.direction === 'upload' ? '↑' : task.direction === 'download' ? '↓' : '↕'}
-                    </span>
-                    <strong translate="no" title={task.displayName}>{task.displayName}</strong>
-                    <span>{taskOperationText[task.operation] ?? '同步'}</span>
-                    <small>{task.bytes > 0 ? formatBytes(task.bytes) : '—'} · {taskStateText[task.state]}</small>
-                  </div>
-                )) : (
-                  <p className="sync-task-list__empty">
-                    {detailPair.status === 'scanning' || detailPair.status === 'initializing'
-                      ? '正在扫描，任务明细将在队列生成后显示。'
-                      : '当前没有可显示的同步任务。'}
-                  </p>
-                )}
-              </div>
-            </div>
+            <SyncFileDetails
+              key={detailPair.id}
+              pair={detailPair}
+              onShowIssues={(path) => { setIssuePath(path); setDetailTab('issues') }}
+            />
           ) : (
-            <div className="sync-detail-pane">
-              {issues[detailPair.id]?.length ? (
-                <div className="sync-issues sync-issues--detail">
-                  {issues[detailPair.id].map((issue) => (
-                    <div className="sync-issue" key={issue.id}>
-                      <TriangleAlert size={14} aria-hidden="true" />
-                      <span>
-                        {issue.relativePath ? <><span translate="no">{issue.relativePath}</span>: </> : '同步位置：'}
-                        {issue.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="sync-issues-empty">
-                  <CheckCircle2 size={18} strokeWidth={1.8} aria-hidden="true" />
-                  <span>当前没有未解决问题。</span>
-                </div>
-              )}
-            </div>
+            <SyncFileIssues
+              key={detailPair.id}
+              pair={detailPair}
+              path={issuePath}
+              onShowAll={() => setIssuePath(null)}
+              onRecheck={() => runNow(detailPair)}
+              onResume={() => toggle(detailPair)}
+              onOpenRoot={() => openRoot(detailPair)}
+            />
           )}
         </Modal>
       ) : null}

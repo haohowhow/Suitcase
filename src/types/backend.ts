@@ -318,10 +318,12 @@ export interface SyncIssue {
   readonly code: string
   readonly message: string
   readonly createdAt: number
+  readonly updatedAt: number
+  readonly operation: 'sync' | 'scan' | 'read_file' | 'read_directory'
 }
 
 export type SyncTaskState = 'queued' | 'running' | 'waiting' | 'completed' | 'failed'
-export type SyncTaskOperation = 'mkdir_local' | 'mkdir_remote' | 'upload' | 'download' | 'delete_local' | 'delete_remote' | 'move_remote' | 'conflict' | 'type_conflict'
+export type SyncTaskOperation = 'mkdir_local' | 'mkdir_remote' | 'upload' | 'download' | 'update_placeholder' | 'delete_local' | 'delete_remote' | 'move_remote' | 'conflict' | 'type_conflict'
 
 export interface SyncTaskSummary {
   readonly id: string
@@ -330,6 +332,25 @@ export interface SyncTaskSummary {
   readonly displayName: string
   readonly state: SyncTaskState
   readonly bytes: number
+}
+
+export type SyncFileFilter = 'all' | 'pending' | 'failed' | 'checked'
+
+export interface SyncFileStatus {
+  readonly relativePath: string
+  readonly kind: 'file' | 'dir'
+  readonly state: 'in_sync' | 'metadata_current' | 'unchecked' | 'queued' | 'running' | 'waiting' | 'failed'
+  readonly checkedAt: number | null
+  readonly operation: SyncTaskOperation | 'sync' | 'scan' | 'read_file' | 'read_directory' | null
+  readonly availability: 'local' | 'online_only' | 'unexpanded' | null
+  readonly pinned: boolean
+  readonly availabilityCheckedAt: number | null
+  readonly lastReadAt: number | null
+}
+
+export interface SyncFilePage {
+  readonly files: readonly SyncFileStatus[]
+  readonly hasMore: boolean
 }
 
 export interface SyncStateEvent {
