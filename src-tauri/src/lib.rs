@@ -251,6 +251,7 @@ pub fn run() {
             commands::run_sync_pair_now,
             commands::list_sync_issues,
             commands::list_sync_tasks,
+            commands::list_sync_files,
             commands::remove_sync_pair,
             commands::koofr_session,
             commands::get_settings,

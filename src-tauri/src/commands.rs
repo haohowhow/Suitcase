@@ -19,7 +19,7 @@ use crate::{
         BandwidthMode, CacheMode, DownloadConflictStrategy, InterfaceLanguage, LinkDefaultKind,
         LogLevel, UiDensity,
     },
-    sync::{self, SyncIssue, SyncPairSummary, SyncTaskSummary},
+    sync::{self, SyncFilePage, SyncIssue, SyncPairSummary, SyncTaskSummary},
     transfer::{self, TransferResult},
 };
 
@@ -718,6 +718,28 @@ pub async fn list_sync_tasks(
         .sync
         .list_tasks(&owner_id, &pair_id)
         .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn list_sync_files(
+    state: State<'_, AppState>,
+    pair_id: String,
+    search: String,
+    filter: String,
+    page: u32,
+) -> CommandResult<SyncFilePage> {
+    let owner_id = state
+        .api
+        .recovery_scope()
+        .await
+        .map_err(CommandError::from)?;
+    let sync = state.sync.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        sync.list_file_status(&owner_id, &pair_id, &search, &filter, page)
+    })
+    .await
+    .map_err(|_| CommandError::from(AppError::LocalData))?
+    .map_err(CommandError::from)
 }
 
 #[tauri::command]

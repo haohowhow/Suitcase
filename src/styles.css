@@ -3503,24 +3503,6 @@ select.input {
   padding-top: 12px;
 }
 
-.sync-issues-empty {
-  min-height: 110px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-subtle);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12.5px;
-}
-
-.sync-issues-empty svg {
-  color: var(--accent-dark);
-}
-
 .icon-button--danger {
   color: var(--status-error);
 }
@@ -3545,24 +3527,6 @@ select.input {
 
 .text-button--warning {
   color: var(--status-warning);
-}
-
-.sync-issues {
-  display: grid;
-  gap: 5px;
-  margin-top: 10px;
-  padding: 9px 11px;
-  border: 1px solid #efd9b8;
-  border-radius: 8px;
-  background: var(--status-warning-soft);
-  color: var(--status-warning);
-  font-size: 11.5px;
-}
-
-.sync-issue {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
 }
 
 .sync-detail-tabs {
@@ -3745,97 +3709,74 @@ select.input {
   transition: width 0.22s ease;
 }
 
-.sync-task-list {
-  margin-top: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.sync-task-list__header {
+.sync-file-toolbar,
+.sync-file-pagination {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-subtle);
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.sync-task-list__header strong {
-  font-size: 11.5px;
-  color: var(--text);
-}
-
-.sync-task-list__header span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.sync-task-list > .sync-task-item {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 92px 108px;
-  align-items: center;
-  gap: 7px;
+.sync-file-toolbar input,
+.sync-file-toolbar select {
   min-height: 32px;
-  padding: 5px 12px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.sync-task-list > .sync-task-item:first-of-type {
-  border-top: 0;
-}
-
-.sync-task-item__direction {
-  color: var(--accent-dark);
-  text-align: center;
-  font-weight: 600;
-}
-
-.sync-task-item > strong {
-  min-width: 0;
-  overflow: hidden;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   color: var(--text);
-  font-size: 11.5px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--surface);
+  font: inherit;
 }
 
-.sync-task-item > span:not(.sync-task-item__direction),
-.sync-task-item > small {
-  color: var(--muted);
-  font-size: 11px;
+.sync-file-toolbar input {
+  flex: 1 1 230px;
+  min-width: 0;
 }
 
-.sync-task-item > small {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.sync-file-toolbar > span {
+  overflow-wrap: anywhere;
 }
 
-.sync-task-item--running {
-  background: var(--accent-soft);
-}
-
-.sync-task-item--waiting {
-  background: var(--status-warning-soft);
-}
-
-.sync-task-item--failed {
-  background: var(--status-error-soft);
-}
-
-.sync-task-item--completed {
-  opacity: 0.68;
-}
-
-.sync-task-list__empty {
+.sync-file-hint {
   margin: 0;
-  padding: 16px 12px;
+  font-size: 12px;
   color: var(--muted);
-  text-align: center;
-  font-size: 11.5px;
+}
+
+.sync-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sync-file-list:empty {
+  display: none;
+}
+
+.sync-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+
+.sync-file-row > * {
+  overflow-wrap: anywhere;
+}
+
+.sync-file-row > small {
+  color: var(--muted);
+}
+
+.sync-file-row > button {
+  justify-self: start;
+}
+
+.sync-file-pagination {
+  justify-content: flex-end;
 }
 
 .sync-detail-speeds {
@@ -3933,11 +3874,6 @@ select.input {
   background: var(--surface-subtle);
   color: var(--muted);
   font-size: 11.5px;
-}
-
-.sync-issues--detail {
-  min-height: 92px;
-  margin-top: 12px;
 }
 
 .spin,
@@ -7139,7 +7075,6 @@ select.input {
   .sync-detail-endpoints,
   .sync-task-queue,
   .sync-detail-speeds { grid-template-columns: 1fr 1fr; }
-  .sync-task-list > .sync-task-item { grid-template-columns: 18px minmax(0, 1fr) 86px; }
   .sync-task-item > small { display: none; }
 }
 
