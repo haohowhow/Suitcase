@@ -63,6 +63,11 @@ Suitcase is an unaffiliated, Windows-first alternative client built around a nat
   - Create folders, upload, download, rename, move, copy, delete, and restore from trash.
   - Public links: list, create, and revoke download and file-receive links; revocation requires a second confirmation.
 
+- **File tools**
+  - Report space usage per storage location and find empty folders and duplicate files across Koofr primary storage, accessible shared folders, and connected network drives.
+  - Scan concurrency is configurable in Settings → Storage & logs (1–1024, default 128) and applies from the next scan. A normal scan reuses the time-limited metadata cache; a forced scan re-reads from the cloud.
+  - When no comparable checksum is available, the estimated read volume is shown first and content verification only starts after confirmation. Cleanup accepts only items from the current scan and uses conditional deletion on Koofr primary storage; shared and connected locations are view-and-verify only.
+
 - **Transfers**
   - Transfer panel with live progress, cancellation, and pausing.
   - The upload speed chart updates after a retry. Whole-file retries start a fresh set of speed samples.

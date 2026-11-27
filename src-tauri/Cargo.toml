@@ -1,6 +1,6 @@
 [package]
 name = "suitcase"
-version = "26.1.1"
+version = "26.2.0"
 description = "Unofficial Windows-first desktop client for Koofr"
 authors = ["Suitcase contributors"]
 license = "MIT"
