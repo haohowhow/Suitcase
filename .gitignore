@@ -20,6 +20,3 @@
 /src-tauri/gen/
 /src-tauri/target/
 *.tsbuildinfo
-
-# Local release helper. This script is intentionally user-specific and never committed.
-/scripts/release-local.ps1

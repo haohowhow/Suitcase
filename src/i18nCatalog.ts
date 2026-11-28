@@ -859,8 +859,6 @@ export const catalog: Record<string, string> = {
   '版本': 'Version',
   '许可证': 'License',
   '版本信息暂不可用。': 'Version information is unavailable.',
-  'Windows 安装包暂未进行代码签名。首次运行若出现 Windows SmartScreen 提示，请点击“更多信息”，再选择“仍要运行”。': 'The installer is not code-signed yet. If Windows SmartScreen appears on first run, click “More info”, then “Run anyway”.',
-  '安装包暂未进行代码签名。首次运行若出现 Windows SmartScreen 提示，请点击“更多信息”，再选择“仍要运行”。': 'The installer is not code-signed yet. If Windows SmartScreen appears on first run, click “More info”, then “Run anyway”.',
   '外观设置已保存': 'Appearance settings saved',
   '通用设置已保存': 'General settings saved',
   '下载设置已保存': 'Download settings saved',

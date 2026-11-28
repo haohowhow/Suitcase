@@ -1518,9 +1518,6 @@ export const SettingsPanel = memo(function SettingsPanel(props: SettingsPanelPro
             ) : (
               <p className="settings-note">版本信息暂不可用。</p>
             )}
-            <p className="settings-note">
-              Windows 安装包暂未进行代码签名。首次运行若出现 Windows SmartScreen 提示，请点击“更多信息”，再选择“仍要运行”。
-            </p>
           </section>
         ) : null}
 
